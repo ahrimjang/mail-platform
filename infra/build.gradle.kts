@@ -8,6 +8,7 @@ dependencies {
     // Adapters implementing the ports declared in mail-core.
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     implementation("org.springframework.boot:spring-boot-starter-mail")
+    implementation("org.springframework.boot:spring-boot-starter-amqp")
 
     // Auth adapters: password hashing + JWT.
     implementation("org.springframework.security:spring-security-crypto")

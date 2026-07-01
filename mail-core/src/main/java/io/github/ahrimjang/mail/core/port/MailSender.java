@@ -13,7 +13,7 @@ public interface MailSender {
      *
      * @throws MailSendException if delivery fails (the worker records it as FAILED)
      */
-    void send(String recipient, String subject, String body) throws MailSendException;
+    void send(String recipient, String subject, String body, String messageId) throws MailSendException;
 
     /** Thrown when a single delivery attempt fails. */
     class MailSendException extends RuntimeException {

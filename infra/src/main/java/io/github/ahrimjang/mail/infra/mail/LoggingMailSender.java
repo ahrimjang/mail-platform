@@ -21,11 +21,11 @@ public class LoggingMailSender implements MailSender {
     private static final Logger log = LoggerFactory.getLogger(LoggingMailSender.class);
 
     @Override
-    public void send(String recipient, String subject, String body) throws MailSendException {
+    public void send(String recipient, String subject, String body, String messageId) throws MailSendException {
         if (recipient == null || !recipient.contains("@")) {
             throw new MailSendException("invalid recipient address: " + recipient);
         }
-        log.info("[MAIL] -> {} | subject=\"{}\" | bodyChars={}",
-                recipient, subject, body == null ? 0 : body.length());
+        log.info("[MAIL] -> {} | subject=\"{}\" | bodyChars={} | messageId={}",
+                recipient, subject, body == null ? 0 : body.length(), messageId);
     }
 }

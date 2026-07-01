@@ -27,7 +27,7 @@ public class SmtpMailSender implements MailSender {
     }
 
     @Override
-    public void send(String recipient, String subject, String body) throws MailSendException {
+    public void send(String recipient, String subject, String body, String messageId) throws MailSendException {
         if (recipient == null || !recipient.contains("@")) {
             throw new MailSendException("invalid recipient address: " + recipient);
         }
@@ -37,6 +37,9 @@ public class SmtpMailSender implements MailSender {
             h.setTo(recipient);
             h.setSubject(subject);
             h.setText(body, true);
+            if (messageId != null) {
+                msg.setHeader("X-Mail-Message-Id", messageId);
+            }
             mailSender.send(msg);
         } catch (Exception e) {
             throw new MailSendException("failed to send to " + recipient + ": " + e.getMessage(), e);

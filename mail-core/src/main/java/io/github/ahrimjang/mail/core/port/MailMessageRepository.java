@@ -10,14 +10,14 @@ import java.util.Optional;
  */
 public interface MailMessageRepository {
 
-    /** Bulk-insert freshly enqueued messages. */
-    void saveAll(List<MailMessage> messages);
+    /** Bulk-insert freshly enqueued messages, returning the saved rows. */
+    List<MailMessage> saveAll(List<MailMessage> messages);
 
     /** Persist a single message after a state change (sent/failed). */
     MailMessage save(MailMessage message);
 
-    /** Claim up to {@code limit} pending messages for delivery, oldest first. */
-    List<MailMessage> findPending(int limit);
+    /** Look up a message by its id. */
+    Optional<MailMessage> findById(Long id);
 
     /** Aggregate per-status counts for one campaign. */
     MessageCounts countByCampaign(Long campaignId);

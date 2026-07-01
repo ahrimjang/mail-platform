@@ -7,4 +7,5 @@ package io.github.ahrimjang.mail.common;
 public enum EventType {
     OPEN,
     CLICK,
+    BOUNCE,
 }

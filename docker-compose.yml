@@ -1,0 +1,40 @@
+# 로컬 개발 인프라 (앱 제외) — RabbitMQ + MailHog
+#
+# 우리 Spring 앱(mail-api/worker/admin)은 여기 없습니다. 앱은 ./gradlew bootRun 으로 직접 실행하고,
+# 이 파일은 그 앱들이 의존하는 "외부 서버" 두 개(발송 큐 + 개발용 SMTP)만 기성 이미지로 띄웁니다.
+#
+#   실행:  docker compose up -d
+#   중지:  docker compose down          (데이터 유지)
+#   초기화: docker compose down -v       (RabbitMQ 볼륨까지 삭제)
+#
+#   RabbitMQ 관리 UI : http://localhost:15672   (guest / guest)
+#   MailHog 받은편지함: http://localhost:8025
+
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"      # AMQP — 앱(mail-api 발행 / mail-worker 소비)이 접속
+      - "15672:15672"    # 관리 UI (웹)
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq   # durable 큐/메시지가 재시작 후에도 유지되도록
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mailhog:
+    image: mailhog/mailhog
+    container_name: mailhog
+    ports:
+      - "1025:1025"      # SMTP — mail-worker 의 SmtpMailSender 가 여기로 발송
+      - "8025:8025"      # 웹 UI — 발송된 메일 확인
+    # MailHog 는 메일을 메모리에 담는 개발용이라 별도 볼륨이 필요 없습니다.
+
+volumes:
+  rabbitmq-data:

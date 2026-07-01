@@ -1,6 +1,7 @@
 package io.github.ahrimjang.mail.core.service;
 
 import io.github.ahrimjang.mail.common.CampaignStatus;
+import io.github.ahrimjang.mail.common.MessageStatus;
 import io.github.ahrimjang.mail.core.domain.Campaign;
 import io.github.ahrimjang.mail.core.domain.MailMessage;
 import io.github.ahrimjang.mail.core.port.CampaignRepository;
@@ -14,16 +15,14 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-
 /**
- * Drains the send queue in batches. Invoked repeatedly by the worker's poller.
+ * Sends one queued message per invocation. Invoked by the worker's queue listener.
  *
- * <p>One batch = claim N pending messages, send each via the {@link MailSender}
- * port, and record the per-message outcome. Campaigns flip to SENDING on first
- * progress and to COMPLETED once their queue is fully drained.
+ * <p>One call = load the message by id, send it via the {@link MailSender}
+ * port, and record the outcome. Campaigns flip to SENDING on first progress
+ * and to COMPLETED once their queue is fully drained. Because the queue is
+ * at-least-once, the handler is idempotent: a message that is no longer
+ * PENDING is skipped.
  */
 @Service
 public class MailDispatchService {
@@ -52,53 +51,46 @@ public class MailDispatchService {
     }
 
     /**
-     * Process up to {@code batchSize} pending messages.
+     * Process a single queued message by id.
      *
-     * @return the number of messages handled (0 means the queue was empty)
+     * <p>Idempotent: a missing message, or one that is no longer PENDING (a
+     * redelivery or an already-processed row), is skipped without effect.
      */
-    public int dispatchBatch(int batchSize) {
-        List<MailMessage> batch = messages.findPending(batchSize);
-        if (batch.isEmpty()) {
-            return 0;
+    public void dispatchOne(Long messageId) {
+        MailMessage message = messages.findById(messageId).orElse(null);
+        if (message == null) {
+            return;
         }
-
-        Set<Long> touchedCampaigns = new HashSet<>();
-        for (MailMessage message : batch) {
-            Campaign campaign = campaigns.findById(message.getCampaignId()).orElse(null);
-            if (campaign == null) {
-                message.markFailed("campaign no longer exists");
-                messages.save(message);
-                continue;
-            }
-
-            markSending(campaign);
-
-            if (suppressions.existsByEmail(message.getRecipient())) {
-                message.markSuppressed();
-                messages.save(message);
-                touchedCampaigns.add(campaign.getId());
-                continue;
-            }
-
-            String trackedBody = trackingRewriter.rewriteLinks(campaign.getBody(), message.getTrackingToken(), baseUrl);
-            String html = trackedBody + unsubscribeFooter(message.getUnsubToken())
-                    + trackingRewriter.openPixel(message.getTrackingToken(), baseUrl);
-            try {
-                sender.send(message.getRecipient(), campaign.getSubject(), html);
-                message.markSent();
-            } catch (Exception e) {
-                log.warn("send failed: campaign={} recipient={} reason={}",
-                        campaign.getId(), message.getRecipient(), e.getMessage());
-                message.markBounced(e.getMessage());
-                suppressions.save(Suppression.of(message.getRecipient(), "bounce"));
-            }
+        if (message.getStatus() != MessageStatus.PENDING) {
+            return;   // idempotency: skip redelivered/processed
+        }
+        Campaign campaign = campaigns.findById(message.getCampaignId()).orElse(null);
+        if (campaign == null) {
+            message.markFailed("campaign no longer exists");
             messages.save(message);
-            touchedCampaigns.add(campaign.getId());
+            return;
         }
-
-        touchedCampaigns.forEach(this::completeIfDrained);
-        log.info("dispatched {} message(s)", batch.size());
-        return batch.size();
+        markSending(campaign);
+        if (suppressions.existsByEmail(message.getRecipient())) {
+            message.markSuppressed();
+            messages.save(message);
+            completeIfDrained(campaign.getId());
+            return;
+        }
+        String trackedBody = trackingRewriter.rewriteLinks(campaign.getBody(), message.getTrackingToken(), baseUrl);
+        String html = trackedBody + unsubscribeFooter(message.getUnsubToken())
+                + trackingRewriter.openPixel(message.getTrackingToken(), baseUrl);
+        try {
+            sender.send(message.getRecipient(), campaign.getSubject(), html, String.valueOf(message.getId()));
+            message.markSent();
+        } catch (Exception e) {
+            log.warn("send failed: campaign={} recipient={} reason={}",
+                    campaign.getId(), message.getRecipient(), e.getMessage());
+            message.markBounced(e.getMessage());
+            suppressions.save(Suppression.of(message.getRecipient(), "bounce"));
+        }
+        messages.save(message);
+        completeIfDrained(campaign.getId());
     }
 
     private String unsubscribeFooter(String token) {

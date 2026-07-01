@@ -3,7 +3,6 @@ package io.github.ahrimjang.mail.infra.persistence;
 import io.github.ahrimjang.mail.common.MessageStatus;
 import io.github.ahrimjang.mail.core.domain.MailMessage;
 import io.github.ahrimjang.mail.core.port.MailMessageRepository;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -23,8 +22,11 @@ public class JpaMailMessageRepository implements MailMessageRepository {
     }
 
     @Override
-    public void saveAll(List<MailMessage> messages) {
-        jpa.saveAll(messages.stream().map(this::toEntity).toList());
+    public List<MailMessage> saveAll(List<MailMessage> messages) {
+        return jpa.saveAll(messages.stream().map(this::toEntity).toList())
+                .stream()
+                .map(this::toDomain)
+                .toList();
     }
 
     @Override
@@ -33,11 +35,8 @@ public class JpaMailMessageRepository implements MailMessageRepository {
     }
 
     @Override
-    public List<MailMessage> findPending(int limit) {
-        return jpa.findByStatusOrderByIdAsc(MessageStatus.PENDING, PageRequest.of(0, limit))
-                .stream()
-                .map(this::toDomain)
-                .toList();
+    public Optional<MailMessage> findById(Long id) {
+        return jpa.findById(id).map(this::toDomain);
     }
 
     @Override

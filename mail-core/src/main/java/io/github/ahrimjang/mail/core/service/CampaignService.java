@@ -10,6 +10,7 @@ import io.github.ahrimjang.mail.core.port.CampaignRepository;
 import io.github.ahrimjang.mail.core.port.EmailEventRepository;
 import io.github.ahrimjang.mail.core.port.MailMessageRepository;
 import io.github.ahrimjang.mail.core.port.MailMessageRepository.MessageCounts;
+import io.github.ahrimjang.mail.core.port.MailQueue;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -18,10 +19,11 @@ import java.util.NoSuchElementException;
 /**
  * Use cases for authoring and inspecting campaigns.
  *
- * <p>Creation is intentionally cheap: it persists the campaign and fans the
- * recipient list out into PENDING queue rows, then returns immediately. The
- * actual sending is done asynchronously by the worker — this decoupling is
- * what lets the API stay responsive under large recipient lists.
+ * <p>Creation is intentionally cheap: it persists the campaign, fans the
+ * recipient list out into PENDING queue rows, enqueues one send job per row,
+ * then returns immediately. The actual sending is done asynchronously by the
+ * worker — this decoupling is what lets the API stay responsive under large
+ * recipient lists.
  */
 @Service
 public class CampaignService {
@@ -29,11 +31,14 @@ public class CampaignService {
     private final CampaignRepository campaigns;
     private final MailMessageRepository messages;
     private final EmailEventRepository events;
+    private final MailQueue mailQueue;
 
-    public CampaignService(CampaignRepository campaigns, MailMessageRepository messages, EmailEventRepository events) {
+    public CampaignService(CampaignRepository campaigns, MailMessageRepository messages, EmailEventRepository events,
+                           MailQueue mailQueue) {
         this.campaigns = campaigns;
         this.messages = messages;
         this.events = events;
+        this.mailQueue = mailQueue;
     }
 
     public CampaignView create(CreateCampaignRequest request) {
@@ -48,7 +53,8 @@ public class CampaignService {
         List<MailMessage> queued = request.recipients().stream()
                 .map(recipient -> MailMessage.queued(saved.getId(), recipient))
                 .toList();
-        messages.saveAll(queued);
+        List<MailMessage> savedMessages = messages.saveAll(queued);
+        savedMessages.forEach(m -> mailQueue.enqueue(m.getId()));
 
         return toView(saved);
     }

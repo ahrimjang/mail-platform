@@ -22,14 +22,24 @@ spring:
           auth: false
           starttls:
             enable: false
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+    listener:
+      simple:
+        prefetch: 10
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 2000
+          multiplier: 2.0
 
 mail:
   sender:
     type: smtp
-  worker:
-    # Max mails drained per tick, and how often to poll the queue.
-    batch-size: 50
-    poll-interval-ms: 2000
 
 app:
   base-url: http://localhost:8080

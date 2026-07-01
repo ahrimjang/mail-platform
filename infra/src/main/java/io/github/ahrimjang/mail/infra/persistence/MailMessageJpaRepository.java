@@ -1,15 +1,11 @@
 package io.github.ahrimjang.mail.infra.persistence;
 
 import io.github.ahrimjang.mail.common.MessageStatus;
-import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-import java.util.List;
 import java.util.Optional;
 
 public interface MailMessageJpaRepository extends JpaRepository<MailMessageEntity, Long> {
-
-    List<MailMessageEntity> findByStatusOrderByIdAsc(MessageStatus status, Pageable pageable);
 
     long countByCampaignId(Long campaignId);
 
