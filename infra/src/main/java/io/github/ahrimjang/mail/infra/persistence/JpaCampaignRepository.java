@@ -1,0 +1,61 @@
+package io.github.ahrimjang.mail.infra.persistence;
+
+import io.github.ahrimjang.mail.common.CampaignStatus;
+import io.github.ahrimjang.mail.core.domain.Campaign;
+import io.github.ahrimjang.mail.core.port.CampaignRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+import java.util.Optional;
+
+/**
+ * Adapter: implements the core {@link CampaignRepository} port over Spring Data JPA,
+ * mapping between the domain model and the persistence entity.
+ */
+@Repository
+public class JpaCampaignRepository implements CampaignRepository {
+
+    private final CampaignJpaRepository jpa;
+
+    public JpaCampaignRepository(CampaignJpaRepository jpa) {
+        this.jpa = jpa;
+    }
+
+    @Override
+    public Campaign save(Campaign campaign) {
+        CampaignEntity saved = jpa.save(toEntity(campaign));
+        return toDomain(saved);
+    }
+
+    @Override
+    public Optional<Campaign> findById(Long id) {
+        return jpa.findById(id).map(this::toDomain);
+    }
+
+    @Override
+    public List<Campaign> findAll() {
+        return jpa.findAll().stream().map(this::toDomain).toList();
+    }
+
+    @Override
+    public void updateStatus(Long id, CampaignStatus status) {
+        jpa.findById(id).ifPresent(entity -> {
+            entity.setStatus(status);
+            jpa.save(entity);
+        });
+    }
+
+    private CampaignEntity toEntity(Campaign c) {
+        return new CampaignEntity(c.getId(), c.getSubject(), c.getBody(), c.getStatus(), c.getCreatedAt());
+    }
+
+    private Campaign toDomain(CampaignEntity e) {
+        Campaign c = new Campaign();
+        c.setId(e.getId());
+        c.setSubject(e.getSubject());
+        c.setBody(e.getBody());
+        c.setStatus(e.getStatus());
+        c.setCreatedAt(e.getCreatedAt());
+        return c;
+    }
+}

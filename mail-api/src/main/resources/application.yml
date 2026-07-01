@@ -1,0 +1,22 @@
+spring:
+  application:
+    name: mail-api
+  datasource:
+    # File-mode H2 in AUTO_SERVER mode so mail-api and mail-worker share one
+    # queue across processes. For the POC this stands in for Postgres/RDS.
+    url: jdbc:h2:file:./data/maildb;AUTO_SERVER=TRUE;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+
+server:
+  port: 8080
+
+app:
+  jwt:
+    secret: "change-me-in-prod-please-use-a-long-random-secret-key-0123456789"
+    expiration-minutes: 120
