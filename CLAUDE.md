@@ -4,21 +4,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A POC/MVP for a bulk email-sending platform (a scaled-down [Notifuse](https://github.com/Notifuse/notifuse)). The defining architectural idea: **the API enqueues work and returns immediately; a separate worker drains the queue in batches asynchronously.** This decoupling keeps the API responsive regardless of recipient-list size. Source comments are in English; the README is in Korean.
+A POC/MVP for a bulk email-sending platform (a scaled-down [Notifuse](https://github.com/Notifuse/notifuse)). The defining architectural idea: **the API enqueues work and returns immediately; a separate worker drains the queue asynchronously.** This decoupling keeps the API responsive regardless of recipient-list size. Source comments are in English; the README and UI copy are in Korean.
 
-Beyond the original enqueue/drain POC it now has: **JWT auth** (signup/login), **real SMTP sending** (MailHog in dev) with HTML bodies, **unsubscribe + suppression**, and **self-implemented open/click tracking** with per-campaign analytics. The MVP roadmap and scope decisions live in [docs/MVP-PLAN.md](docs/MVP-PLAN.md) (next up: M3 templates/personalization, M4 contacts/lists).
+Feature set: **JWT auth**, **RabbitMQ send queue** (push-based consumer, DLQ), **real SMTP sending** (MailHog in dev) with HTML bodies, **unsubscribe + suppression**, **self-implemented open/click tracking** with per-campaign analytics, **bounce webhooks** with message correlation, **templates with `{{variable}}` personalization** (rendered per contact at send time), **transactional single-send API**, and **contacts/lists with CSV import**. Roadmap history: [docs/MVP-PLAN.md](docs/MVP-PLAN.md). **Stage-by-stage logic walkthroughs (Korean, with code snippets): [docs/logic/](docs/logic/README.md).**
 
 ## Commands
 
-Requires **JDK 21**. All `bootRun` tasks are configured to run from the repo root (see `build.gradle.kts`) so the relative H2 path `./data/maildb` resolves to one shared file — run them from the root, not from module dirs. If `JAVA_HOME` is unset, prefix Gradle with e.g. `JAVA_HOME=/c/Users/user/.jdks/corretto-21.0.11`.
+Requires **JDK 21**. All `bootRun` tasks run from the repo root (see `build.gradle.kts`) so the relative H2 path `./data/maildb` resolves to one shared file — run them from the root. If `JAVA_HOME` is unset, prefix Gradle with e.g. `JAVA_HOME=/c/Users/user/.jdks/corretto-21.0.11`.
 
 ```bash
-# Dev SMTP sink (worker sends here; web UI on :8025)
-docker run -d --rm --name mailhog -p 1025:1025 -p 8025:8025 mailhog/mailhog
+# Dev infra: RabbitMQ (5672, UI 15672 guest/guest) + MailHog (SMTP 1025, UI 8025)
+docker compose up -d          # docker compose down -v to reset queues
 
 # Backend services (each in its own terminal)
-./gradlew :mail-api:bootRun       # REST API on :8080
-./gradlew :mail-worker:bootRun    # queue poller (no web server), sends via SMTP -> MailHog
+./gradlew :mail-api:bootRun       # REST API on :8080 (publishes send jobs)
+./gradlew :mail-worker:bootRun    # @RabbitListener consumer (no web server), sends via SMTP -> MailHog
 ./gradlew :mail-admin:bootRun     # admin console on :8081 (skeleton)
 
 # Frontend
@@ -33,58 +33,67 @@ cd frontend && npm run build      # tsc -b && vite build
 
 > No test classes exist yet — the test wiring (`spring-boot-starter-test`, JUnit Platform) is in place for when they're added.
 
-A typical end-to-end run needs **MailHog + mail-api + mail-worker + frontend** up together, all backends sharing `./data/maildb`. To reset state, stop the services and delete `./data/` (tracking/unsubscribe tokens only exist on rows created after those features landed, so a reset avoids stale nulls). Sent mail is inspected at `http://localhost:8025`.
+A full end-to-end run needs **docker compose (rabbitmq+mailhog) + mail-api + mail-worker + frontend**. To reset state: stop services, `rm -rf ./data` (H2), optionally `docker compose down -v` (queues). Sent mail: `http://localhost:8025`. Queue traffic: `http://localhost:15672`.
 
 ## Architecture
 
-The backend is a Gradle multi-module project following **hexagonal / ports-and-adapters**. Dependencies point inward toward `mail-core`; `mail-core` knows nothing about web or persistence (only Spring's `spring-context` for `@Service`/DI + `@Value`).
+Gradle multi-module, **hexagonal / ports-and-adapters**. Dependencies point inward to `mail-core`; `mail-core` knows nothing about web/JPA/AMQP (only `spring-context` for `@Service`/DI + `@Value`).
 
 ```
-mail-common   DTOs + enums shared everywhere. Campaign: CreateCampaignRequest, CampaignView,
-              CampaignStatus, MessageStatus, EventType. Auth: SignupRequest, LoginRequest, AuthResponse.
-mail-core     Domain + ports + use-case services. No web/JPA.
-                · domain/  Campaign, MailMessage, User, Suppression, EmailEvent
-                · port/    CampaignRepository, MailMessageRepository, MailSender,
+mail-common   DTOs + enums (shared API/frontend contract). Campaign/queue: CreateCampaignRequest,
+              CampaignView, SendJob, CampaignStatus, MessageStatus, EventType. Auth: Signup/Login/AuthResponse.
+              Bounce: BounceType, BounceNotification. M3/M4: TemplateRequest/View, RenderedTemplate,
+              ContactRequest/View, ContactListRequest/View, ImportResult, TransactionalRequest.
+mail-core     Domain + ports + use-case services. No web/JPA/AMQP.
+                · domain/  Campaign, MailMessage, User, Suppression, EmailEvent, Template, Contact, ContactList
+                · port/    CampaignRepository, MailMessageRepository, MailSender, MailQueue,
                            UserRepository, PasswordHasher, TokenService,
-                           SuppressionRepository, EmailEventRepository
-                · service/ CampaignService, MailDispatchService, AuthService,
-                           SuppressionService, TrackingService, TrackingRewriter
-infra         Adapters for the core ports: JPA repositories + LoggingMailSender / SmtpMailSender,
-              BCryptPasswordHasher, JwtTokenService (jjwt).
-mail-api      Spring Boot web app (:8080). Controllers: CampaignController, HealthController,
-              auth/AuthController + SecurityConfig + JwtAuthFilter, UnsubscribeController, TrackingController.
-mail-worker   Spring Boot app, no web. Scheduled poller calling MailDispatchService; sends via SMTP.
+                           SuppressionRepository, EmailEventRepository,
+                           TemplateRepository, ContactRepository, ContactListRepository
+                · service/ CampaignService, MailDispatchService, AuthService, SuppressionService,
+                           TrackingService, TrackingRewriter, BounceService,
+                           TemplateRenderer, TemplateService, ContactService, ContactListService,
+                           TransactionalService
+infra         Adapters: persistence/ (JPA repos incl. contact attributes as JSON via Jackson),
+              messaging/ (RabbitMailConfig topology + RabbitMailQueue publisher),
+              mail/ (LoggingMailSender / SmtpMailSender), security/ (BCryptPasswordHasher, JwtTokenService).
+mail-api      Spring Boot web app (:8080). CampaignController, TemplateController, ContactController,
+              ContactListController, TransactionalController, TrackingController, UnsubscribeController,
+              WebhookController, HealthController, auth/ (AuthController + SecurityConfig + JwtAuthFilter).
+mail-worker   Spring Boot app, no web. MailSendListener (@RabbitListener) -> MailDispatchService.dispatchOne.
 mail-admin    Spring Boot web app (:8081). Boots but has no features yet.
-frontend      React 18 + Vite + TypeScript. Auth-gated single-page campaign form + live progress/metrics.
+frontend      React 18 + Vite + TS. Auth gate + tabs: 캠페인 / 템플릿 / 연락처 / 리스트 (src/tabs/*).
+              src/api.ts adds Bearer + handles 401; polling for live campaign metrics.
 ```
 
-### How the queue works (the core flow)
+### The send pipeline (core flow — diagram: docs/send-pipeline.svg)
 
-1. `POST /api/campaigns` (JWT required) → `CampaignService.create()` saves the campaign (status `QUEUED`) and fans the recipient list into one `MailMessage` row per recipient, each `PENDING` with a generated `unsubToken` + `trackingToken`. Returns immediately.
-2. `MailDispatchScheduler` (in mail-worker) fires every `poll-interval-ms` (default 2000) and calls `MailDispatchService.dispatchBatch(batchSize)`.
-3. `dispatchBatch` claims up to `batchSize` (default 50) `PENDING` messages ordered by id. Per message: skip suppressed addresses (`SUPPRESSED`); otherwise assemble the HTML body (`TrackingRewriter` rewrites `href` links to click-redirects, then append the unsubscribe footer, then the open-pixel), send via the `MailSender` port, and mark `SENT`, or on failure `BOUNCED` + auto-suppress the address. The campaign flips to `SENDING` on first progress and `COMPLETED` once its queue is fully drained (`pending == 0`).
-4. The frontend polls `GET /api/campaigns/{id}`; `CampaignView` carries live `total/pending/sent/failed/bounced/suppressed` (from message rows) plus `opened/clicked` (distinct-message counts derived from `EmailEvent` rows).
+1. `POST /api/campaigns` (JWT) → `CampaignService.create()`: content comes **directly** (subject/body) or is **snapshotted from a template** (`templateId`); recipients come from raw strings or a **contact list fan-out** (`listId`, one `MailMessage` per member with `contactId`). Each PENDING row gets `unsubToken` + `trackingToken`, then its id is **published to RabbitMQ** (`SendJob(messageId)` → `mail.exchange`/`mail.send` → `mail.send.queue`, DLQ `mail.send.dlq`). Returns 201 immediately.
+2. mail-worker's `MailSendListener` receives jobs by **push** and calls `dispatchOne(messageId)` — **idempotent**: reloads the row by id and skips anything not PENDING (RabbitMQ is at-least-once).
+3. `dispatchOne`: suppression check (skip as `SUPPRESSED`) → **personalization** (`TemplateRenderer` renders `{{vars}}` in subject/body with the contact's `toVariables()`, or `{email}` for raw recipients) → tracking-rewrite links + unsubscribe footer + open pixel → `MailSender.send(...)` with an injected `X-Mail-Message-Id` header → `SENT`, or `BOUNCED` + auto-suppress on failure. Campaign flips `SENDING` on first progress, `COMPLETED` when `pending == 0`.
+4. Frontend polls `GET /api/campaigns/{id}`: `total/pending/sent/failed/bounced/suppressed` from message rows + `opened/clicked` (distinct-message counts from `EmailEvent`).
 
-`batch-size` is the crude throughput throttle. Statuses: campaigns `QUEUED → SENDING → COMPLETED`; messages `PENDING → SENT | FAILED | BOUNCED | SUPPRESSED`. **Message status is delivery-outcome only — engagement (opened/clicked) is event-derived, never a status.**
+Statuses: campaigns `QUEUED → SENDING → COMPLETED`; messages `PENDING → SENT | FAILED | BOUNCED | SUPPRESSED`. **Message status is delivery-outcome only — engagement (opened/clicked) is event-derived, never a status.** H2 is the **state store**, not the queue.
 
-### Auth, tracking, and sending seams
+### Key seams and behaviors
 
-- **JWT auth.** `AuthService` (signup hashes with BCrypt, issues a JWT; login verifies). `SecurityConfig` is stateless: `permitAll` for `/api/auth/**`, `/api/health`, `/api/unsubscribe/**`, `/api/track/**`; everything else needs a valid Bearer token (validated by `JwtAuthFilter` → `TokenService`). Secret/expiry via `app.jwt.*` (mail-api yml). Frontend stores the token in `localStorage` and sends `Authorization: Bearer`.
-- **Sender is swappable by property.** Both `LoggingMailSender` and `SmtpMailSender` are `@ConditionalOnProperty("mail.sender.type", …)`. Worker sets `mail.sender.type=smtp` (→ MailHog via `spring.mail.*`); api/admin default to `logging` (they don't send). Replace `SmtpMailSender` with an SES/Sendgrid adapter to go to production — nothing else changes.
-- **Tracking is self-implemented.** `/api/track/open/{token}` returns a 1×1 GIF and records an `OPEN`; `/api/track/click/{token}?u=<url>` records a `CLICK` and 302-redirects to `u`. `unsubscribe/{token}` adds the recipient to the suppression list, honored at dispatch. Link rewriting is regex-based (`href="http…"`, double-quoted) — a known MVP limitation.
+- **JWT auth.** Stateless `SecurityConfig`: `permitAll` for `/api/auth/**`, `/api/health`, `/api/unsubscribe/**`, `/api/track/**`, `/api/webhooks/**`; everything else needs a Bearer token (`JwtAuthFilter` → `TokenService`). Secrets via `app.jwt.*`. Frontend stores the token in `localStorage`.
+- **Sender swappable by property.** `mail.sender.type=smtp` (worker → MailHog) vs `logging` (default, api/admin). Swap `SmtpMailSender` for SES/Sendgrid to go to production.
+- **Tracking self-implemented.** Open pixel + click redirect record `EmailEvent`s keyed by `trackingToken`. Link rewriting is regex-based (`href="http…"`, double-quoted) — known MVP limitation.
+- **Bounces.** `POST /api/webhooks/generic` (shared secret `X-Webhook-Token`, config `app.webhook.secret`) takes a normalized `BounceNotification`; HARD_BOUNCE/COMPLAINT → suppress; a supplied `messageId` (echoed from the `X-Mail-Message-Id` send header) also marks that message BOUNCED + records `EmailEvent(BOUNCE)`. Design doc: [docs/bounce-webhook-design.md](docs/bounce-webhook-design.md).
+- **Templates/personalization.** Campaign snapshots template content at create; `{{variables}}` render at send per contact (unknown vars → empty string). Preview: `POST /api/templates/{id}/preview`. Transactional: `POST /api/transactional` renders with request variables and reuses the whole pipeline as a single-recipient campaign.
+- **Contacts/lists.** Contact has attributes `Map<String,String>` (JSON column); **no status field — the suppression list is the only do-not-send source of truth**. CSV import: `POST /api/contacts/import?listId=` (text/plain, `email,firstName,lastName` lines; duplicates/invalid → skipped).
 
 ### Conventions and POC stand-ins
 
-Deliberate shortcuts — the seams where production implementations plug in:
-
-- **Queue = shared H2 file DB.** `jdbc:h2:file:./data/maildb;AUTO_SERVER=TRUE` lets the separate api/worker/admin processes share one queue. Production swaps this for Postgres/RDS + a real MQ (SQS/Kafka).
-- **`findPending` has no concurrency claim.** Multiple workers would double-send. Horizontal scaling needs `SELECT ... FOR UPDATE SKIP LOCKED` or equivalent.
-- **No retry/backoff, throttling, real bounce/complaint webhooks, templating/personalization, or contact/list management** yet (see [docs/MVP-PLAN.md](docs/MVP-PLAN.md) for M3/M4).
-- **`InfraJpaConfig`** centralizes `@EntityScan`/`@EnableJpaRepositories` on the infra package; each runnable app component-scans `io.github.ahrimjang.mail` so all share identical persistence wiring.
+- **H2 file DB (`./data/maildb`, AUTO_SERVER)** shared by api/worker/admin as the state store. Production: Postgres/RDS.
+- **RabbitMQ topology** declared in `RabbitMailConfig` (durable, JSON converter); worker listener retry 3x with backoff, then DLQ. Constants (`mail.exchange`, `mail.send.queue`, …) are shared via that class.
+- **No throttling, soft-bounce retry policy, provider-specific webhook parsers (SES/SendGrid), or Kafka event stream** yet — next candidates.
+- **`InfraJpaConfig`** centralizes `@EntityScan`/`@EnableJpaRepositories`; each app component-scans `io.github.ahrimjang.mail`.
 
 ### Adding functionality
 
-- New domain behavior → `mail-core` (define/extend a port if it needs the outside world; keep it free of Spring web/JPA imports).
-- New adapter (real mail sender, different store) → `infra`, implementing a `mail-core` port.
-- New endpoint → `mail-api` controller delegating to a `mail-core` service; if public, add its path to `SecurityConfig` `permitAll`.
-- Shared request/response shape → `mail-common` (used by both API and frontend contract).
+- New domain behavior → `mail-core` (extend a port if it needs the outside world; keep Spring web/JPA out).
+- New adapter (mail provider, store, broker) → `infra`, implementing a `mail-core` port.
+- New endpoint → `mail-api` controller delegating to a `mail-core` service; if public, add to `SecurityConfig` permitAll.
+- Shared request/response shape → `mail-common`; mirror it in `frontend/src/types.ts`.

@@ -51,12 +51,15 @@ public class MailMessageEntity {
 
     private String trackingToken;
 
+    /** Optional link to the contact this message targets (null for raw-recipient sends). */
+    private Long contactId;
+
     protected MailMessageEntity() {
     }
 
     public MailMessageEntity(Long id, Long campaignId, String recipient, MessageStatus status,
                              int attempts, String errorMessage, Instant updatedAt, String unsubToken,
-                             String trackingToken) {
+                             String trackingToken, Long contactId) {
         this.id = id;
         this.campaignId = campaignId;
         this.recipient = recipient;
@@ -66,6 +69,7 @@ public class MailMessageEntity {
         this.updatedAt = updatedAt;
         this.unsubToken = unsubToken;
         this.trackingToken = trackingToken;
+        this.contactId = contactId;
     }
 
     public Long getId() {
@@ -102,5 +106,9 @@ public class MailMessageEntity {
 
     public String getTrackingToken() {
         return trackingToken;
+    }
+
+    public Long getContactId() {
+        return contactId;
     }
 }

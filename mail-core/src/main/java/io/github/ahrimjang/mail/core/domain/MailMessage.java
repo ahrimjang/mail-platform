@@ -18,13 +18,19 @@ public class MailMessage {
     private String errorMessage;
     private String unsubToken;
     private String trackingToken;
+    private Long contactId;
     private Instant updatedAt;
 
     public MailMessage() {
     }
 
-    /** Factory for a newly enqueued, not-yet-sent message. */
+    /** Factory for a newly enqueued, not-yet-sent message with no contact link. */
     public static MailMessage queued(Long campaignId, String recipient) {
+        return queued(campaignId, recipient, null);
+    }
+
+    /** Factory for a newly enqueued, not-yet-sent message linked to a contact for personalization. */
+    public static MailMessage queued(Long campaignId, String recipient, Long contactId) {
         MailMessage m = new MailMessage();
         m.campaignId = campaignId;
         m.recipient = recipient;
@@ -32,6 +38,7 @@ public class MailMessage {
         m.attempts = 0;
         m.unsubToken = java.util.UUID.randomUUID().toString();
         m.trackingToken = java.util.UUID.randomUUID().toString();
+        m.contactId = contactId;
         m.updatedAt = Instant.now();
         return m;
     }
@@ -126,6 +133,14 @@ public class MailMessage {
 
     public void setTrackingToken(String trackingToken) {
         this.trackingToken = trackingToken;
+    }
+
+    public Long getContactId() {
+        return contactId;
+    }
+
+    public void setContactId(Long contactId) {
+        this.contactId = contactId;
     }
 
     public Instant getUpdatedAt() {

@@ -64,7 +64,7 @@ public class JpaMailMessageRepository implements MailMessageRepository {
         return new MailMessageEntity(
                 m.getId(), m.getCampaignId(), m.getRecipient(), m.getStatus(),
                 m.getAttempts(), m.getErrorMessage(), m.getUpdatedAt(), m.getUnsubToken(),
-                m.getTrackingToken());
+                m.getTrackingToken(), m.getContactId());
     }
 
     private MailMessage toDomain(MailMessageEntity e) {
@@ -78,6 +78,7 @@ public class JpaMailMessageRepository implements MailMessageRepository {
         m.setUpdatedAt(e.getUpdatedAt());
         m.setUnsubToken(e.getUnsubToken());
         m.setTrackingToken(e.getTrackingToken());
+        m.setContactId(e.getContactId());
         return m;
     }
 }

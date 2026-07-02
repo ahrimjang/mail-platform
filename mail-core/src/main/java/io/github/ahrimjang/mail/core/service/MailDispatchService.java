@@ -3,8 +3,10 @@ package io.github.ahrimjang.mail.core.service;
 import io.github.ahrimjang.mail.common.CampaignStatus;
 import io.github.ahrimjang.mail.common.MessageStatus;
 import io.github.ahrimjang.mail.core.domain.Campaign;
+import io.github.ahrimjang.mail.core.domain.Contact;
 import io.github.ahrimjang.mail.core.domain.MailMessage;
 import io.github.ahrimjang.mail.core.port.CampaignRepository;
+import io.github.ahrimjang.mail.core.port.ContactRepository;
 import io.github.ahrimjang.mail.core.port.MailMessageRepository;
 import io.github.ahrimjang.mail.core.port.MailMessageRepository.MessageCounts;
 import io.github.ahrimjang.mail.core.port.MailSender;
@@ -14,6 +16,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+
+import java.util.Map;
 
 /**
  * Sends one queued message per invocation. Invoked by the worker's queue listener.
@@ -34,6 +38,8 @@ public class MailDispatchService {
     private final MailSender sender;
     private final SuppressionRepository suppressions;
     private final TrackingRewriter trackingRewriter;
+    private final TemplateRenderer templateRenderer;
+    private final ContactRepository contacts;
     private final String baseUrl;
 
     public MailDispatchService(MailMessageRepository messages,
@@ -41,12 +47,16 @@ public class MailDispatchService {
                                MailSender sender,
                                SuppressionRepository suppressions,
                                TrackingRewriter trackingRewriter,
+                               TemplateRenderer templateRenderer,
+                               ContactRepository contacts,
                                @Value("${app.base-url:http://localhost:8080}") String baseUrl) {
         this.messages = messages;
         this.campaigns = campaigns;
         this.sender = sender;
         this.suppressions = suppressions;
         this.trackingRewriter = trackingRewriter;
+        this.templateRenderer = templateRenderer;
+        this.contacts = contacts;
         this.baseUrl = baseUrl;
     }
 
@@ -77,11 +87,19 @@ public class MailDispatchService {
             completeIfDrained(campaign.getId());
             return;
         }
-        String trackedBody = trackingRewriter.rewriteLinks(campaign.getBody(), message.getTrackingToken(), baseUrl);
+        String subject = campaign.getSubject();
+        String bodySrc = campaign.getBody();
+        Map<String, String> vars = Map.of("email", message.getRecipient());
+        if (message.getContactId() != null) {
+            vars = contacts.findById(message.getContactId()).map(Contact::toVariables).orElse(vars);
+        }
+        subject = templateRenderer.render(subject, vars);
+        bodySrc = templateRenderer.render(bodySrc, vars);
+        String trackedBody = trackingRewriter.rewriteLinks(bodySrc, message.getTrackingToken(), baseUrl);
         String html = trackedBody + unsubscribeFooter(message.getUnsubToken())
                 + trackingRewriter.openPixel(message.getTrackingToken(), baseUrl);
         try {
-            sender.send(message.getRecipient(), campaign.getSubject(), html, String.valueOf(message.getId()));
+            sender.send(message.getRecipient(), subject, html, String.valueOf(message.getId()));
             message.markSent();
         } catch (Exception e) {
             log.warn("send failed: campaign={} recipient={} reason={}",

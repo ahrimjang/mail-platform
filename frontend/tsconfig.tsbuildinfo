@@ -1,1 +1,1 @@
-{"root":["./src/app.tsx","./src/auth.tsx","./src/main.tsx","./src/vite-env.d.ts"],"version":"5.9.3"}
+{"root":["./src/app.tsx","./src/auth.tsx","./src/api.ts","./src/main.tsx","./src/types.ts","./src/vite-env.d.ts","./src/tabs/campaigns.tsx","./src/tabs/contacts.tsx","./src/tabs/lists.tsx","./src/tabs/templates.tsx"],"version":"5.9.3"}

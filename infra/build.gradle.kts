@@ -10,6 +10,9 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-mail")
     implementation("org.springframework.boot:spring-boot-starter-amqp")
 
+    // Contact attribute map <-> JSON string column serialization.
+    implementation("com.fasterxml.jackson.core:jackson-databind")
+
     // Auth adapters: password hashing + JWT.
     implementation("org.springframework.security:spring-security-crypto")
     implementation("io.jsonwebtoken:jjwt-api:0.12.6")
