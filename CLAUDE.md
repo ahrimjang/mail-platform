@@ -21,7 +21,8 @@ Requires **JDK 21**. All `bootRun` tasks run from the repo root (see `build.grad
 
 ```bash
 # Dev infra: Postgres (5432, maildb/maildb) + RabbitMQ (5672, UI 15672 guest/guest) + MailHog (SMTP 1025, UI 8025)
-docker compose up -d          # docker compose down -v to reset state + queues
+#          + OpenSearch (9200) + OpenSearch Dashboards (5601) + Fluent Bit (log shipper)
+docker compose up -d          # docker compose down -v to reset state + queues + log index
 
 # Backend services (each in its own terminal)
 ./gradlew :mail-api:bootRun       # REST API on :8080 (publishes send jobs)
@@ -94,6 +95,7 @@ Statuses: campaigns `QUEUED → SENDING → COMPLETED`; messages `PENDING → SE
 ### Conventions and POC stand-ins
 
 - **Postgres (docker compose, `maildb`)** shared by api/worker/admin as the state store (`ddl-auto: update`, no migrations tool yet — Flyway/Liquibase is a candidate before real production use). Tests use in-memory H2 (`testRuntimeOnly` only).
+- **Logging.** Each app (api/worker/admin) has a `logback-spring.xml` writing structured JSON to `./logs/{appName}.json.log` (via `logstash-logback-encoder`) in addition to the normal console. The **Fluent Bit** container tails those files (read-only host mount) and bulk-ships to **OpenSearch** (security plugin disabled — dev only) into a daily `mail-platform-logs-YYYY.MM.DD` index; browse via **OpenSearch Dashboards** (`:5601`) or `curl localhost:9200/mail-platform-logs-*/_search`. Filter/aggregate by `service.keyword` (`mail-api`/`mail-worker`/`mail-admin`) — plain `service` is analyzed text, not usable for terms aggregations.
 - **RabbitMQ topology** declared in `RabbitMailConfig` (durable, JSON converter); worker listener retry 3x with backoff, then DLQ. Constants (`mail.exchange`, `mail.send.queue`, …) are shared via that class.
 - **No throttling, soft-bounce retry policy, provider-specific webhook parsers (SES/SendGrid), or Kafka event stream** yet — next candidates.
 - **`InfraJpaConfig`** centralizes `@EntityScan`/`@EnableJpaRepositories`; each app component-scans `io.github.ahrimjang.mail`.
