@@ -5,6 +5,8 @@ import io.github.ahrimjang.mail.core.domain.MailMessage;
 import io.github.ahrimjang.mail.core.port.MailMessageRepository;
 import org.springframework.stereotype.Repository;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -40,6 +42,12 @@ public class JpaMailMessageRepository implements MailMessageRepository {
     }
 
     @Override
+    public boolean claim(Long messageId, Duration staleAfter) {
+        Instant now = Instant.now();
+        return jpa.claimPending(messageId, now, now.minus(staleAfter)) == 1;
+    }
+
+    @Override
     public Optional<MailMessage> findByUnsubToken(String token) {
         return jpa.findByUnsubToken(token).map(this::toDomain);
     }
@@ -53,11 +61,12 @@ public class JpaMailMessageRepository implements MailMessageRepository {
     public MessageCounts countByCampaign(Long campaignId) {
         long total = jpa.countByCampaignId(campaignId);
         long pending = jpa.countByCampaignIdAndStatus(campaignId, MessageStatus.PENDING);
+        long sending = jpa.countByCampaignIdAndStatus(campaignId, MessageStatus.SENDING);
         long sent = jpa.countByCampaignIdAndStatus(campaignId, MessageStatus.SENT);
         long failed = jpa.countByCampaignIdAndStatus(campaignId, MessageStatus.FAILED);
         long bounced = jpa.countByCampaignIdAndStatus(campaignId, MessageStatus.BOUNCED);
         long suppressed = jpa.countByCampaignIdAndStatus(campaignId, MessageStatus.SUPPRESSED);
-        return new MessageCounts(total, pending, sent, failed, bounced, suppressed);
+        return new MessageCounts(total, pending, sending, sent, failed, bounced, suppressed);
     }
 
     private MailMessageEntity toEntity(MailMessage m) {

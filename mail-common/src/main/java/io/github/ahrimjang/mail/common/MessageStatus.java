@@ -5,6 +5,8 @@ package io.github.ahrimjang.mail.common;
  */
 public enum MessageStatus {
     PENDING,
+    /** Claimed by a consumer and actively being sent (see MailMessageRepository#claim). */
+    SENDING,
     SENT,
     FAILED,
     BOUNCED,

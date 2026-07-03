@@ -6,7 +6,7 @@
 
 `MailDispatchService.dispatchOne`은 메시지 id 하나를 받아:
 
-1. **멱등성 체크** — 이미 처리된(PENDING이 아닌) 행이면 아무것도 안 하고 리턴. 큐가 같은 잡을 두 번 배달해도 이중 발송이 없습니다.
+1. **원자적 클레임** — DB에 조건부 UPDATE 한 방으로 "이 메시지는 내가 처리한다"를 선언. 이미 처리됐거나 다른 소비자가 지금 처리 중이면 조용히 리턴. 큐가 같은 잡을 두 번(또는 동시에 두 소비자에게) 배달해도 실제 발송은 한 번만 일어납니다.
 2. **억제(suppression) 체크** — 수신거부했거나 반송된 주소면 보내지 않고 `SUPPRESSED`로 마킹.
 3. **HTML 조립** — 개인화 변수 치환 → 링크를 클릭 추적 URL로 재작성 → 수신거부 푸터 → 오픈 픽셀 순으로 본문을 쌓습니다.
 4. **발송 + 결과 기록** — 성공이면 `SENT`, 실패면 `BOUNCED` + 해당 주소를 억제 목록에 자동 등록.
@@ -20,10 +20,12 @@
 SendJob{id} 도착 (MailSendListener → dispatchOne)
       │
       ▼
- 메시지 조회 ──없음──> 리턴
+ claim(id): UPDATE ... WHERE id=? AND (PENDING 이거나 정체된 SENDING)
       │
- PENDING? ──아니오──> 리턴 (멱등: 재배달/중복 스킵)
-      │예
+ 클레임 성공? ──아니오──> 리턴 (멱등: 재배달/동시경합 패배 스킵)
+      │예 (이제 이 행은 SENDING)
+ 메시지 조회
+      │
  캠페인 조회 ──없음──> markFailed → 저장 → 리턴
       │예
  캠페인 SENDING 전환 (첫 진행 시 1회)
@@ -36,7 +38,7 @@ SendJob{id} 도착 (MailSendListener → dispatchOne)
       │실패                                       │
  BOUNCED 마킹 + 주소를 억제 목록에 추가 ──────────┤
                                                  ▼
-                              completeIfDrained: pending==0 → 캠페인 COMPLETED
+                              completeIfDrained: pending==0 && sending==0 → 캠페인 COMPLETED
 
 [수신거부 경로]  메일 푸터의 링크 클릭
   GET /api/unsubscribe/{token} → SuppressionService → 억제 목록 저장
@@ -45,17 +47,18 @@ SendJob{id} 도착 (MailSendListener → dispatchOne)
 
 ## 3. 단계별 실제 코드
 
-### 3-1. 멱등성 가드 — 두 번 와도 한 번만 보낸다
+### 3-1. 원자적 클레임 — 두 번(또는 동시에 두 곳에) 와도 한 번만 보낸다
 
 `mail-core/src/main/java/io/github/ahrimjang/mail/core/service/MailDispatchService.java`
 ```java
     public void dispatchOne(Long messageId) {
+        if (!messages.claim(messageId, STALE_CLAIM_AFTER)) {
+            log.debug("skip: message {} already claimed/processed by another consumer", messageId);
+            return;
+        }
         MailMessage message = messages.findById(messageId).orElse(null);
         if (message == null) {
             return;
-        }
-        if (message.getStatus() != MessageStatus.PENDING) {
-            return;   // idempotency: skip redelivered/processed
         }
         Campaign campaign = campaigns.findById(message.getCampaignId()).orElse(null);
         if (campaign == null) {
@@ -66,7 +69,23 @@ SendJob{id} 도착 (MailSendListener → dispatchOne)
         markSending(campaign);
 ```
 
-RabbitMQ는 at-least-once라 같은 `SendJob`이 재배달될 수 있습니다. 그때 DB의 상태가 이미 `SENT`라면 여기서 조용히 빠져나갑니다. **진실은 큐가 아니라 DB에 있다**는 원칙의 실현입니다.
+`claim`은 `mail-core/src/main/java/io/github/ahrimjang/mail/core/port/MailMessageRepository.java`에 선언된 포트 메서드고, 실제 구현은 JPA 어댑터의 조건부 UPDATE 한 문장입니다.
+
+`infra/src/main/java/io/github/ahrimjang/mail/infra/persistence/MailMessageJpaRepository.java`
+```java
+    @Modifying
+    @Transactional
+    @Query("update MailMessageEntity m set m.status = io.github.ahrimjang.mail.common.MessageStatus.SENDING, "
+            + "m.updatedAt = :now "
+            + "where m.id = :id "
+            + "and (m.status = io.github.ahrimjang.mail.common.MessageStatus.PENDING "
+            + "or (m.status = io.github.ahrimjang.mail.common.MessageStatus.SENDING and m.updatedAt < :staleBefore))")
+    int claimPending(@Param("id") Long id, @Param("now") Instant now, @Param("staleBefore") Instant staleBefore);
+```
+
+RabbitMQ는 at-least-once라 같은 `SendJob`이 재배달될 수 있고, 재배달이 원래 소비자가 아직 처리 중일 때 도착하면(예: 느린 SMTP 응답 중 ack 타임아웃) **두 소비자가 동시에 이 UPDATE를 쏠 수** 있습니다. 이때 DB가 행 단위로 직렬화해 정확히 하나만 `WHERE`절을 통과시키고(`UPDATE 1`), 나머지는 0건(`UPDATE 0`)으로 진 채 조용히 리턴합니다 — **진실은 큐가 아니라 DB에 있고, 그 DB의 단일 조건부 UPDATE가 경합의 심판**입니다.
+
+`SENDING`으로 정체된 지 `STALE_CLAIM_AFTER`(2분)가 지난 행도 다시 클레임 대상에 포함시키는데, 이건 "소비자가 발송 도중 죽어버린" 경우를 위한 안전장치입니다 — 이게 없으면 크래시 시점에 클레임을 쥔 메시지가 영영 `SENDING`에 갇혀 재시도조차 안 됩니다.
 
 ### 3-2. 억제 체크 — 보내기 전에 명단 확인
 
@@ -136,13 +155,15 @@ RabbitMQ는 at-least-once라 같은 `SendJob`이 재배달될 수 있습니다. 
 ```java
     private void completeIfDrained(Long campaignId) {
         MessageCounts counts = messages.countByCampaign(campaignId);
-        if (counts.pending() == 0) {
+        // SENDING messages are still in flight (claimed by a concurrent dispatchOne
+        // call for this same campaign) — only PENDING+SENDING == 0 means truly drained.
+        if (counts.pending() == 0 && counts.sending() == 0) {
             campaigns.updateStatus(campaignId, CampaignStatus.COMPLETED);
         }
     }
 ```
 
-"내가 마지막 한 건이었나?"를 매번 DB 카운트로 물어봅니다. 별도의 완료 이벤트나 카운터 없이, **PENDING이 0이면 완료**라는 단순한 규칙 하나로 캠페인 상태(`QUEUED → SENDING → COMPLETED`)가 굴러갑니다.
+"내가 마지막 한 건이었나?"를 매번 DB 카운트로 물어봅니다. `PENDING`뿐 아니라 `SENDING`(다른 소비자가 지금 막 클레임해 처리 중인 행)도 0이어야 진짜 완료입니다 — 안 그러면, 같은 캠페인의 메시지 여러 건이 동시에 처리되는 도중 마지막 PENDING이 방금 SENDING으로 넘어간 그 찰나에 다른 메시지의 `completeIfDrained`가 "PENDING 0"만 보고 캠페인을 조기에 `COMPLETED`로 확정해버리는 착시가 생깁니다.
 
 ### 3-6. 수신거부 — 토큰 → 억제 목록
 
@@ -239,7 +260,9 @@ public class LoggingMailSender implements MailSender {
 
 ## 4. 설계 포인트 (왜 이렇게)
 
-- **멱등 소비자**: at-least-once 큐 앞에서는 "중복이 와도 안전한 소비자"가 정답입니다. 상태 체크(`!= PENDING → 스킵`) 하나로 해결. 단, 조회와 저장 사이에 락이 없으므로 워커 여러 대가 동시에 같은 id를 잡으면 이중 발송 여지가 있습니다(프로덕션은 `SELECT ... FOR UPDATE SKIP LOCKED` 등이 필요) — CLAUDE.md에 명시된 POC 한계입니다.
+- **멱등 소비자 + 원자적 클레임**: at-least-once 큐 앞에서는 "중복이 와도 안전한 소비자"가 정답입니다. 처음엔 상태 체크(`!= PENDING → 스킵`) 하나로 해결했지만, **조회와 저장 사이에 락이 없어** 워커 여러 대(또는 재배달)가 동시에 같은 id를 읽으면 둘 다 PENDING을 보고 둘 다 발송해버리는 이중 발송 창이 있었습니다. 지금은 `claim()`이 단일 조건부 UPDATE(`WHERE id=? AND status='PENDING'`)로 그 read-then-write 사이의 창을 없앱니다 — DB가 행 단위로 동시 UPDATE를 직렬화해주므로 정확히 하나만 이깁니다.
+  - `SELECT ... FOR UPDATE SKIP LOCKED`가 아니라 **단일 조건부 UPDATE**를 택한 이유: `FOR UPDATE SKIP LOCKED`는 "대기 중인 여러 후보 중 아직 안 잠긴 N개를 골라온다"(배치 폴링/클레임)에 어울리는 기법인데, RabbitMQ가 이미 처리할 `messageId`를 콕 집어 넘겨주는 지금 구조엔 안 맞습니다. 조건부 UPDATE는 같은 원자성 보장을 SQL 한 문장으로 주면서, 느린 SMTP 호출 동안 DB 락/커넥션을 붙들고 있을 필요도 없습니다.
+  - **잔여 한계**: 클레임에 `SENDING` 상태를 도입하면서, 소비자가 발송 도중 크래시하면 메시지가 `SENDING`에 갇힐 위험이 생겼습니다. `STALE_CLAIM_AFTER`(2분)가 지난 `SENDING` 행도 재클레임 대상에 포함시켜서 완화했지만, 크래시가 그 2분 창 안에서 재배달과 겹치면 그 안에서는 재시도되지 않습니다(POC 수준 트레이드오프 — 창을 줄이면 복구는 빨라지지만 정상 처리 중인 느린 발송을 오탐으로 재클레임할 여지가 커집니다).
 - **메시지 상태는 "전달 결과"만**: `PENDING → SENT | FAILED | BOUNCED | SUPPRESSED`. 열람/클릭은 상태가 아니라 별도 `EmailEvent`로 쌓습니다. 한 메시지가 "보내졌고 + 열렸고 + 클릭됐다"는 다차원 사실을 단일 상태로 욱여넣지 않기 위해서입니다.
 - **억제는 전역, 두 경로로 유입**: 수신거부(명시적 거절)와 반송(죽은 주소) 모두 같은 명단으로 갑니다. `reason` 필드("unsubscribe"/"bounce")로 유입 경로는 구분됩니다.
 - **발송기는 속성 하나로 교체**: `@ConditionalOnProperty` 덕분에 SES/SendGrid 어댑터를 `infra`에 추가하고 `mail.sender.type`만 바꾸면 프로덕션 발송으로 전환됩니다. core는 무변경.
@@ -270,3 +293,19 @@ curl -s http://localhost:8080/api/campaigns/2 -H "Authorization: Bearer $TOKEN"
 ```
 
 체크 포인트: ① `broken` 주소가 `bounced`로 집계되는지, ② 반송/수신거부된 주소가 **다음 캠페인에서 자동으로 `suppressed`** 되는지, ③ MailHog에서 메일 본문 맨 아래에 수신거부 푸터와 (소스 보기 시) 오픈 픽셀 `<img>` 태그가 붙어 있는지. worker 콘솔 로그에서도 `send failed: ...` 경고를 확인할 수 있습니다.
+
+### 5-1. 클레임 경합 직접 증명
+
+`claim()`이 실제로 동시 호출 중 하나만 이기는지는, PENDING인 메시지 행 하나에 **똑같은 UPDATE를 정말로 동시에** 두 번 쏴서 확인할 수 있습니다.
+
+```bash
+MID=<PENDING 상태인 mail_messages.id>
+psql -U maildb -d maildb -c "
+update mail_messages set status='SENDING', updated_at=now()
+where id=$MID and (status='PENDING' or (status='SENDING' and updated_at < now() - interval '2 minutes'));" &
+psql -U maildb -d maildb -c "
+update mail_messages set status='SENDING', updated_at=now()
+where id=$MID and (status='PENDING' or (status='SENDING' and updated_at < now() - interval '2 minutes'));" &
+wait
+# 기대 결과: 한쪽은 "UPDATE 1", 다른 쪽은 "UPDATE 0"
+```

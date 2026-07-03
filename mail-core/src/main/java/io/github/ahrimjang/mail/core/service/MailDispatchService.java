@@ -1,7 +1,6 @@
 package io.github.ahrimjang.mail.core.service;
 
 import io.github.ahrimjang.mail.common.CampaignStatus;
-import io.github.ahrimjang.mail.common.MessageStatus;
 import io.github.ahrimjang.mail.core.domain.Campaign;
 import io.github.ahrimjang.mail.core.domain.Contact;
 import io.github.ahrimjang.mail.core.domain.MailMessage;
@@ -17,6 +16,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.util.Map;
 
 /**
@@ -24,14 +24,25 @@ import java.util.Map;
  *
  * <p>One call = load the message by id, send it via the {@link MailSender}
  * port, and record the outcome. Campaigns flip to SENDING on first progress
- * and to COMPLETED once their queue is fully drained. Because the queue is
- * at-least-once, the handler is idempotent: a message that is no longer
- * PENDING is skipped.
+ * and to COMPLETED once their queue is fully drained.
+ *
+ * <p>Because the queue is at-least-once, redeliveries are expected — and because
+ * multiple consumers can race on the same messageId (redelivery landing on a
+ * different worker while the first is still mid-send), a status check alone
+ * ("skip if not PENDING") is not enough: two callers can both read PENDING
+ * before either writes back, and both send. The handler instead opens with
+ * {@link MailMessageRepository#claim}, a single atomic conditional update
+ * (PENDING -&gt; SENDING) — only one caller can win it. A claim stuck in SENDING
+ * past its staleness window is reclaimable too, so a crashed consumer's message
+ * is still recovered by the next redelivery instead of getting stuck forever.
  */
 @Service
 public class MailDispatchService {
 
     private static final Logger log = LoggerFactory.getLogger(MailDispatchService.class);
+
+    /** How long a SENDING claim is honored before it's considered abandoned (crashed consumer) and reclaimable. */
+    private static final Duration STALE_CLAIM_AFTER = Duration.ofMinutes(2);
 
     private final MailMessageRepository messages;
     private final CampaignRepository campaigns;
@@ -63,16 +74,17 @@ public class MailDispatchService {
     /**
      * Process a single queued message by id.
      *
-     * <p>Idempotent: a missing message, or one that is no longer PENDING (a
-     * redelivery or an already-processed row), is skipped without effect.
+     * <p>Idempotent: a redelivery that loses the {@link MailMessageRepository#claim}
+     * race (already claimed/processed elsewhere) is skipped without effect.
      */
     public void dispatchOne(Long messageId) {
+        if (!messages.claim(messageId, STALE_CLAIM_AFTER)) {
+            log.debug("skip: message {} already claimed/processed by another consumer", messageId);
+            return;
+        }
         MailMessage message = messages.findById(messageId).orElse(null);
         if (message == null) {
             return;
-        }
-        if (message.getStatus() != MessageStatus.PENDING) {
-            return;   // idempotency: skip redelivered/processed
         }
         Campaign campaign = campaigns.findById(message.getCampaignId()).orElse(null);
         if (campaign == null) {
@@ -125,7 +137,9 @@ public class MailDispatchService {
 
     private void completeIfDrained(Long campaignId) {
         MessageCounts counts = messages.countByCampaign(campaignId);
-        if (counts.pending() == 0) {
+        // SENDING messages are still in flight (claimed by a concurrent dispatchOne
+        // call for this same campaign) — only PENDING+SENDING == 0 means truly drained.
+        if (counts.pending() == 0 && counts.sending() == 0) {
             campaigns.updateStatus(campaignId, CampaignStatus.COMPLETED);
         }
     }
