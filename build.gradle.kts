@@ -36,9 +36,7 @@ subprojects {
         useJUnitPlatform()
     }
 
-    // Run every Spring Boot app from the repo root so the relative H2 path
-    // (./data/maildb) resolves to ONE shared file — letting mail-api and
-    // mail-worker share the same send queue during local POC runs.
+    // Run every Spring Boot app with a consistent working directory (repo root).
     tasks.withType<org.springframework.boot.gradle.tasks.run.BootRun>().configureEach {
         workingDir = rootProject.projectDir
     }

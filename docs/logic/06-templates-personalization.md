@@ -19,7 +19,7 @@
 
 ```
 [템플릿 CRUD]
-POST/PUT/GET/DELETE /api/templates ──> TemplateService ──> TemplateRepository(H2)
+POST/PUT/GET/DELETE /api/templates ──> TemplateService ──> TemplateRepository(Postgres)
 
 [캠페인 경로: 스냅샷 → 발송 시점 렌더]
 POST /api/campaigns {templateId, listId}

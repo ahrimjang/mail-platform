@@ -15,7 +15,7 @@
 ## 2. 흐름
 
 ```
- 브라우저          mail-api (CampaignService)              H2 DB                RabbitMQ              mail-worker
+ 브라우저          mail-api (CampaignService)              Postgres             RabbitMQ              mail-worker
     │ POST /api/campaigns    │                              │                      │                      │
     ├───────────────────────>│ ① campaign 저장 (QUEUED) ───>│                      │                      │
     │                        │ ② 수신자별 MailMessage 저장 ─>│ (전부 PENDING)       │                      │

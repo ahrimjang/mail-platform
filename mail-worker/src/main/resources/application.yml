@@ -4,11 +4,11 @@ spring:
   main:
     web-application-type: none
   datasource:
-    # Same shared H2 queue as mail-api (see mail-api/application.yml).
-    url: jdbc:h2:file:./data/maildb;AUTO_SERVER=TRUE;DB_CLOSE_DELAY=-1
-    driver-class-name: org.h2.Driver
-    username: sa
-    password: ""
+    # Same shared Postgres instance as mail-api (see mail-api/application.yml).
+    url: jdbc:postgresql://localhost:5432/maildb
+    driver-class-name: org.postgresql.Driver
+    username: maildb
+    password: maildb
   jpa:
     hibernate:
       ddl-auto: update

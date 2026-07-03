@@ -6,7 +6,7 @@
 
 ## 전체 아키텍처 3줄 요약
 
-1. **API는 큐에 넣고 즉시 반환, worker가 비동기로 꺼내 보낸다** — 수신자가 몇 명이든 API 응답 속도가 같다(캠페인 생성 = 상태 저장(H2) + RabbitMQ enqueue).
+1. **API는 큐에 넣고 즉시 반환, worker가 비동기로 꺼내 보낸다** — 수신자가 몇 명이든 API 응답 속도가 같다(캠페인 생성 = 상태 저장(Postgres) + RabbitMQ enqueue).
 2. **헥사고날(포트-어댑터)** — 도메인/유스케이스는 `mail-core`에만 있고, JPA·SMTP·RabbitMQ·JWT는 전부 `infra` 어댑터라서 교체(예: MailHog→SES)가 설정 한 줄이다.
 3. **발송 결과는 메시지 상태(PENDING→SENT|FAILED|BOUNCED|SUPPRESSED), 참여(오픈/클릭)는 이벤트 집계** — 상태와 이벤트를 절대 섞지 않는다.
 

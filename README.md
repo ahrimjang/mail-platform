@@ -16,13 +16,16 @@ mail-admin    어드민 콘솔 (8081) : 부팅 셸 (확장 예정)
 frontend      React + Vite (5173) : 캠페인 생성 폼 + 발송 진행률 실시간 표시
 ```
 
-큐(send queue)는 POC에서 H2 파일 DB(`./data/maildb`, `AUTO_SERVER`)로 구현해 api/worker가 한 큐를 공유합니다. 운영에서는 Postgres/RDS + 별도 MQ로 교체하는 자리입니다.
+상태 저장소는 docker compose로 띄우는 Postgres(`maildb`)이며 api/worker/admin이 공유합니다. 발송 큐는 별도로 RabbitMQ를 씁니다.
 
 ## 실행
 
 JDK 21 필요. (예: `JAVA_HOME=~/.jdks/corretto-21.x`)
 
 ```bash
+# 0) 인프라 (Postgres + RabbitMQ + MailHog)
+docker compose up -d
+
 # 1) API (8080)
 ./gradlew :mail-api:bootRun
 
@@ -32,9 +35,6 @@ JDK 21 필요. (예: `JAVA_HOME=~/.jdks/corretto-21.x`)
 # 3) 프론트엔드 (별도 터미널)
 cd frontend && npm install && npm run dev   # http://localhost:5173
 ```
-
-> 모든 bootRun은 리포지토리 루트에서 실행되도록 설정되어 있어(`build.gradle.kts`)
-> `./data/maildb` 단일 파일을 공유합니다.
 
 ### API 직접 호출
 

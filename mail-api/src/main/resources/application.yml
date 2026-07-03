@@ -2,12 +2,12 @@ spring:
   application:
     name: mail-api
   datasource:
-    # File-mode H2 in AUTO_SERVER mode so mail-api and mail-worker share one
-    # queue across processes. For the POC this stands in for Postgres/RDS.
-    url: jdbc:h2:file:./data/maildb;AUTO_SERVER=TRUE;DB_CLOSE_DELAY=-1
-    driver-class-name: org.h2.Driver
-    username: sa
-    password: ""
+    # Shared Postgres instance (docker compose) — mail-api/worker/admin all connect
+    # to the same database as the state store.
+    url: jdbc:postgresql://localhost:5432/maildb
+    driver-class-name: org.postgresql.Driver
+    username: maildb
+    password: maildb
   jpa:
     hibernate:
       ddl-auto: update
