@@ -39,7 +39,7 @@ cd frontend && npm install && npm run dev   # Vite dev server on :5173, proxies 
 cd frontend && npm run build      # tsc -b && vite build
 ```
 
-> No test classes exist yet — the test wiring (`spring-boot-starter-test`, JUnit Platform) is in place for when they're added.
+> Tests live in `mail-core/src/test` (10 classes, pure JUnit 5 + Mockito + AssertJ — no Spring context): dispatch pipeline incl. claim/personalization/completeIfDrained, campaign creation (direct/template/list), bounce handling, transactional send, renderer/tracking-rewriter, contacts/CSV import, auth, tracking/suppression. Run with `./gradlew :mail-core:test`.
 
 A full end-to-end run needs **docker compose (postgres+rabbitmq+mailhog) + mail-api + mail-worker + frontend**. To reset state: stop services, `docker compose down -v` (drops the Postgres + RabbitMQ volumes). Sent mail: `http://localhost:8025`. Queue traffic: `http://localhost:15672`. DB: `psql -h localhost -U maildb maildb` (password `maildb`).
 
