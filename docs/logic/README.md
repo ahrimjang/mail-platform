@@ -14,13 +14,14 @@
 
 | 문서 | 한 줄 소개 |
 |---|---|
-| 01 (작성 예정) | 전체 구조와 큐 파이프라인 — 캠페인 생성이 어떻게 fan-out되어 RabbitMQ를 거쳐 worker에서 발송되는가 |
-| 02 (작성 예정) | JWT 인증 — 회원가입/로그인, `SecurityConfig` + `JwtAuthFilter`, 어떤 경로가 공개인가 |
-| 03 (작성 예정) | 실발송과 억제 — SMTP(MailHog) 발송, 수신거부 토큰, suppression 리스트가 발송을 막는 지점 |
-| 04 (작성 예정) | 오픈/클릭 추적 — 1x1 픽셀, 클릭 리다이렉트, `EmailEvent` 기반 캠페인 지표 |
-| 05 (작성 예정) | 바운스 웹훅 — `POST /api/webhooks/generic` 수신 → 억제 반영 + 메시지 correlation |
+| [01-auth-jwt.md](01-auth-jwt.md) | JWT 인증 — 회원가입/로그인, `SecurityConfig` + `JwtAuthFilter`, 어떤 경로가 공개인가 |
+| [02-campaign-queue-rabbitmq.md](02-campaign-queue-rabbitmq.md) | 캠페인 생성 → Postgres 저장 → RabbitMQ 발행 → worker 소비 — 비동기 발송 파이프라인의 뼈대 |
+| [03-dispatch-suppression.md](03-dispatch-suppression.md) | dispatchOne 한 건의 일생 — 원자적 클레임(이중발송 방지), 억제 체크, HTML 조립, SENT/BOUNCED, 수신거부 |
+| [04-tracking-analytics.md](04-tracking-analytics.md) | 오픈/클릭 추적 — 1x1 픽셀, 클릭 리다이렉트, `EmailEvent` distinct 집계 기반 캠페인 지표 |
+| [05-bounce-webhook.md](05-bounce-webhook.md) | 바운스 웹훅 — `POST /api/webhooks/generic` 수신 → 억제 반영 + `X-Mail-Message-Id` correlation |
 | [06-templates-personalization.md](06-templates-personalization.md) | 템플릿 CRUD와 `{{변수}}` 렌더러 — 캠페인은 스냅샷 후 발송 시점 렌더, 트랜잭셔널은 즉시 렌더, 미리보기 |
 | [07-contacts-lists.md](07-contacts-lists.md) | 연락처(속성 JSON)·리스트·CSV 임포트 — `listId` 캠페인이 contactId를 실어 fan-out하여 개인화로 이어지는 흐름 |
+| [08-unit-tests.md](08-unit-tests.md) | 단위 테스트 가이드 — 10개 클래스 61개 테스트를 메소드별로 해설 (무엇을, 어떻게 검증하는가) |
 
 읽는 순서는 번호 순서가 곧 기능이 쌓인 순서입니다. 급하면 06 → 07만 읽어도
 "템플릿 → 리스트 타깃 → 발송 시점 개인화"라는 현재 최신 흐름을 따라갈 수 있습니다.
