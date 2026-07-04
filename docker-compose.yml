@@ -89,17 +89,35 @@ services:
       opensearch:
         condition: service_healthy
 
+  # 로그 인덱스 매핑 부트스트랩 — mail-platform-logs-* 인덱스 템플릿을 1회 등록하고 종료.
+  # serviceId/level 을 keyword, timestamp 를 date 로 고정해 logmonitor(opensearch-log-analysis-backend)
+  # 대시보드의 terms 집계/정렬이 동작하게 합니다. (service 필드는 기존 관례대로 dynamic 매핑 유지 → service.keyword)
+  opensearch-init:
+    image: curlimages/curl:8.8.0
+    container_name: opensearch-init
+    volumes:
+      - ./opensearch/index-template.json:/index-template.json:ro
+    entrypoint: ["sh", "-c",
+      "curl -sf -X PUT http://opensearch:9200/_index_template/mail-platform-logs -H 'Content-Type: application/json' --data-binary @/index-template.json"]
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    restart: "no"
+
   fluent-bit:
     image: fluent/fluent-bit:3.1
     container_name: fluent-bit
     volumes:
       - ./fluent-bit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
       - ./fluent-bit/parsers.conf:/fluent-bit/etc/parsers.conf:ro
+      - ./fluent-bit/logmonitor-compat.lua:/fluent-bit/etc/logmonitor-compat.lua:ro
       - ./logs:/var/log/mail-platform:ro          # 호스트에서 도는 앱들의 JSON 로그 (읽기전용)
       - fluent-bit-db:/fluent-bit/db               # tail 위치 추적 DB (재시작 시 중복 적재 방지)
     depends_on:
       opensearch:
         condition: service_healthy
+      opensearch-init:
+        condition: service_completed_successfully  # 첫 색인 전에 템플릿이 먼저 등록되도록
 
 volumes:
   postgres-data:
