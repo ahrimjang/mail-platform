@@ -5,28 +5,31 @@ spring:
     web-application-type: none
   datasource:
     # Same shared Postgres instance as mail-api (see mail-api/application.yml).
-    url: jdbc:postgresql://localhost:5432/maildb
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/maildb}
     driver-class-name: org.postgresql.Driver
-    username: maildb
-    password: maildb
+    username: ${DB_USERNAME:maildb}
+    password: ${DB_PASSWORD:maildb}
   jpa:
     hibernate:
       ddl-auto: update
     open-in-view: false
   mail:
-    host: localhost
-    port: 1025
+    # Dev default is MailHog; production points at the real SMTP relay.
+    host: ${SMTP_HOST:localhost}
+    port: ${SMTP_PORT:1025}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
     properties:
       mail:
         smtp:
-          auth: false
+          auth: ${SMTP_AUTH:false}
           starttls:
-            enable: false
+            enable: ${SMTP_STARTTLS:false}
   rabbitmq:
-    host: localhost
-    port: 5672
-    username: guest
-    password: guest
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
     listener:
       simple:
         prefetch: 10
@@ -37,7 +40,7 @@ spring:
           initial-interval: 2000
           multiplier: 2.0
   kafka:
-    bootstrap-servers: localhost:9092
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     producer:
       # BounceService (webhook path runs in api, but worker shares infra) publishes JSON too.
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
@@ -53,7 +56,9 @@ spring:
 
 mail:
   sender:
-    type: smtp
+    type: ${MAIL_SENDER_TYPE:smtp}
 
 app:
-  base-url: http://localhost:8080
+  # Public base URL baked into tracking/unsubscribe links — MUST be the externally
+  # reachable address in production, or recipients' opens/clicks dead-end.
+  base-url: ${APP_BASE_URL:http://localhost:8080}

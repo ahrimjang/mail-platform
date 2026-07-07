@@ -3,22 +3,23 @@ spring:
     name: mail-api
   datasource:
     # Shared Postgres instance (docker compose) — mail-api/worker/admin all connect
-    # to the same database as the state store.
-    url: jdbc:postgresql://localhost:5432/maildb
+    # to the same database as the state store. Defaults target local dev; override
+    # via environment variables in production (see .env.example).
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/maildb}
     driver-class-name: org.postgresql.Driver
-    username: maildb
-    password: maildb
+    username: ${DB_USERNAME:maildb}
+    password: ${DB_PASSWORD:maildb}
   jpa:
     hibernate:
       ddl-auto: update
     open-in-view: false
   rabbitmq:
-    host: localhost
-    port: 5672
-    username: guest
-    password: guest
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
   kafka:
-    bootstrap-servers: localhost:9092
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     producer:
       # Engagement events (open/click/bounce) go out as JSON onto mail.events.
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
@@ -29,7 +30,9 @@ server:
 
 app:
   jwt:
-    secret: "change-me-in-prod-please-use-a-long-random-secret-key-0123456789"
-    expiration-minutes: 120
+    # Dev-only fallback — production MUST set APP_JWT_SECRET (HS512 needs >= 64 bytes).
+    secret: ${APP_JWT_SECRET:dev-only-not-a-real-secret-key-0123456789-abcdefghijklmnopqrstuvwxyz}
+    expiration-minutes: ${APP_JWT_EXPIRATION_MINUTES:120}
   webhook:
-    secret: dev-webhook-secret
+    # Shared secret bounce providers must echo in X-Webhook-Token.
+    secret: ${APP_WEBHOOK_SECRET:dev-webhook-secret}

@@ -3,10 +3,10 @@ spring:
     name: mail-admin
   datasource:
     # Same shared Postgres instance as mail-api (see mail-api/application.yml).
-    url: jdbc:postgresql://localhost:5432/maildb
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/maildb}
     driver-class-name: org.postgresql.Driver
-    username: maildb
-    password: maildb
+    username: ${DB_USERNAME:maildb}
+    password: ${DB_PASSWORD:maildb}
   jpa:
     hibernate:
       ddl-auto: update
