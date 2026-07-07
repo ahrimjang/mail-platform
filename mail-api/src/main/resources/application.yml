@@ -17,6 +17,12 @@ spring:
     port: 5672
     username: guest
     password: guest
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      # Engagement events (open/click/bounce) go out as JSON onto mail.events.
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
 
 server:
   port: 8080

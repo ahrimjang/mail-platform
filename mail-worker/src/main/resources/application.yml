@@ -36,6 +36,20 @@ spring:
           max-attempts: 3
           initial-interval: 2000
           multiplier: 2.0
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      # BounceService (webhook path runs in api, but worker shares infra) publishes JSON too.
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    consumer:
+      # Projection consumer: mail.events -> email_events read model.
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: io.github.ahrimjang.mail.common
+        spring.json.value.default.type: io.github.ahrimjang.mail.common.EmailEventMessage
 
 mail:
   sender:

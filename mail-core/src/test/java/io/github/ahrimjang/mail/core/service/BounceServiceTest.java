@@ -7,7 +7,7 @@ import io.github.ahrimjang.mail.common.MessageStatus;
 import io.github.ahrimjang.mail.core.domain.EmailEvent;
 import io.github.ahrimjang.mail.core.domain.MailMessage;
 import io.github.ahrimjang.mail.core.domain.Suppression;
-import io.github.ahrimjang.mail.core.port.EmailEventRepository;
+import io.github.ahrimjang.mail.core.port.EmailEventPublisher;
 import io.github.ahrimjang.mail.core.port.MailMessageRepository;
 import io.github.ahrimjang.mail.core.port.SuppressionRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -38,7 +38,7 @@ class BounceServiceTest {
     @Mock
     private MailMessageRepository messages;
     @Mock
-    private EmailEventRepository events;
+    private EmailEventPublisher events;
 
     private BounceService service;
 
@@ -66,7 +66,7 @@ class BounceServiceTest {
         assertThat(saved.getValue().getErrorMessage()).isEqualTo("mailbox full");
 
         ArgumentCaptor<EmailEvent> event = ArgumentCaptor.forClass(EmailEvent.class);
-        verify(events).save(event.capture());
+        verify(events).publish(event.capture());
         assertThat(event.getValue().getMessageId()).isEqualTo(MESSAGE_ID);
         assertThat(event.getValue().getCampaignId()).isEqualTo(CAMPAIGN_ID);
         assertThat(event.getValue().getType()).isEqualTo(EventType.BOUNCE);

@@ -13,15 +13,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A POC/MVP for a bulk email-sending platform (a scaled-down [Notifuse](https://github.com/Notifuse/notifuse)). The defining architectural idea: **the API enqueues work and returns immediately; a separate worker drains the queue asynchronously.** This decoupling keeps the API responsive regardless of recipient-list size. Source comments are in English; the README and UI copy are in Korean.
 
-Feature set: **JWT auth**, **RabbitMQ send queue** (push-based consumer, DLQ), **real SMTP sending** (MailHog in dev) with HTML bodies, **unsubscribe + suppression**, **self-implemented open/click tracking** with per-campaign analytics, **bounce webhooks** with message correlation, **templates with `{{variable}}` personalization** (rendered per contact at send time), **transactional single-send API**, and **contacts/lists with CSV import**. Roadmap history: [docs/MVP-PLAN.md](docs/MVP-PLAN.md). **Stage-by-stage logic walkthroughs (Korean, with code snippets): [docs/logic/](docs/logic/README.md).**
+Feature set: **JWT auth**, **RabbitMQ send queue** (push-based consumer, DLQ), **Kafka engagement-event stream** (`mail.events`: open/click/bounce published by the API, projected into Postgres by the worker), **real SMTP sending** (MailHog in dev) with HTML bodies, **unsubscribe + suppression**, **self-implemented open/click tracking** with per-campaign analytics, **bounce webhooks** with message correlation, **templates with `{{variable}}` personalization** (rendered per contact at send time), **transactional single-send API**, and **contacts/lists with CSV import**. Roadmap history: [docs/MVP-PLAN.md](docs/MVP-PLAN.md). **Stage-by-stage logic walkthroughs (Korean, with code snippets): [docs/logic/](docs/logic/README.md).**
 
 ## Commands
 
 Requires **JDK 21**. All `bootRun` tasks run from the repo root (see `build.gradle.kts`) for a consistent working directory. If `JAVA_HOME` is unset, prefix Gradle with e.g. `JAVA_HOME=/c/Users/user/.jdks/corretto-21.0.11`.
 
 ```bash
-# Dev infra: Postgres (5432, maildb/maildb) + RabbitMQ (5672, UI 15672 guest/guest) + MailHog (SMTP 1025, UI 8025)
-docker compose up -d          # docker compose down -v to reset state + queues
+# Dev infra: Postgres (5432, maildb/maildb) + RabbitMQ (5672, UI 15672 guest/guest) + Kafka (9092)
+#            + MailHog (SMTP 1025, UI 8025)
+docker compose up -d          # docker compose down -v to reset state + queues + event log
 
 # Log observability stack (optional) lives in the logmonitor project, not here:
 #   cd ../opensearch-log-analysis-backend && docker compose up -d
@@ -55,23 +56,25 @@ mail-common   DTOs + enums (shared API/frontend contract). Campaign/queue: Creat
               CampaignView, SendJob, CampaignStatus, MessageStatus, EventType. Auth: Signup/Login/AuthResponse.
               Bounce: BounceType, BounceNotification. M3/M4: TemplateRequest/View, RenderedTemplate,
               ContactRequest/View, ContactListRequest/View, ImportResult, TransactionalRequest.
-mail-core     Domain + ports + use-case services. No web/JPA/AMQP.
+mail-core     Domain + ports + use-case services. No web/JPA/AMQP/Kafka.
                 · domain/  Campaign, MailMessage, User, Suppression, EmailEvent, Template, Contact, ContactList
                 · port/    CampaignRepository, MailMessageRepository, MailSender, MailQueue,
                            UserRepository, PasswordHasher, TokenService,
-                           SuppressionRepository, EmailEventRepository,
+                           SuppressionRepository, EmailEventRepository, EmailEventPublisher,
                            TemplateRepository, ContactRepository, ContactListRepository
                 · service/ CampaignService, MailDispatchService, AuthService, SuppressionService,
                            TrackingService, TrackingRewriter, BounceService,
                            TemplateRenderer, TemplateService, ContactService, ContactListService,
                            TransactionalService
 infra         Adapters: persistence/ (JPA repos incl. contact attributes as JSON via Jackson),
-              messaging/ (RabbitMailConfig topology + RabbitMailQueue publisher),
+              messaging/ (RabbitMailConfig topology + RabbitMailQueue publisher;
+              KafkaEventConfig topic + KafkaEmailEventPublisher for mail.events),
               mail/ (LoggingMailSender / SmtpMailSender), security/ (BCryptPasswordHasher, JwtTokenService).
 mail-api      Spring Boot web app (:8080). CampaignController, TemplateController, ContactController,
               ContactListController, TransactionalController, TrackingController, UnsubscribeController,
               WebhookController, HealthController, auth/ (AuthController + SecurityConfig + JwtAuthFilter).
-mail-worker   Spring Boot app, no web. MailSendListener (@RabbitListener) -> MailDispatchService.dispatchOne.
+mail-worker   Spring Boot app, no web. MailSendListener (@RabbitListener) -> MailDispatchService.dispatchOne;
+              EmailEventProjectionListener (@KafkaListener) projects mail.events -> email_events read model.
 mail-admin    Spring Boot web app (:8081). Boots but has no features yet.
 frontend      React 18 + Vite + TS. Auth gate + tabs: 캠페인 / 템플릿 / 연락처 / 리스트 (src/tabs/*).
               src/api.ts adds Bearer + handles 401; polling for live campaign metrics.
@@ -89,6 +92,7 @@ Statuses: campaigns `QUEUED → SENDING → COMPLETED`; messages `PENDING → SE
 ### Key seams and behaviors
 
 - **JWT auth.** Stateless `SecurityConfig`: `permitAll` for `/api/auth/**`, `/api/health`, `/api/unsubscribe/**`, `/api/track/**`, `/api/webhooks/**`; everything else needs a Bearer token (`JwtAuthFilter` → `TokenService`). Secrets via `app.jwt.*`. Frontend stores the token in `localStorage`.
+- **Engagement events ride Kafka.** `TrackingService`/`BounceService` publish `EmailEvent`s through the `EmailEventPublisher` port (→ `mail.events` topic, JSON `EmailEventMessage`, keyed by campaignId); the worker's `EmailEventProjectionListener` projects them into `email_events`, which `countDistinctMessages` reads for opened/clicked metrics. Delivery state (SENT/BOUNCED, suppression) stays synchronous in Postgres — only engagement facts are async. Projection is append-only and at-least-once; the distinct aggregation tolerates duplicates.
 - **Sender swappable by property.** `mail.sender.type=smtp` (worker → MailHog) vs `logging` (default, api/admin). Swap `SmtpMailSender` for SES/Sendgrid to go to production.
 - **Tracking self-implemented.** Open pixel + click redirect record `EmailEvent`s keyed by `trackingToken`. Link rewriting is regex-based (`href="http…"`, double-quoted) — known MVP limitation.
 - **Bounces.** `POST /api/webhooks/generic` (shared secret `X-Webhook-Token`, config `app.webhook.secret`) takes a normalized `BounceNotification`; HARD_BOUNCE/COMPLAINT → suppress; a supplied `messageId` (echoed from the `X-Mail-Message-Id` send header) also marks that message BOUNCED + records `EmailEvent(BOUNCE)`. Design doc: [docs/bounce-webhook-design.md](docs/bounce-webhook-design.md).
@@ -101,7 +105,7 @@ Statuses: campaigns `QUEUED → SENDING → COMPLETED`; messages `PENDING → SE
 - **Postgres (docker compose, `maildb`)** shared by api/worker/admin as the state store (`ddl-auto: update`, no migrations tool yet — Flyway/Liquibase is a candidate before real production use). Tests use in-memory H2 (`testRuntimeOnly` only).
 - **Logging.** This repo only PRODUCES logs: each app (api/worker/admin) has a `logback-spring.xml` writing structured JSON to `./logs/{appName}.json.log` (via `logstash-logback-encoder`, a `service` field per app) in addition to the normal console — harmless when nothing consumes them. Collection/indexing/dashboards belong to the **opensearch-log-analysis-backend (logmonitor)** project (`C:\sources\opensearch-log-analysis-backend`): its compose runs OpenSearch + Dashboards + Fluent Bit, which tails this repo's `./logs` (read-only mount, path overridable via `MAIL_PLATFORM_LOGS`) into daily `mail-platform-logs-YYYY.MM.DD` indices. Query tips: filter by `service.keyword`; the compat fields (`serviceId`, lowercase `level`, `timestamp`, `stackTrace`) are added by that project's Lua filter and index template.
 - **RabbitMQ topology** declared in `RabbitMailConfig` (durable, JSON converter); worker listener retry 3x with backoff, then DLQ. Constants (`mail.exchange`, `mail.send.queue`, …) are shared via that class.
-- **No throttling, soft-bounce retry policy, provider-specific webhook parsers (SES/SendGrid), or Kafka event stream** yet — next candidates.
+- **No throttling, soft-bounce retry policy, or provider-specific webhook parsers (SES/SendGrid)** yet — next candidates.
 - **`InfraJpaConfig`** centralizes `@EntityScan`/`@EnableJpaRepositories`; each app component-scans `io.github.ahrimjang.mail`.
 
 ### Adding functionality

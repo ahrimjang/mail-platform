@@ -3,7 +3,7 @@ package io.github.ahrimjang.mail.core.service;
 import io.github.ahrimjang.mail.common.EventType;
 import io.github.ahrimjang.mail.core.domain.EmailEvent;
 import io.github.ahrimjang.mail.core.domain.MailMessage;
-import io.github.ahrimjang.mail.core.port.EmailEventRepository;
+import io.github.ahrimjang.mail.core.port.EmailEventPublisher;
 import io.github.ahrimjang.mail.core.port.MailMessageRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -27,7 +27,7 @@ class TrackingServiceTest {
     private MailMessageRepository messages;
 
     @Mock
-    private EmailEventRepository events;
+    private EmailEventPublisher events;
 
     private TrackingService service;
 
@@ -49,7 +49,7 @@ class TrackingServiceTest {
         service.recordOpen("tok");
 
         ArgumentCaptor<EmailEvent> captor = ArgumentCaptor.forClass(EmailEvent.class);
-        verify(events).save(captor.capture());
+        verify(events).publish(captor.capture());
         EmailEvent saved = captor.getValue();
         assertThat(saved.getMessageId()).isEqualTo(11L);
         assertThat(saved.getCampaignId()).isEqualTo(5L);
@@ -64,7 +64,7 @@ class TrackingServiceTest {
         service.recordClick("tok", "https://example.com/promo");
 
         ArgumentCaptor<EmailEvent> captor = ArgumentCaptor.forClass(EmailEvent.class);
-        verify(events).save(captor.capture());
+        verify(events).publish(captor.capture());
         EmailEvent saved = captor.getValue();
         assertThat(saved.getType()).isEqualTo(EventType.CLICK);
         assertThat(saved.getUrl()).isEqualTo("https://example.com/promo");
@@ -78,7 +78,7 @@ class TrackingServiceTest {
 
         service.recordOpen("nope");
 
-        verify(events, never()).save(any());
+        verify(events, never()).publish(any());
     }
 
     @Test
@@ -87,6 +87,6 @@ class TrackingServiceTest {
 
         service.recordClick("nope", "https://example.com");
 
-        verify(events, never()).save(any());
+        verify(events, never()).publish(any());
     }
 }

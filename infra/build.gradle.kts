@@ -9,6 +9,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     implementation("org.springframework.boot:spring-boot-starter-mail")
     implementation("org.springframework.boot:spring-boot-starter-amqp")
+    implementation("org.springframework.kafka:spring-kafka")
 
     // Contact attribute map <-> JSON string column serialization.
     implementation("com.fasterxml.jackson.core:jackson-databind")

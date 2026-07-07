@@ -1,17 +1,18 @@
-# 로컬 개발 인프라 (앱 제외) — Postgres + RabbitMQ + MailHog
+# 로컬 개발 인프라 (앱 제외) — Postgres + RabbitMQ + Kafka + MailHog
 #
 # 우리 Spring 앱(mail-api/worker/admin)은 여기 없습니다. 앱은 ./gradlew bootRun 으로 직접 실행하고,
 # 이 파일은 그 앱들이 의존하는 "핵심 외부 서버"만 기성 이미지로 띄웁니다:
-#   상태 저장소(Postgres) + 발송 작업큐(RabbitMQ) + 개발용 SMTP(MailHog)
+#   상태 저장소(Postgres) + 발송 작업큐(RabbitMQ) + 이벤트 스트림(Kafka) + 개발용 SMTP(MailHog)
 # 로그 관측 스택(OpenSearch/Dashboards/Fluent Bit)은 감시하는 쪽 프로젝트
 # (../opensearch-log-analysis-backend)의 compose 가 소유합니다 — 여기 앱들은 ./logs 에 파일만 씁니다.
 #
 #   실행:  docker compose up -d
 #   중지:  docker compose down          (데이터 유지)
-#   초기화: docker compose down -v       (Postgres/RabbitMQ 볼륨까지 삭제 — 전체 리셋)
+#   초기화: docker compose down -v       (Postgres/RabbitMQ/Kafka 볼륨까지 삭제 — 전체 리셋)
 #
 #   Postgres         : localhost:5432  (maildb / maildb / maildb)
 #   RabbitMQ 관리 UI : http://localhost:15672   (guest / guest)
+#   Kafka            : localhost:9092  (mail.events 토픽 — 오픈/클릭/바운스 이벤트 스트림)
 #   MailHog 받은편지함: http://localhost:8025
 
 services:
@@ -49,6 +50,35 @@ services:
       timeout: 5s
       retries: 5
 
+  # 참여 이벤트(오픈/클릭/바운스) 스트림 — RabbitMQ(작업큐: 1회 소비/ack/DLQ)와 역할이 다릅니다.
+  # Kafka 는 append-only 로그라 여러 소비자가 각자 오프셋으로 재생(replay)할 수 있습니다.
+  # 단일 노드 KRaft(주키퍼 없음), 앱이 호스트에서 돌므로 localhost:9092 로 광고합니다.
+  kafka:
+    image: apache/kafka:3.8.1
+    container_name: kafka
+    ports:
+      - "9092:9092"      # 앱(mail-api 발행 / mail-worker 프로젝션 소비)이 접속
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    volumes:
+      - kafka-data:/var/lib/kafka/data   # 이벤트 로그가 재시작 후에도 유지되도록
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+
   mailhog:
     image: mailhog/mailhog
     container_name: mailhog
@@ -60,3 +90,4 @@ services:
 volumes:
   postgres-data:
   rabbitmq-data:
+  kafka-data:
