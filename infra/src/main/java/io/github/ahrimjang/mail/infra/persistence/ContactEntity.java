@@ -5,7 +5,6 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 
 import java.time.Instant;
@@ -26,7 +25,7 @@ public class ContactEntity {
     private String lastName;
 
     /** Free-form contact attributes serialized as a JSON object string. */
-    @Lob
+    @Column(columnDefinition = "text")
     private String attributesJson;
 
     @Column(nullable = false)

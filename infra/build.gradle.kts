@@ -11,6 +11,10 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-amqp")
     implementation("org.springframework.kafka:spring-kafka")
 
+    // Schema migrations (db/migration/V*.sql) — replaces ddl-auto: update.
+    implementation("org.flywaydb:flyway-core")
+    runtimeOnly("org.flywaydb:flyway-database-postgresql")
+
     // Contact attribute map <-> JSON string column serialization.
     implementation("com.fasterxml.jackson.core:jackson-databind")
 

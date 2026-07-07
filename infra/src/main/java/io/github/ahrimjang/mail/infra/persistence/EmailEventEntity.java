@@ -8,7 +8,6 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 
 import java.time.Instant;
@@ -31,7 +30,7 @@ public class EmailEventEntity {
     @Column(length = 16)
     private EventType type;
 
-    @Lob
+    @Column(columnDefinition = "text")
     private String url;
 
     @Column(nullable = false)

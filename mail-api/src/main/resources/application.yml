@@ -11,7 +11,7 @@ spring:
     password: ${DB_PASSWORD:maildb}
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate   # schema is owned by Flyway (infra: db/migration)
     open-in-view: false
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
