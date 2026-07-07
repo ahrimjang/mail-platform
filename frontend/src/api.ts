@@ -8,7 +8,8 @@ export async function api(path: string, init?: RequestInit): Promise<Response> {
   const token = localStorage.getItem("mail.token");
   const headers: Record<string, string> = {
     ...(token ? { Authorization: "Bearer " + token } : {}),
-    "Content-Type": "application/json",
+    // FormData must set its own multipart boundary — don't force JSON on it.
+    ...(init?.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
     ...((init?.headers as Record<string, string>) ?? {}),
   };
   const res = await fetch(path, { ...init, headers });

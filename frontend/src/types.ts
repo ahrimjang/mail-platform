@@ -1,5 +1,30 @@
 export type CampaignStatus = "DRAFT" | "QUEUED" | "SENDING" | "COMPLETED";
 
+export type MessageStatus =
+  | "PENDING"
+  | "SENDING"
+  | "SENT"
+  | "FAILED"
+  | "BOUNCED"
+  | "SUPPRESSED";
+
+// One per-recipient delivery row (drill-down feed).
+export interface MessageView {
+  id: number;
+  recipient: string;
+  status: MessageStatus;
+  errorMessage: string | null;
+  updatedAt: string;
+}
+
+// One aggregated send-log row: N deliveries that hit `status` in the same time bucket.
+export interface SendLogEntry {
+  time: string;
+  status: MessageStatus;
+  count: number;
+  detail: string | null; // representative failure reason for FAILED/BOUNCED buckets
+}
+
 export interface CampaignView {
   id: number;
   subject: string;
@@ -13,6 +38,9 @@ export interface CampaignView {
   opened: number;
   clicked: number;
   createdAt: string;
+  senderName: string | null; // From display name (null = SMTP default)
+  senderEmail: string | null; // From address (null = SMTP default)
+  scheduledAt: string | null; // requested send time; null = immediate
 }
 
 export interface TemplateView {
@@ -49,4 +77,18 @@ export interface ContactListView {
 export interface ImportResult {
   imported: number;
   skipped: number;
+}
+
+export interface SubscriptionView {
+  suppressed: boolean;
+  reason: string | null;
+  since: string | null;
+}
+
+export interface UpdateContactListsRequest {
+  listIds: number[];
+}
+
+export interface UpdateSubscriptionRequest {
+  suppressed: boolean;
 }
