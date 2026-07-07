@@ -20,6 +20,36 @@ public interface MailMessageJpaRepository extends JpaRepository<MailMessageEntit
 
     Optional<MailMessageEntity> findByTrackingToken(String trackingToken);
 
+    /** Ids only — a scheduled release just needs something to enqueue, not full rows. */
+    @Query("select m.id from MailMessageEntity m where m.campaignId = :campaignId "
+            + "and m.status = io.github.ahrimjang.mail.common.MessageStatus.PENDING")
+    java.util.List<Long> findPendingIdsByCampaignId(@Param("campaignId") Long campaignId);
+
+    /** Send-log feed: latest state changes first (id breaks ties within the same instant). */
+    java.util.List<MailMessageEntity> findByCampaignIdOrderByUpdatedAtDescIdDesc(
+            Long campaignId, org.springframework.data.domain.Pageable pageable);
+
+    /**
+     * Grouped send log: collapse state changes into fixed time buckets per status,
+     * newest bucket first. Aggregation happens in the database so the result stays
+     * small for arbitrarily large campaigns. Columns: bucket(long), status(text),
+     * cnt(long), sample_error(text|null).
+     */
+    @Query(value = """
+            select floor(extract(epoch from m.updated_at) / :bucketSeconds) as bucket,
+                   m.status as status,
+                   count(*) as cnt,
+                   min(m.error_message) as sample_error
+            from mail_messages m
+            where m.campaign_id = :campaignId
+            group by bucket, m.status
+            order by bucket desc, m.status
+            limit :limit
+            """, nativeQuery = true)
+    java.util.List<Object[]> aggregateLogByCampaign(@Param("campaignId") Long campaignId,
+                                                    @Param("bucketSeconds") int bucketSeconds,
+                                                    @Param("limit") int limit);
+
     /**
      * Single conditional UPDATE — the row-level lock Postgres takes while evaluating
      * this statement is what makes the claim atomic; a concurrent caller targeting the

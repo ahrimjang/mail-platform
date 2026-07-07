@@ -24,6 +24,11 @@ spring:
       # Engagement events (open/click/bounce) go out as JSON onto mail.events.
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+  servlet:
+    multipart:
+      # Template image uploads (UploadService re-validates at 5MB).
+      max-file-size: 5MB
+      max-request-size: 6MB
 
 server:
   port: 8080
@@ -36,3 +41,6 @@ app:
   webhook:
     # Shared secret bounce providers must echo in X-Webhook-Token.
     secret: ${APP_WEBHOOK_SECRET:dev-webhook-secret}
+  uploads:
+    # Local template-image storage; served publicly at /uploads/**.
+    dir: ${APP_UPLOADS_DIR:uploads}

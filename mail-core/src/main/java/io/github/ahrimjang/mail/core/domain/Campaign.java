@@ -6,6 +6,11 @@ import java.time.Instant;
 
 /**
  * Domain model of a bulk-mail campaign. Pure POJO — no JPA / framework concerns.
+ *
+ * <p>{@code senderName}/{@code senderEmail} override the SMTP default From when
+ * present. {@code scheduledAt} marks a deferred campaign; {@code enqueuedAt}
+ * records when its messages were released to the send queue (null = not yet —
+ * the worker's scheduler claims and releases due campaigns exactly once).
  */
 public class Campaign {
 
@@ -14,6 +19,10 @@ public class Campaign {
     private String body;
     private CampaignStatus status;
     private Instant createdAt;
+    private String senderName;
+    private String senderEmail;
+    private Instant scheduledAt;
+    private Instant enqueuedAt;
 
     public Campaign() {
     }
@@ -66,5 +75,37 @@ public class Campaign {
 
     public void setCreatedAt(Instant createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public String getSenderName() {
+        return senderName;
+    }
+
+    public void setSenderName(String senderName) {
+        this.senderName = senderName;
+    }
+
+    public String getSenderEmail() {
+        return senderEmail;
+    }
+
+    public void setSenderEmail(String senderEmail) {
+        this.senderEmail = senderEmail;
+    }
+
+    public Instant getScheduledAt() {
+        return scheduledAt;
+    }
+
+    public void setScheduledAt(Instant scheduledAt) {
+        this.scheduledAt = scheduledAt;
+    }
+
+    public Instant getEnqueuedAt() {
+        return enqueuedAt;
+    }
+
+    public void setEnqueuedAt(Instant enqueuedAt) {
+        this.enqueuedAt = enqueuedAt;
     }
 }

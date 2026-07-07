@@ -5,6 +5,7 @@ import io.github.ahrimjang.mail.core.domain.Campaign;
 import io.github.ahrimjang.mail.core.port.CampaignRepository;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -45,8 +46,19 @@ public class JpaCampaignRepository implements CampaignRepository {
         });
     }
 
+    @Override
+    public List<Campaign> findDueForEnqueue(Instant now) {
+        return jpa.findDueForEnqueue(now).stream().map(this::toDomain).toList();
+    }
+
+    @Override
+    public boolean claimForEnqueue(Long id, Instant now) {
+        return jpa.claimForEnqueue(id, now) == 1;
+    }
+
     private CampaignEntity toEntity(Campaign c) {
-        return new CampaignEntity(c.getId(), c.getSubject(), c.getBody(), c.getStatus(), c.getCreatedAt());
+        return new CampaignEntity(c.getId(), c.getSubject(), c.getBody(), c.getStatus(), c.getCreatedAt(),
+                c.getSenderName(), c.getSenderEmail(), c.getScheduledAt(), c.getEnqueuedAt());
     }
 
     private Campaign toDomain(CampaignEntity e) {
@@ -56,6 +68,10 @@ public class JpaCampaignRepository implements CampaignRepository {
         c.setBody(e.getBody());
         c.setStatus(e.getStatus());
         c.setCreatedAt(e.getCreatedAt());
+        c.setSenderName(e.getSenderName());
+        c.setSenderEmail(e.getSenderEmail());
+        c.setScheduledAt(e.getScheduledAt());
+        c.setEnqueuedAt(e.getEnqueuedAt());
         return c;
     }
 }

@@ -64,6 +64,34 @@ public class JpaContactListRepository implements ContactListRepository {
         return memberships.countByListId(listId);
     }
 
+    @Override
+    public List<Long> findListIdsByContactId(Long contactId) {
+        return memberships.findByContactIdOrderByListId(contactId).stream()
+                .map(ListMembershipEntity::getListId)
+                .toList();
+    }
+
+    @Override
+    @Transactional
+    public void replaceMembershipsForContact(Long contactId, List<Long> listIds) {
+        // Diff-based replace: only delete what left and insert what's new.
+        // A naive wipe-and-reinsert breaks here — Hibernate flushes INSERTs before
+        // the deferred derived DELETEs, so re-inserting a kept membership collides
+        // with its not-yet-deleted row on uk_list_memberships.
+        java.util.Set<Long> target = new java.util.HashSet<>(listIds);
+        java.util.Set<Long> current = new java.util.HashSet<>(findListIdsByContactId(contactId));
+        for (Long listId : current) {
+            if (!target.contains(listId)) {
+                memberships.deleteByListIdAndContactId(listId, contactId);
+            }
+        }
+        for (Long listId : target) {
+            if (!current.contains(listId)) {
+                memberships.save(new ListMembershipEntity(null, listId, contactId));
+            }
+        }
+    }
+
     private ContactListEntity toEntity(ContactList l) {
         return new ContactListEntity(l.getId(), l.getName(), l.getDescription(), l.getCreatedAt());
     }

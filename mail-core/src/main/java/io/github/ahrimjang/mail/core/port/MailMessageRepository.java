@@ -36,6 +36,24 @@ public interface MailMessageRepository {
     /** Aggregate per-status counts for one campaign. */
     MessageCounts countByCampaign(Long campaignId);
 
+    /** Ids of a campaign's PENDING messages — what a scheduled release enqueues. */
+    List<Long> findPendingIdsByCampaign(Long campaignId);
+
+    /** Most recently updated messages of a campaign (per-recipient drill-down), newest first. */
+    List<MailMessage> findRecentByCampaign(Long campaignId, int limit);
+
+    /**
+     * Send log aggregated into fixed time buckets: one row per (bucket, status)
+     * with a count, newest bucket first. The database does the grouping so the
+     * feed stays bounded no matter how many recipients a campaign has.
+     */
+    List<SendLogBucket> aggregateLogByCampaign(Long campaignId, int bucketSeconds, int limit);
+
+    /** One aggregated bucket row; {@code sampleError} carries a representative failure reason. */
+    record SendLogBucket(java.time.Instant bucketStart, io.github.ahrimjang.mail.common.MessageStatus status,
+                         long count, String sampleError) {
+    }
+
     /** Look up a message by its per-message unsubscribe token. */
     Optional<MailMessage> findByUnsubToken(String token);
 

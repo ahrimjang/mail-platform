@@ -44,6 +44,7 @@ bin/
 ### Project runtime / build output ###
 /data/
 /logs/
+/uploads/
 frontend/node_modules/
 frontend/dist/
 # 실제 환경변수 값 (배포용 — .env.example 참고)

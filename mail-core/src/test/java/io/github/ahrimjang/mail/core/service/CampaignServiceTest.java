@@ -23,6 +23,8 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Optional;
@@ -99,7 +101,7 @@ class CampaignServiceTest {
         stubViewCounts(2, 2);
 
         CampaignView view = service.create(new CreateCampaignRequest(
-                "Hello", "<p>Hi there</p>", List.of("a@example.com", "b@example.com"), null, null));
+                "Hello", "<p>Hi there</p>", List.of("a@example.com", "b@example.com"), null, null, null, null, null));
 
         ArgumentCaptor<Campaign> campaignCaptor = ArgumentCaptor.forClass(Campaign.class);
         verify(campaigns).save(campaignCaptor.capture());
@@ -132,7 +134,7 @@ class CampaignServiceTest {
         stubViewCounts(2, 2);
 
         service.create(new CreateCampaignRequest(
-                "Hello", "<p>Hi</p>", List.of("a@example.com", "b@example.com"), null, null));
+                "Hello", "<p>Hi</p>", List.of("a@example.com", "b@example.com"), null, null, null, null, null));
 
         verify(mailQueue).enqueue(100L);
         verify(mailQueue).enqueue(101L);
@@ -149,7 +151,7 @@ class CampaignServiceTest {
 
         // Direct subject/body must be ignored when templateId is present.
         service.create(new CreateCampaignRequest(
-                "ignored subject", "ignored body", List.of("a@example.com"), 7L, null));
+                "ignored subject", "ignored body", List.of("a@example.com"), 7L, null, null, null, null));
 
         ArgumentCaptor<Campaign> captor = ArgumentCaptor.forClass(Campaign.class);
         verify(campaigns).save(captor.capture());
@@ -162,7 +164,7 @@ class CampaignServiceTest {
         when(templates.findById(99L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.create(new CreateCampaignRequest(
-                null, null, List.of("a@example.com"), 99L, null)))
+                null, null, List.of("a@example.com"), 99L, null, null, null, null)))
                 .isInstanceOf(NoSuchElementException.class)
                 .hasMessageContaining("99");
 
@@ -180,7 +182,7 @@ class CampaignServiceTest {
         stubMessageSaveAllAssigningIds();
         stubViewCounts(2, 2);
 
-        service.create(new CreateCampaignRequest("Subject", "<p>Body</p>", null, null, 5L));
+        service.create(new CreateCampaignRequest("Subject", "<p>Body</p>", null, null, 5L, null, null, null));
 
         List<MailMessage> queued = capturedSavedMessages();
         assertThat(queued).hasSize(2);
@@ -199,7 +201,7 @@ class CampaignServiceTest {
         when(contacts.findByListId(5L)).thenReturn(List.of());
 
         assertThatThrownBy(() -> service.create(new CreateCampaignRequest(
-                "Subject", "<p>Body</p>", null, null, 5L)))
+                "Subject", "<p>Body</p>", null, null, 5L, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("5");
 
@@ -210,11 +212,11 @@ class CampaignServiceTest {
     @Test
     void create_withBlankSubjectOrBodyAndNoTemplate_throwsIllegalArgument() {
         assertThatThrownBy(() -> service.create(new CreateCampaignRequest(
-                "  ", "<p>Body</p>", List.of("a@example.com"), null, null)))
+                "  ", "<p>Body</p>", List.of("a@example.com"), null, null, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class);
 
         assertThatThrownBy(() -> service.create(new CreateCampaignRequest(
-                "Subject", null, List.of("a@example.com"), null, null)))
+                "Subject", null, List.of("a@example.com"), null, null, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class);
 
         // Validation happens before any persistence or queueing.
@@ -222,15 +224,133 @@ class CampaignServiceTest {
     }
 
     @Test
+    void recentMessages_mapsRowsAndCapsLimit() {
+        Campaign existing = Campaign.draft("Hello", "<p>Hi</p>");
+        existing.setId(CAMPAIGN_ID);
+        when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(existing));
+        MailMessage m = MailMessage.queued(CAMPAIGN_ID, "a@example.com");
+        m.setId(100L);
+        m.markSent();
+        when(messages.findRecentByCampaign(CAMPAIGN_ID, 200)).thenReturn(List.of(m));
+
+        // limit above the cap is clamped to 200 before hitting the port
+        var log = service.recentMessages(CAMPAIGN_ID, 5000);
+
+        assertThat(log).hasSize(1);
+        assertThat(log.get(0).id()).isEqualTo(100L);
+        assertThat(log.get(0).recipient()).isEqualTo("a@example.com");
+        assertThat(log.get(0).status()).isEqualTo(MessageStatus.SENT);
+        assertThat(log.get(0).updatedAt()).isNotNull();
+    }
+
+    @Test
+    void sendLog_mapsBucketsAndClampsParams() {
+        Campaign existing = Campaign.draft("Hello", "<p>Hi</p>");
+        existing.setId(CAMPAIGN_ID);
+        when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(existing));
+        Instant bucket = Instant.parse("2026-07-07T12:00:00Z");
+        when(messages.aggregateLogByCampaign(CAMPAIGN_ID, 3600, 200)).thenReturn(List.of(
+                new MailMessageRepository.SendLogBucket(bucket, MessageStatus.SENT, 480, null),
+                new MailMessageRepository.SendLogBucket(bucket, MessageStatus.BOUNCED, 3, "mailbox full")));
+
+        // bucketSeconds above 3600 and limit above 200 are clamped before the port call
+        var log = service.sendLog(CAMPAIGN_ID, 99999, 5000);
+
+        assertThat(log).hasSize(2);
+        assertThat(log.get(0).time()).isEqualTo(bucket);
+        assertThat(log.get(0).status()).isEqualTo(MessageStatus.SENT);
+        assertThat(log.get(0).count()).isEqualTo(480);
+        assertThat(log.get(0).detail()).isNull();
+        assertThat(log.get(1).count()).isEqualTo(3);
+        assertThat(log.get(1).detail()).isEqualTo("mailbox full");
+    }
+
+    @Test
+    void sendLog_unknownCampaign_throwsNoSuchElement() {
+        when(campaigns.findById(999L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.sendLog(999L, 10, 50))
+                .isInstanceOf(NoSuchElementException.class)
+                .hasMessageContaining("999");
+        verifyNoInteractions(messages);
+    }
+
+    @Test
+    void recentMessages_unknownCampaign_throwsNoSuchElement() {
+        when(campaigns.findById(999L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.recentMessages(999L, 50))
+                .isInstanceOf(NoSuchElementException.class)
+                .hasMessageContaining("999");
+        verifyNoInteractions(messages);
+    }
+
+    @Test
+    void create_withSenderFields_storesThemOnTheCampaignAndView() {
+        stubCampaignSaveAssigningId();
+        stubMessageSaveAllAssigningIds();
+        stubViewCounts(1, 1);
+
+        CampaignView view = service.create(new CreateCampaignRequest(
+                "Hello", "<p>Hi</p>", List.of("a@example.com"), null, null,
+                "Acme 팀", "hello@acme.io", null));
+
+        ArgumentCaptor<Campaign> captor = ArgumentCaptor.forClass(Campaign.class);
+        verify(campaigns).save(captor.capture());
+        assertThat(captor.getValue().getSenderName()).isEqualTo("Acme 팀");
+        assertThat(captor.getValue().getSenderEmail()).isEqualTo("hello@acme.io");
+        assertThat(view.senderName()).isEqualTo("Acme 팀");
+        assertThat(view.senderEmail()).isEqualTo("hello@acme.io");
+    }
+
+    @Test
+    void create_withFutureScheduledAt_persistsMessagesButDefersEnqueue() {
+        stubCampaignSaveAssigningId();
+        stubMessageSaveAllAssigningIds();
+        stubViewCounts(2, 2);
+        Instant later = Instant.now().plus(1, ChronoUnit.HOURS);
+
+        CampaignView view = service.create(new CreateCampaignRequest(
+                "Hello", "<p>Hi</p>", List.of("a@example.com", "b@example.com"), null, null,
+                null, null, later));
+
+        // Messages are persisted as PENDING for the scheduler to release later...
+        assertThat(capturedSavedMessages()).hasSize(2);
+        ArgumentCaptor<Campaign> captor = ArgumentCaptor.forClass(Campaign.class);
+        verify(campaigns).save(captor.capture());
+        assertThat(captor.getValue().getScheduledAt()).isEqualTo(later);
+        assertThat(captor.getValue().getEnqueuedAt()).isNull();
+        assertThat(view.scheduledAt()).isEqualTo(later);
+        // ...but nothing is published to the queue yet.
+        verifyNoInteractions(mailQueue);
+    }
+
+    @Test
+    void create_withPastScheduledAt_sendsImmediately() {
+        stubCampaignSaveAssigningId();
+        stubMessageSaveAllAssigningIds();
+        stubViewCounts(1, 1);
+
+        service.create(new CreateCampaignRequest(
+                "Hello", "<p>Hi</p>", List.of("a@example.com"), null, null,
+                null, null, Instant.now().minus(1, ChronoUnit.MINUTES)));
+
+        ArgumentCaptor<Campaign> captor = ArgumentCaptor.forClass(Campaign.class);
+        verify(campaigns).save(captor.capture());
+        assertThat(captor.getValue().getEnqueuedAt()).isNotNull();
+        verify(mailQueue).enqueue(100L);
+    }
+
+    @Test
     void create_withEmptyRecipientsAndNoListId_throwsIllegalArgument() {
         stubCampaignSaveAssigningId();
 
         assertThatThrownBy(() -> service.create(new CreateCampaignRequest(
-                "Subject", "<p>Body</p>", List.of(), null, null)))
+                "Subject", "<p>Body</p>", List.of(), null, null, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class);
 
         assertThatThrownBy(() -> service.create(new CreateCampaignRequest(
-                "Subject", "<p>Body</p>", null, null, null)))
+                "Subject", "<p>Body</p>", null, null, null, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class);
 
         verify(messages, never()).saveAll(anyList());

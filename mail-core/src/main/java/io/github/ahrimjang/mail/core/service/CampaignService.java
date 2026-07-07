@@ -4,6 +4,8 @@ import io.github.ahrimjang.mail.common.CampaignStatus;
 import io.github.ahrimjang.mail.common.CampaignView;
 import io.github.ahrimjang.mail.common.CreateCampaignRequest;
 import io.github.ahrimjang.mail.common.EventType;
+import io.github.ahrimjang.mail.common.MessageView;
+import io.github.ahrimjang.mail.common.SendLogEntry;
 import io.github.ahrimjang.mail.core.domain.Campaign;
 import io.github.ahrimjang.mail.core.domain.Contact;
 import io.github.ahrimjang.mail.core.domain.MailMessage;
@@ -17,6 +19,7 @@ import io.github.ahrimjang.mail.core.port.MailQueue;
 import io.github.ahrimjang.mail.core.port.TemplateRepository;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.NoSuchElementException;
 
@@ -65,8 +68,18 @@ public class CampaignService {
             throw new IllegalArgumentException("subject and body are required (direct or via template)");
         }
 
+        // A future scheduledAt defers the queue release; null or past sends now.
+        Instant now = Instant.now();
+        boolean deferred = request.scheduledAt() != null && request.scheduledAt().isAfter(now);
+
         Campaign campaign = Campaign.draft(subject, body);
         campaign.setStatus(CampaignStatus.QUEUED);
+        campaign.setSenderName(blankToNull(request.senderName()));
+        campaign.setSenderEmail(blankToNull(request.senderEmail()));
+        campaign.setScheduledAt(request.scheduledAt());
+        // Immediate campaigns are released right here; scheduled ones keep
+        // enqueuedAt null so the worker's scheduler claims them when due.
+        campaign.setEnqueuedAt(deferred ? null : now);
         Campaign saved = campaigns.save(campaign);
 
         List<MailMessage> queued;
@@ -87,9 +100,15 @@ public class CampaignService {
                     .toList();
         }
         List<MailMessage> savedMessages = messages.saveAll(queued);
-        savedMessages.forEach(m -> mailQueue.enqueue(m.getId()));
+        if (!deferred) {
+            savedMessages.forEach(m -> mailQueue.enqueue(m.getId()));
+        }
 
         return toView(saved);
+    }
+
+    private static String blankToNull(String s) {
+        return s == null || s.isBlank() ? null : s.trim();
     }
 
     public CampaignView get(Long id) {
@@ -101,6 +120,32 @@ public class CampaignService {
     public List<CampaignView> list() {
         return campaigns.findAll().stream()
                 .map(this::toView)
+                .toList();
+    }
+
+    /** Recent per-recipient deliveries of a campaign, newest first (drill-down feed). */
+    public List<MessageView> recentMessages(Long campaignId, int limit) {
+        campaigns.findById(campaignId)
+                .orElseThrow(() -> new NoSuchElementException("campaign not found: " + campaignId));
+        int capped = Math.max(1, Math.min(limit, 200));
+        return messages.findRecentByCampaign(campaignId, capped).stream()
+                .map(m -> new MessageView(m.getId(), m.getRecipient(), m.getStatus(),
+                        m.getErrorMessage(), m.getUpdatedAt()))
+                .toList();
+    }
+
+    /**
+     * Aggregated send log: state changes grouped into fixed time buckets per status
+     * ("N sent", "M bounced — reason"), newest first. Bounded output regardless of
+     * campaign size — this is what the detail page renders.
+     */
+    public List<SendLogEntry> sendLog(Long campaignId, int bucketSeconds, int limit) {
+        campaigns.findById(campaignId)
+                .orElseThrow(() -> new NoSuchElementException("campaign not found: " + campaignId));
+        int bucket = Math.max(1, Math.min(bucketSeconds, 3600));
+        int capped = Math.max(1, Math.min(limit, 200));
+        return messages.aggregateLogByCampaign(campaignId, bucket, capped).stream()
+                .map(b -> new SendLogEntry(b.bucketStart(), b.status(), b.count(), b.sampleError()))
                 .toList();
     }
 
@@ -120,7 +165,10 @@ public class CampaignService {
                 counts.suppressed(),
                 opened,
                 clicked,
-                campaign.getCreatedAt()
+                campaign.getCreatedAt(),
+                campaign.getSenderName(),
+                campaign.getSenderEmail(),
+                campaign.getScheduledAt()
         );
     }
 }

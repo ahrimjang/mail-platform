@@ -29,6 +29,8 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**", "/api/health", "/api/unsubscribe/**", "/api/track/**", "/api/webhooks/**").permitAll()
+                        // uploaded template images: recipients' mail clients fetch these unauthenticated
+                        .requestMatchers("/uploads/**").permitAll()
                         .anyRequest().authenticated())
                 // Missing/expired JWT must read as 401 (unauthenticated), not Spring's
                 // default 403 — the frontend keys its "force re-login" behavior on 401.

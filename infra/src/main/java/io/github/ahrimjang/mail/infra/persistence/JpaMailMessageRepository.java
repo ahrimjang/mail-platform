@@ -58,6 +58,31 @@ public class JpaMailMessageRepository implements MailMessageRepository {
     }
 
     @Override
+    public List<Long> findPendingIdsByCampaign(Long campaignId) {
+        return jpa.findPendingIdsByCampaignId(campaignId);
+    }
+
+    @Override
+    public List<MailMessage> findRecentByCampaign(Long campaignId, int limit) {
+        return jpa.findByCampaignIdOrderByUpdatedAtDescIdDesc(
+                        campaignId, org.springframework.data.domain.PageRequest.of(0, limit))
+                .stream()
+                .map(this::toDomain)
+                .toList();
+    }
+
+    @Override
+    public List<SendLogBucket> aggregateLogByCampaign(Long campaignId, int bucketSeconds, int limit) {
+        return jpa.aggregateLogByCampaign(campaignId, bucketSeconds, limit).stream()
+                .map(row -> new SendLogBucket(
+                        Instant.ofEpochSecond(((Number) row[0]).longValue() * bucketSeconds),
+                        MessageStatus.valueOf((String) row[1]),
+                        ((Number) row[2]).longValue(),
+                        (String) row[3]))
+                .toList();
+    }
+
+    @Override
     public MessageCounts countByCampaign(Long campaignId) {
         long total = jpa.countByCampaignId(campaignId);
         long pending = jpa.countByCampaignIdAndStatus(campaignId, MessageStatus.PENDING);

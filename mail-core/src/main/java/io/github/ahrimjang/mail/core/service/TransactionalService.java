@@ -56,6 +56,7 @@ public class TransactionalService {
                 renderer.render(template.getSubject(), vars),
                 renderer.render(template.getHtmlBody(), vars));
         campaign.setStatus(CampaignStatus.QUEUED);
+        campaign.setEnqueuedAt(java.time.Instant.now()); // transactional sends are always immediate
         Campaign saved = campaigns.save(campaign);
 
         List<MailMessage> savedMessages = messages.saveAll(

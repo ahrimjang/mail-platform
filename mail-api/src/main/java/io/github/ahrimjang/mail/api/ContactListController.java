@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -44,6 +45,13 @@ public class ContactListController {
         return ResponseEntity.status(HttpStatus.CREATED).body(view);
     }
 
+    /** Rename a list / update its description. */
+    @PutMapping("/{id}")
+    public ContactListView update(@PathVariable Long id, @RequestBody ContactListRequest request) {
+        return lists.update(id, request);
+    }
+
+    /** Delete a list (memberships go with it; contacts are kept). */
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         lists.delete(id);

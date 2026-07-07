@@ -2,6 +2,8 @@ package io.github.ahrimjang.mail.api;
 
 import io.github.ahrimjang.mail.common.CampaignView;
 import io.github.ahrimjang.mail.common.CreateCampaignRequest;
+import io.github.ahrimjang.mail.common.MessageView;
+import io.github.ahrimjang.mail.common.SendLogEntry;
 import io.github.ahrimjang.mail.core.service.CampaignService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -11,6 +13,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -45,6 +48,21 @@ public class CampaignController {
     @GetMapping("/{id}")
     public CampaignView get(@PathVariable Long id) {
         return campaigns.get(id);
+    }
+
+    /** Per-recipient drill-down: the campaign's most recently updated deliveries, newest first. */
+    @GetMapping("/{id}/messages")
+    public List<MessageView> messages(@PathVariable Long id,
+                                      @RequestParam(defaultValue = "50") int limit) {
+        return campaigns.recentMessages(id, limit);
+    }
+
+    /** Aggregated send log: time-bucketed counts per outcome — stays short for huge campaigns. */
+    @GetMapping("/{id}/log")
+    public List<SendLogEntry> log(@PathVariable Long id,
+                                  @RequestParam(defaultValue = "10") int bucketSeconds,
+                                  @RequestParam(defaultValue = "50") int limit) {
+        return campaigns.sendLog(id, bucketSeconds, limit);
     }
 
     @ExceptionHandler(NoSuchElementException.class)

@@ -111,11 +111,14 @@ public class MailDispatchService {
         String html = trackedBody + unsubscribeFooter(message.getUnsubToken())
                 + trackingRewriter.openPixel(message.getTrackingToken(), baseUrl);
         try {
-            sender.send(message.getRecipient(), subject, html, String.valueOf(message.getId()));
+            sender.send(message.getRecipient(), subject, html, String.valueOf(message.getId()),
+                    campaign.getSenderName(), campaign.getSenderEmail());
             message.markSent();
         } catch (Exception e) {
-            log.warn("send failed: campaign={} recipient={} reason={}",
-                    campaign.getId(), message.getRecipient(), e.getMessage());
+            // ERROR + throwable so the failure is observable: the stack trace ships to
+            // OpenSearch, letting the log dashboard surface it and map it back to source.
+            log.error("send failed: campaign={} recipient={}",
+                    campaign.getId(), message.getRecipient(), e);
             message.markBounced(e.getMessage());
             suppressions.save(Suppression.of(message.getRecipient(), "bounce"));
         }

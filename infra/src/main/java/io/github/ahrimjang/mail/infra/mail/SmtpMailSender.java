@@ -27,7 +27,8 @@ public class SmtpMailSender implements MailSender {
     }
 
     @Override
-    public void send(String recipient, String subject, String body, String messageId) throws MailSendException {
+    public void send(String recipient, String subject, String body, String messageId,
+                     String senderName, String senderEmail) throws MailSendException {
         if (recipient == null || !recipient.contains("@")) {
             throw new MailSendException("invalid recipient address: " + recipient);
         }
@@ -37,6 +38,14 @@ public class SmtpMailSender implements MailSender {
             h.setTo(recipient);
             h.setSubject(subject);
             h.setText(body, true);
+            // Campaign-level From override; without it the SMTP session default applies.
+            if (senderEmail != null && !senderEmail.isBlank()) {
+                if (senderName != null && !senderName.isBlank()) {
+                    h.setFrom(senderEmail, senderName);
+                } else {
+                    h.setFrom(senderEmail);
+                }
+            }
             if (messageId != null) {
                 msg.setHeader("X-Mail-Message-Id", messageId);
             }
@@ -44,7 +53,8 @@ public class SmtpMailSender implements MailSender {
         } catch (Exception e) {
             throw new MailSendException("failed to send to " + recipient + ": " + e.getMessage(), e);
         }
-        log.info("[SMTP] -> {} | subject=\"{}\" | bodyChars={}",
-                recipient, subject, body == null ? 0 : body.length());
+        log.info("[SMTP] -> {} | from={} | subject=\"{}\" | bodyChars={}",
+                recipient, senderEmail == null ? "(default)" : senderEmail,
+                subject, body == null ? 0 : body.length());
     }
 }

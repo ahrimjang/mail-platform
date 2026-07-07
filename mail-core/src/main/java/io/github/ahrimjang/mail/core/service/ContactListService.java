@@ -41,8 +41,42 @@ public class ContactListService {
                 .toList();
     }
 
+    /** Update a list's name/description. */
+    public ContactListView update(Long id, ContactListRequest request) {
+        ContactList list = lists.findById(id)
+                .orElseThrow(() -> new NoSuchElementException("list not found: " + id));
+        if (request.name() == null || request.name().isBlank()) {
+            throw new IllegalArgumentException("name is required");
+        }
+        list.setName(request.name());
+        list.setDescription(request.description());
+        return toView(lists.save(list));
+    }
+
+    /** Delete a list; its memberships go with it, the contacts themselves remain. */
     public void delete(Long id) {
         lists.deleteById(id);
+    }
+
+    /** Ids of every list the contact belongs to. */
+    public List<Long> listsOf(Long contactId) {
+        requireContact(contactId);
+        return lists.findListIdsByContactId(contactId);
+    }
+
+    /** Replace the contact's memberships with exactly the given set of lists. */
+    public List<Long> replaceListsOf(Long contactId, List<Long> listIds) {
+        requireContact(contactId);
+        if (listIds == null) {
+            throw new IllegalArgumentException("listIds is required");
+        }
+        List<Long> distinct = listIds.stream().distinct().toList();
+        for (Long listId : distinct) {
+            lists.findById(listId)
+                    .orElseThrow(() -> new NoSuchElementException("list not found: " + listId));
+        }
+        lists.replaceMembershipsForContact(contactId, distinct);
+        return lists.findListIdsByContactId(contactId);
     }
 
     public List<ContactView> members(Long listId) {
@@ -69,6 +103,11 @@ public class ContactListService {
 
     public void removeMember(Long listId, Long contactId) {
         lists.removeMember(listId, contactId);
+    }
+
+    private void requireContact(Long contactId) {
+        contacts.findById(contactId)
+                .orElseThrow(() -> new NoSuchElementException("contact not found: " + contactId));
     }
 
     private ContactListView toView(ContactList list) {

@@ -11,9 +11,12 @@ public interface MailSender {
     /**
      * Send one mail.
      *
+     * @param senderName  From display name; null falls back to the adapter default
+     * @param senderEmail From address; null falls back to the adapter default
      * @throws MailSendException if delivery fails (the worker records it as FAILED)
      */
-    void send(String recipient, String subject, String body, String messageId) throws MailSendException;
+    void send(String recipient, String subject, String body, String messageId,
+              String senderName, String senderEmail) throws MailSendException;
 
     /** Thrown when a single delivery attempt fails. */
     class MailSendException extends RuntimeException {

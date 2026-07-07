@@ -2,9 +2,13 @@ package io.github.ahrimjang.mail.infra.persistence;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.List;
+
 public interface ListMembershipJpaRepository extends JpaRepository<ListMembershipEntity, Long> {
 
     boolean existsByListIdAndContactId(Long listId, Long contactId);
+
+    List<ListMembershipEntity> findByContactIdOrderByListId(Long contactId);
 
     long countByListId(Long listId);
 

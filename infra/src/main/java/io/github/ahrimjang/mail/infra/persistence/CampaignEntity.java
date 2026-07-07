@@ -33,15 +33,32 @@ public class CampaignEntity {
     @Column(nullable = false)
     private Instant createdAt;
 
+    /** Optional From display name (null = SMTP default). */
+    private String senderName;
+
+    /** Optional From address (null = SMTP default). */
+    private String senderEmail;
+
+    /** Requested send time; null = immediate. */
+    private Instant scheduledAt;
+
+    /** When messages were released to the queue; null = awaiting the scheduler. */
+    private Instant enqueuedAt;
+
     protected CampaignEntity() {
     }
 
-    public CampaignEntity(Long id, String subject, String body, CampaignStatus status, Instant createdAt) {
+    public CampaignEntity(Long id, String subject, String body, CampaignStatus status, Instant createdAt,
+                          String senderName, String senderEmail, Instant scheduledAt, Instant enqueuedAt) {
         this.id = id;
         this.subject = subject;
         this.body = body;
         this.status = status;
         this.createdAt = createdAt;
+        this.senderName = senderName;
+        this.senderEmail = senderEmail;
+        this.scheduledAt = scheduledAt;
+        this.enqueuedAt = enqueuedAt;
     }
 
     public Long getId() {
@@ -66,5 +83,21 @@ public class CampaignEntity {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    public String getSenderName() {
+        return senderName;
+    }
+
+    public String getSenderEmail() {
+        return senderEmail;
+    }
+
+    public Instant getScheduledAt() {
+        return scheduledAt;
+    }
+
+    public Instant getEnqueuedAt() {
+        return enqueuedAt;
     }
 }

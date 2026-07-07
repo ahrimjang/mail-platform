@@ -25,4 +25,10 @@ public interface ContactListRepository {
     void removeMember(Long listId, Long contactId);
 
     long countMembers(Long listId);
+
+    /** Ids of every list the given contact is a member of, ordered by list id. */
+    List<Long> findListIdsByContactId(Long contactId);
+
+    /** Replace the contact's memberships with exactly the given set of lists. */
+    void replaceMembershipsForContact(Long contactId, List<Long> listIds);
 }

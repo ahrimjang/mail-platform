@@ -21,6 +21,9 @@ public record CampaignView(
         long suppressed,
         long opened,
         long clicked,
-        Instant createdAt
+        Instant createdAt,
+        String senderName,
+        String senderEmail,
+        Instant scheduledAt
 ) {
 }
