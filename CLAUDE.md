@@ -70,19 +70,30 @@ infra         Adapters: persistence/ (JPA repos incl. contact attributes as JSON
               messaging/ (RabbitMailConfig topology + RabbitMailQueue publisher;
               KafkaEventConfig topic + KafkaEmailEventPublisher for mail.events),
               mail/ (LoggingMailSender / SmtpMailSender), security/ (BCryptPasswordHasher, JwtTokenService).
-mail-api      Spring Boot web app (:8080). CampaignController, TemplateController, ContactController,
+mail-api      Spring Boot web app (:8080). CampaignController (incl. /log send-log buckets + /messages
+              drill-down), TemplateController, ContactController (incl. /lists labels + /subscription),
               ContactListController, TransactionalController, TrackingController, UnsubscribeController,
-              WebhookController, HealthController, auth/ (AuthController + SecurityConfig + JwtAuthFilter).
+              WebhookController, UploadController (POST /api/uploads -> public /uploads/**), HealthController,
+              auth/ (AuthController + SecurityConfig + JwtAuthFilter).
 mail-worker   Spring Boot app, no web. MailSendListener (@RabbitListener) -> MailDispatchService.dispatchOne;
-              EmailEventProjectionListener (@KafkaListener) projects mail.events -> email_events read model.
+              EmailEventProjectionListener (@KafkaListener) projects mail.events -> email_events read model;
+              ScheduledCampaignReleaser (@Scheduled 10s) releases due scheduled campaigns to the queue.
 mail-admin    Spring Boot web app (:8081). Boots but has no features yet.
-frontend      React 18 + Vite + TS. Auth gate + tabs: 캠페인 / 템플릿 / 연락처 / 리스트 (src/tabs/*).
-              src/api.ts adds Bearer + handles 401; polling for live campaign metrics.
+frontend      React 18 + Vite + TS + react-router, dependency-free console UI (no component lib), styled
+              after the Outpace design handoff (blue #2563eb, Pretendard, op- classes in src/outpace.css).
+              Top-nav shell components/AppShell.tsx; pages 대시보드 / 캠페인 생성·상세 / 템플릿 / 수신자 /
+              리스트 in src/pages/*; full-screen editors: /editor (block editor — inline rich editing,
+              drag & drop, per-block styles/backgrounds), /editor/text, /editor/html (live preview).
+              Editor state persists as an <!--opblocks/optext:...--> HTML-comment marker inside htmlBody
+              (send pipeline ignores comments; 내 템플릿 routes each template to its editor by marker) —
+              model + email-HTML serializer in src/outpace/blocks.ts. src/api.ts adds Bearer + forces
+              re-login on 401/403; overlays render via components/Portal.tsx (document.body) because
+              transform-animated page containers would otherwise trap position:fixed.
 ```
 
 ### The send pipeline (core flow — diagram: docs/send-pipeline.svg)
 
-1. `POST /api/campaigns` (JWT) → `CampaignService.create()`: content comes **directly** (subject/body) or is **snapshotted from a template** (`templateId`); recipients come from raw strings or a **contact list fan-out** (`listId`, one `MailMessage` per member with `contactId`). Each PENDING row gets `unsubToken` + `trackingToken`, then its id is **published to RabbitMQ** (`SendJob(messageId)` → `mail.exchange`/`mail.send` → `mail.send.queue`, DLQ `mail.send.dlq`). Returns 201 immediately.
+1. `POST /api/campaigns` (JWT) → `CampaignService.create()`: content comes **directly** (subject/body) or is **snapshotted from a template** (`templateId`); recipients come from raw strings or a **contact list fan-out** (`listId`, one `MailMessage` per member with `contactId`). Each PENDING row gets `unsubToken` + `trackingToken`, then its id is **published to RabbitMQ** (`SendJob(messageId)` → `mail.exchange`/`mail.send` → `mail.send.queue`, DLQ `mail.send.dlq`). Returns 201 immediately. Optional `senderName`/`senderEmail` override the SMTP From at dispatch; a future `scheduledAt` **defers the publish** — rows stay PENDING with `campaigns.enqueued_at` NULL until the worker's `ScheduledCampaignReleaser` wins an atomic conditional-UPDATE claim and releases them (exactly-once under concurrent workers).
 2. mail-worker's `MailSendListener` receives jobs by **push** and calls `dispatchOne(messageId)` — **idempotent and race-safe**: opens with `MailMessageRepository.claim(messageId, staleAfter)`, a single atomic conditional UPDATE (`PENDING -> SENDING`, or a `SENDING` row stuck past `staleAfter` from a crashed consumer) — only one concurrent caller can ever win it, so a RabbitMQ redelivery racing an in-flight send cannot double-send.
 3. `dispatchOne`: suppression check (skip as `SUPPRESSED`) → **personalization** (`TemplateRenderer` renders `{{vars}}` in subject/body with the contact's `toVariables()`, or `{email}` for raw recipients) → tracking-rewrite links + unsubscribe footer + open pixel → `MailSender.send(...)` with an injected `X-Mail-Message-Id` header → `SENT`, or `BOUNCED` + auto-suppress on failure. Campaign flips `SENDING` on first progress, `COMPLETED` when both `pending` and `sending` counts are 0 (a message still claimed by a concurrent call isn't "drained" yet).
 4. Frontend polls `GET /api/campaigns/{id}`: `total/pending/sent/failed/bounced/suppressed` from message rows + `opened/clicked` (distinct-message counts from `EmailEvent`).
