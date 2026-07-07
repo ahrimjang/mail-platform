@@ -47,7 +47,7 @@ export default function App() {
       }
     }
     check();
-    const id = setInterval(check, 5000);
+    const id = setInterval(check, 500000);
     return () => {
       cancelled = true;
       clearInterval(id);
