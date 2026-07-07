@@ -1,19 +1,18 @@
-# 로컬 개발 인프라 (앱 제외) — Postgres + RabbitMQ + MailHog + OpenSearch(로깅)
+# 로컬 개발 인프라 (앱 제외) — Postgres + RabbitMQ + MailHog
 #
 # 우리 Spring 앱(mail-api/worker/admin)은 여기 없습니다. 앱은 ./gradlew bootRun 으로 직접 실행하고,
-# 이 파일은 그 앱들이 의존하는 "외부 서버"만 기성 이미지로 띄웁니다: 상태 저장소 + 발송 큐 + 개발용 SMTP
-# + 로그 색인(OpenSearch)/조회(Dashboards)/수집(Fluent Bit). 앱은 ./logs/*.json.log 에 구조화 로그를
-# 쓰고, Fluent Bit 컨테이너가 그 파일을 읽기전용으로 마운트해 tail 후 OpenSearch로 적재합니다.
+# 이 파일은 그 앱들이 의존하는 "핵심 외부 서버"만 기성 이미지로 띄웁니다:
+#   상태 저장소(Postgres) + 발송 작업큐(RabbitMQ) + 개발용 SMTP(MailHog)
+# 로그 관측 스택(OpenSearch/Dashboards/Fluent Bit)은 감시하는 쪽 프로젝트
+# (../opensearch-log-analysis-backend)의 compose 가 소유합니다 — 여기 앱들은 ./logs 에 파일만 씁니다.
 #
 #   실행:  docker compose up -d
 #   중지:  docker compose down          (데이터 유지)
-#   초기화: docker compose down -v       (Postgres/RabbitMQ/OpenSearch 볼륨까지 삭제 — 전체 리셋)
+#   초기화: docker compose down -v       (Postgres/RabbitMQ 볼륨까지 삭제 — 전체 리셋)
 #
-#   Postgres              : localhost:5432  (maildb / maildb / maildb)
-#   RabbitMQ 관리 UI      : http://localhost:15672   (guest / guest)
-#   MailHog 받은편지함     : http://localhost:8025
-#   OpenSearch REST API   : http://localhost:9200  (보안 플러그인 비활성 — dev 전용)
-#   OpenSearch Dashboards : http://localhost:5601
+#   Postgres         : localhost:5432  (maildb / maildb / maildb)
+#   RabbitMQ 관리 UI : http://localhost:15672   (guest / guest)
+#   MailHog 받은편지함: http://localhost:8025
 
 services:
   postgres:
@@ -58,69 +57,6 @@ services:
       - "8025:8025"      # 웹 UI — 발송된 메일 확인
     # MailHog 는 메일을 메모리에 담는 개발용이라 별도 볼륨이 필요 없습니다.
 
-  opensearch:
-    image: opensearchproject/opensearch:2.19.0
-    container_name: opensearch
-    environment:
-      - discovery.type=single-node
-      - bootstrap.memory_lock=false
-      - DISABLE_SECURITY_PLUGIN=true       # dev 전용 단순화 — 운영에선 활성화 필요
-      - DISABLE_INSTALL_DEMO_CONFIG=true
-      - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
-    ports:
-      - "9200:9200"      # REST API — Fluent Bit 적재 + 직접 조회(curl/Dashboards)
-    volumes:
-      - opensearch-data:/usr/share/opensearch/data
-    healthcheck:
-      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -q '\"status\"'"]
-      interval: 10s
-      timeout: 5s
-      retries: 15
-
-  opensearch-dashboards:
-    image: opensearchproject/opensearch-dashboards:2.19.0
-    container_name: opensearch-dashboards
-    environment:
-      - 'OPENSEARCH_HOSTS=["http://opensearch:9200"]'
-      - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true
-    ports:
-      - "5601:5601"      # 로그 조회/대시보드 웹 UI
-    depends_on:
-      opensearch:
-        condition: service_healthy
-
-  # 로그 인덱스 매핑 부트스트랩 — mail-platform-logs-* 인덱스 템플릿을 1회 등록하고 종료.
-  # serviceId/level 을 keyword, timestamp 를 date 로 고정해 logmonitor(opensearch-log-analysis-backend)
-  # 대시보드의 terms 집계/정렬이 동작하게 합니다. (service 필드는 기존 관례대로 dynamic 매핑 유지 → service.keyword)
-  opensearch-init:
-    image: curlimages/curl:8.8.0
-    container_name: opensearch-init
-    volumes:
-      - ./opensearch/index-template.json:/index-template.json:ro
-    entrypoint: ["sh", "-c",
-      "curl -sf -X PUT http://opensearch:9200/_index_template/mail-platform-logs -H 'Content-Type: application/json' --data-binary @/index-template.json"]
-    depends_on:
-      opensearch:
-        condition: service_healthy
-    restart: "no"
-
-  fluent-bit:
-    image: fluent/fluent-bit:3.1
-    container_name: fluent-bit
-    volumes:
-      - ./fluent-bit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
-      - ./fluent-bit/parsers.conf:/fluent-bit/etc/parsers.conf:ro
-      - ./fluent-bit/logmonitor-compat.lua:/fluent-bit/etc/logmonitor-compat.lua:ro
-      - ./logs:/var/log/mail-platform:ro          # 호스트에서 도는 앱들의 JSON 로그 (읽기전용)
-      - fluent-bit-db:/fluent-bit/db               # tail 위치 추적 DB (재시작 시 중복 적재 방지)
-    depends_on:
-      opensearch:
-        condition: service_healthy
-      opensearch-init:
-        condition: service_completed_successfully  # 첫 색인 전에 템플릿이 먼저 등록되도록
-
 volumes:
   postgres-data:
   rabbitmq-data:
-  opensearch-data:
-  fluent-bit-db:
