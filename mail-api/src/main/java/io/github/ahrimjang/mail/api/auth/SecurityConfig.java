@@ -1,5 +1,6 @@
 package io.github.ahrimjang.mail.api.auth;
 
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -29,6 +30,10 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**", "/api/health", "/api/unsubscribe/**", "/api/track/**", "/api/webhooks/**").permitAll()
                         .anyRequest().authenticated())
+                // Missing/expired JWT must read as 401 (unauthenticated), not Spring's
+                // default 403 — the frontend keys its "force re-login" behavior on 401.
+                .exceptionHandling(ex -> ex.authenticationEntryPoint(
+                        (request, response, e) -> response.setStatus(HttpServletResponse.SC_UNAUTHORIZED)))
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
