@@ -9,8 +9,8 @@
 1. **원자적 클레임** — DB에 조건부 UPDATE 한 방으로 "이 메시지는 내가 처리한다"를 선언. 이미 처리됐거나 다른 소비자가 지금 처리 중이면 조용히 리턴. 큐가 같은 잡을 두 번(또는 동시에 두 소비자에게) 배달해도 실제 발송은 한 번만 일어납니다.
 2. **억제(suppression) 체크** — 수신거부했거나 반송된 주소면 보내지 않고 `SUPPRESSED`로 마킹.
 3. **HTML 조립** — 개인화 변수 치환 → 링크를 클릭 추적 URL로 재작성 → 수신거부 푸터 → 오픈 픽셀 순으로 본문을 쌓습니다.
-4. **발송 + 결과 기록** — 성공이면 `SENT`, 실패면 `BOUNCED` + 해당 주소를 억제 목록에 자동 등록.
-5. **completeIfDrained** — 캠페인의 PENDING이 0이 되면 캠페인을 `COMPLETED`로 전환.
+4. **발송 + 결과 기록** — 캠페인에 발신자(From) 오버라이드가 있으면 함께 넘겨 발송하고, 성공이면 `SENT`, 실패면 `BOUNCED` + 해당 주소를 억제 목록에 자동 등록.
+5. **completeIfDrained** — 캠페인의 PENDING과 SENDING이 모두 0이 되면 캠페인을 `COMPLETED`로 전환.
 
 **억제 목록(suppression list)** 은 "다시는 보내면 안 되는 주소"의 전역 명단입니다. 수신거부 링크 클릭과 발송 실패(반송) 두 경로로 채워지고, 모든 캠페인의 발송 시점에 존중됩니다. 스팸 신고를 피하고 발신자 평판을 지키는, 메일 플랫폼의 필수 장치입니다.
 
@@ -135,11 +135,14 @@ RabbitMQ는 at-least-once라 같은 `SendJob`이 재배달될 수 있고, 재배
 `mail-core/src/main/java/io/github/ahrimjang/mail/core/service/MailDispatchService.java`
 ```java
         try {
-            sender.send(message.getRecipient(), subject, html, String.valueOf(message.getId()));
+            sender.send(message.getRecipient(), subject, html, String.valueOf(message.getId()),
+                    campaign.getSenderName(), campaign.getSenderEmail());
             message.markSent();
         } catch (Exception e) {
-            log.warn("send failed: campaign={} recipient={} reason={}",
-                    campaign.getId(), message.getRecipient(), e.getMessage());
+            // ERROR + throwable so the failure is observable: the stack trace ships to
+            // OpenSearch, letting the log dashboard surface it and map it back to source.
+            log.error("send failed: campaign={} recipient={}",
+                    campaign.getId(), message.getRecipient(), e);
             message.markBounced(e.getMessage());
             suppressions.save(Suppression.of(message.getRecipient(), "bounce"));
         }
@@ -147,7 +150,9 @@ RabbitMQ는 at-least-once라 같은 `SendJob`이 재배달될 수 있고, 재배
         completeIfDrained(campaign.getId());
 ```
 
-실패하면 `BOUNCED`로 마킹하는 데서 끝나지 않고 **그 주소를 즉시 억제 목록에 넣습니다**("bounce" 사유). 다음 캠페인부터는 시도조차 안 하게 됩니다 — 죽은 주소에 반복 발송하면 발신자 평판이 깎이기 때문입니다.
+`send`의 마지막 두 인자는 캠페인 단위의 **발신자(From) 오버라이드**입니다 — 캠페인 생성 시 `senderName`/`senderEmail`을 지정했으면 그 값이, 안 했으면 `null`이 넘어가 어댑터의 기본 발신자(SMTP 세션 기본값)가 쓰입니다.
+
+실패하면 `BOUNCED`로 마킹하는 데서 끝나지 않고 **그 주소를 즉시 억제 목록에 넣습니다**("bounce" 사유). 다음 캠페인부터는 시도조차 안 하게 됩니다 — 죽은 주소에 반복 발송하면 발신자 평판이 깎이기 때문입니다. 실패 로그는 `warn`이 아니라 **`error` + 예외 객체(스택트레이스)** 로 남깁니다 — JSON 로그를 통해 OpenSearch 대시보드까지 스택트레이스가 실려 가서, 어떤 발송이 왜 죽었는지 로그 화면에서 바로 역추적할 수 있게 하기 위해서입니다.
 
 ### 3-5. 캠페인 완료 판정 — completeIfDrained
 
@@ -206,7 +211,22 @@ URL에 이메일 주소 대신 **랜덤 토큰**을 쓰는 이유: 주소를 노
 
 ### 3-7. 발송 어댑터 — SMTP와 로깅, 설정으로 교체
 
-실제 발송은 `MailSender` 포트 뒤의 어댑터가 합니다. worker는 `mail.sender.type=smtp`라 SMTP 구현이 뜹니다.
+실제 발송은 `MailSender` 포트 뒤의 어댑터가 합니다. 포트 시그니처에 발신자 오버라이드 두 인자가 포함되어 있고, `null`이면 어댑터 기본값으로 폴백한다는 계약이 명시되어 있습니다.
+
+`mail-core/src/main/java/io/github/ahrimjang/mail/core/port/MailSender.java`
+```java
+    /**
+     * Send one mail.
+     *
+     * @param senderName  From display name; null falls back to the adapter default
+     * @param senderEmail From address; null falls back to the adapter default
+     * @throws MailSendException if delivery fails (the worker records it as FAILED)
+     */
+    void send(String recipient, String subject, String body, String messageId,
+              String senderName, String senderEmail) throws MailSendException;
+```
+
+worker는 `mail.sender.type=smtp`라 SMTP 구현이 뜹니다.
 
 `infra/src/main/java/io/github/ahrimjang/mail/infra/mail/SmtpMailSender.java`
 ```java
@@ -216,7 +236,8 @@ public class SmtpMailSender implements MailSender {
 ```
 ```java
     @Override
-    public void send(String recipient, String subject, String body, String messageId) throws MailSendException {
+    public void send(String recipient, String subject, String body, String messageId,
+                     String senderName, String senderEmail) throws MailSendException {
         if (recipient == null || !recipient.contains("@")) {
             throw new MailSendException("invalid recipient address: " + recipient);
         }
@@ -226,6 +247,14 @@ public class SmtpMailSender implements MailSender {
             h.setTo(recipient);
             h.setSubject(subject);
             h.setText(body, true);
+            // Campaign-level From override; without it the SMTP session default applies.
+            if (senderEmail != null && !senderEmail.isBlank()) {
+                if (senderName != null && !senderName.isBlank()) {
+                    h.setFrom(senderEmail, senderName);
+                } else {
+                    h.setFrom(senderEmail);
+                }
+            }
             if (messageId != null) {
                 msg.setHeader("X-Mail-Message-Id", messageId);
             }
@@ -235,7 +264,7 @@ public class SmtpMailSender implements MailSender {
         }
 ```
 
-`setText(body, true)`의 `true`가 "HTML로 보내라"는 뜻입니다. `X-Mail-Message-Id` 헤더에 우리 메시지 id를 실어 보내는데, 반송 웹훅이 어떤 메시지의 반송인지 역추적할 때 씁니다.
+`setText(body, true)`의 `true`가 "HTML로 보내라"는 뜻입니다. `senderEmail`이 있으면 `setFrom`으로 From 헤더를 캠페인 지정 값으로 바꾸고(`senderName`이 있으면 표시 이름까지), 없으면 `setFrom`을 아예 호출하지 않아 SMTP 세션 기본 발신자가 그대로 적용됩니다. `X-Mail-Message-Id` 헤더에 우리 메시지 id를 실어 보내는데, 반송 웹훅이 어떤 메시지의 반송인지 역추적할 때 씁니다.
 
 api/admin 프로세스는 발송할 일이 없으므로 기본값인 로깅 구현이 뜹니다(속성 없으면 `matchIfMissing = true`).
 
@@ -247,12 +276,16 @@ public class LoggingMailSender implements MailSender {
 ```
 ```java
     @Override
-    public void send(String recipient, String subject, String body, String messageId) throws MailSendException {
+    public void send(String recipient, String subject, String body, String messageId,
+                     String senderName, String senderEmail) throws MailSendException {
         if (recipient == null || !recipient.contains("@")) {
             throw new MailSendException("invalid recipient address: " + recipient);
         }
-        log.info("[MAIL] -> {} | subject=\"{}\" | bodyChars={} | messageId={}",
-                recipient, subject, body == null ? 0 : body.length(), messageId);
+        log.info("[MAIL] -> {} | from={} <{}> | subject=\"{}\" | bodyChars={} | messageId={}",
+                recipient,
+                senderName == null ? "(default)" : senderName,
+                senderEmail == null ? "default" : senderEmail,
+                subject, body == null ? 0 : body.length(), messageId);
     }
 ```
 
@@ -265,6 +298,7 @@ public class LoggingMailSender implements MailSender {
   - **잔여 한계**: 클레임에 `SENDING` 상태를 도입하면서, 소비자가 발송 도중 크래시하면 메시지가 `SENDING`에 갇힐 위험이 생겼습니다. `STALE_CLAIM_AFTER`(2분)가 지난 `SENDING` 행도 재클레임 대상에 포함시켜서 완화했지만, 크래시가 그 2분 창 안에서 재배달과 겹치면 그 안에서는 재시도되지 않습니다(POC 수준 트레이드오프 — 창을 줄이면 복구는 빨라지지만 정상 처리 중인 느린 발송을 오탐으로 재클레임할 여지가 커집니다).
 - **메시지 상태는 "전달 결과"만**: `PENDING → SENT | FAILED | BOUNCED | SUPPRESSED`. 열람/클릭은 상태가 아니라 별도 `EmailEvent`로 쌓습니다. 한 메시지가 "보내졌고 + 열렸고 + 클릭됐다"는 다차원 사실을 단일 상태로 욱여넣지 않기 위해서입니다.
 - **억제는 전역, 두 경로로 유입**: 수신거부(명시적 거절)와 반송(죽은 주소) 모두 같은 명단으로 갑니다. `reason` 필드("unsubscribe"/"bounce")로 유입 경로는 구분됩니다.
+- **발신자(From)는 캠페인의 속성, 폴백은 어댑터의 몫**: `senderName`/`senderEmail`은 캠페인 행에 저장돼 발송 시 포트로 그대로 전달되고, `null` 처리(기본 발신자 폴백)는 각 어댑터가 책임집니다. core는 "오버라이드가 있으면 넘긴다"만 알면 되고, 기본 발신자가 무엇인지(SMTP 세션 설정)는 infra 관심사로 남습니다.
 - **발송기는 속성 하나로 교체**: `@ConditionalOnProperty` 덕분에 SES/SendGrid 어댑터를 `infra`에 추가하고 `mail.sender.type`만 바꾸면 프로덕션 발송으로 전환됩니다. core는 무변경.
 
 ## 5. 확인 방법
@@ -292,7 +326,7 @@ curl -s http://localhost:8080/api/campaigns/2 -H "Authorization: Bearer $TOKEN"
 # → suppressed=1, sent=0
 ```
 
-체크 포인트: ① `broken` 주소가 `bounced`로 집계되는지, ② 반송/수신거부된 주소가 **다음 캠페인에서 자동으로 `suppressed`** 되는지, ③ MailHog에서 메일 본문 맨 아래에 수신거부 푸터와 (소스 보기 시) 오픈 픽셀 `<img>` 태그가 붙어 있는지. worker 콘솔 로그에서도 `send failed: ...` 경고를 확인할 수 있습니다.
+체크 포인트: ① `broken` 주소가 `bounced`로 집계되는지, ② 반송/수신거부된 주소가 **다음 캠페인에서 자동으로 `suppressed`** 되는지, ③ MailHog에서 메일 본문 맨 아래에 수신거부 푸터와 (소스 보기 시) 오픈 픽셀 `<img>` 태그가 붙어 있는지. worker 콘솔 로그에서도 `send failed: ...` 에러 로그(스택트레이스 포함)를 확인할 수 있습니다.
 
 ### 5-1. 클레임 경합 직접 증명
 

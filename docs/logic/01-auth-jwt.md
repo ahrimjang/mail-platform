@@ -199,13 +199,21 @@ BCrypt는 같은 비밀번호라도 매번 다른 해시를 만들지만(내장 
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**", "/api/health", "/api/unsubscribe/**", "/api/track/**", "/api/webhooks/**").permitAll()
+                        // uploaded template images: recipients' mail clients fetch these unauthenticated
+                        .requestMatchers("/uploads/**").permitAll()
                         .anyRequest().authenticated())
+                // Missing/expired JWT must read as 401 (unauthenticated), not Spring's
+                // default 403 — the frontend keys its "force re-login" behavior on 401.
+                .exceptionHandling(ex -> ex.authenticationEntryPoint(
+                        (request, response, e) -> response.setStatus(HttpServletResponse.SC_UNAUTHORIZED)))
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 ```
 
-`permitAll` 목록이 곧 "공개 API 목록"입니다: 인증 자체(`/api/auth/**`), 헬스체크, 그리고 **수신자가 로그인 없이 눌러야 하는 것들**(수신거부 링크, 오픈/클릭 트래킹, 반송 웹훅). 나머지는 전부 JWT 필수.
+`permitAll` 목록이 곧 "공개 API 목록"입니다: 인증 자체(`/api/auth/**`), 헬스체크, **수신자가 로그인 없이 눌러야 하는 것들**(수신거부 링크, 오픈/클릭 트래킹, 반송 웹훅), 그리고 업로드된 템플릿 이미지(`/uploads/**` — 수신자의 메일 클라이언트가 토큰 없이 이미지를 가져가야 하므로 공개). 나머지는 전부 JWT 필수.
+
+`authenticationEntryPoint`를 명시한 것도 의도적입니다: Spring Security의 기본값은 미인증 요청에 **403**을 주는데, 프론트엔드(`src/api.ts`)는 **401**을 신호로 토큰을 지우고 재로그인 화면으로 보내기 때문에, 토큰 없음/만료를 401로 내려주도록 바꿨습니다.
 
 ## 4. 설계 포인트 (왜 이렇게)
 
@@ -230,7 +238,7 @@ TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"me@test.com","password":"secret123"}' | jq -r .token)
 
-# 3) 토큰 없이 보호된 API → 403 (거부)
+# 3) 토큰 없이 보호된 API → 401 (미인증 — 프론트엔드는 이 401을 보고 재로그인 화면으로 보냅니다)
 curl -i http://localhost:8080/api/campaigns
 
 # 4) 토큰과 함께 → 200 + 캠페인 목록

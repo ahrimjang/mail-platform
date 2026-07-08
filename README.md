@@ -91,4 +91,3 @@ curl -H "Authorization: Bearer $TOKEN" "localhost:8080/api/campaigns/1/log"
 
 - 실발송 전환(AWS SES) + SNS 바운스 웹훅: [docs/TODO-ses-sns.md](docs/TODO-ses-sns.md)
 - 대용량 처리(부하 측정 → 워커 수평 확장 → fan-out 병목 제거 → throttling): [docs/ROADMAP-scale.md](docs/ROADMAP-scale.md)
-- 기능 이력: [docs/MVP-PLAN.md](docs/MVP-PLAN.md)

@@ -13,7 +13,9 @@
 즉 우리 API는 "보내는" 쪽인데, 바운스는 "받는" 쪽 — 프로바이더가 우리를 호출하는 역방향
 흐름입니다. 이 문서는 그 수신 경로를 다룹니다: 웹훅 수신 → 시크릿 검증 → 정규화된 통보를
 `BounceService`에 위임 → (1) 주소 suppression 등록, (2) 해당 메시지 `BOUNCED` 갱신,
-(3) `EmailEvent(BOUNCE)` 기록. 설계 배경 전체는 `docs/bounce-webhook-design.md` 참고.
+(3) `EmailEvent(BOUNCE)`를 Kafka 이벤트 스트림(`mail.events`)에 발행. 상태 변경(BOUNCED,
+suppression)은 동기로 Postgres에 남고, 이벤트만 비동기로 흐릅니다.
+설계 배경 전체는 `docs/bounce-webhook-design.md` 참고.
 
 한 가지 퍼즐: 통보에는 보통 이메일 주소만 있는데, 같은 주소가 여러 캠페인에 있으면
 **"어느 캠페인의 어느 메시지가 반송됐는지"** 를 모릅니다. 그래서 발송 시 메일 헤더에
@@ -32,8 +34,11 @@ POST /api/webhooks/generic  (JSON: email, type, reason, messageId?)
       ├─ X-Webhook-Token ≠ 시크릿 ──▶ 401 (거부)
       ▼
 BounceService.handle(notification)
-      ├─ messageId 있음 → MailMessage.markBounced + EmailEvent(BOUNCE)   (멱등)
-      ├─ HARD_BOUNCE / COMPLAINT → Suppression.save(email)               (멱등)
+      ├─ messageId 있음 → MailMessage.markBounced (동기, Postgres)
+      │                  + EmailEvent(BOUNCE) 를 EmailEventPublisher 로 발행      (멱등)
+      │                    └─▶ Kafka mail.events ─▶ (worker) EmailEventProjectionListener
+      │                         가 email_events 읽기 모델로 적재
+      ├─ HARD_BOUNCE / COMPLAINT → Suppression.save(email)                        (멱등)
       └─ SOFT_BOUNCE → 아무것도 안 함 (일시 오류, 재시도 대상)
       ▼
 202 Accepted
@@ -86,7 +91,8 @@ public record BounceNotification(String email, BounceType type, String reason, L
 `infra/src/main/java/io/github/ahrimjang/mail/infra/mail/SmtpMailSender.java`
 ```java
     @Override
-    public void send(String recipient, String subject, String body, String messageId) throws MailSendException {
+    public void send(String recipient, String subject, String body, String messageId,
+                     String senderName, String senderEmail) throws MailSendException {
         if (recipient == null || !recipient.contains("@")) {
             throw new MailSendException("invalid recipient address: " + recipient);
         }
@@ -96,6 +102,14 @@ public record BounceNotification(String email, BounceType type, String reason, L
             h.setTo(recipient);
             h.setSubject(subject);
             h.setText(body, true);
+            // Campaign-level From override; without it the SMTP session default applies.
+            if (senderEmail != null && !senderEmail.isBlank()) {
+                if (senderName != null && !senderName.isBlank()) {
+                    h.setFrom(senderEmail, senderName);
+                } else {
+                    h.setFrom(senderEmail);
+                }
+            }
             if (messageId != null) {
                 msg.setHeader("X-Mail-Message-Id", messageId);
             }
@@ -103,16 +117,19 @@ public record BounceNotification(String email, BounceType type, String reason, L
         } catch (Exception e) {
             throw new MailSendException("failed to send to " + recipient + ": " + e.getMessage(), e);
         }
-        log.info("[SMTP] -> {} | subject=\"{}\" | bodyChars={}",
-                recipient, subject, body == null ? 0 : body.length());
+        log.info("[SMTP] -> {} | from={} | subject=\"{}\" | bodyChars={}",
+                recipient, senderEmail == null ? "(default)" : senderEmail,
+                subject, body == null ? 0 : body.length());
     }
 ```
 
-호출하는 쪽(워커)이 메시지 id를 문자열로 넘깁니다.
+호출하는 쪽(워커)이 메시지 id를 문자열로 넘깁니다. (`senderName`/`senderEmail`은 캠페인별
+발신자 표시(From) 기능의 파라미터 — 상관 키와는 무관합니다.)
 
 `mail-core/src/main/java/io/github/ahrimjang/mail/core/service/MailDispatchService.java`
 ```java
-            sender.send(message.getRecipient(), subject, html, String.valueOf(message.getId()));
+            sender.send(message.getRecipient(), subject, html, String.valueOf(message.getId()),
+                    campaign.getSenderName(), campaign.getSenderEmail());
 ```
 
 실제 SES/SendGrid는 바운스 통보에 원본 커스텀 헤더(또는 custom_args)를 **echo**해 주므로,
@@ -155,7 +172,7 @@ public class WebhookController {
 - 운영에선 이 "generic" 엔드포인트 옆에 SES(SNS 서명 검증), SendGrid(ECDSA 서명) 같은
   프로바이더별 어댑터를 추가하면 되고, 코어(`BounceService`)는 그대로입니다.
 
-### 3-4. 코어 처리 — BounceService (억제 + BOUNCED + 이벤트)
+### 3-4. 코어 처리 — BounceService (억제 + BOUNCED + 이벤트 발행)
 
 `mail-core/src/main/java/io/github/ahrimjang/mail/core/service/BounceService.java`
 ```java
@@ -166,7 +183,7 @@ public class WebhookController {
                 if (m.getStatus() != MessageStatus.BOUNCED) {
                     m.markBounced(n.reason());
                     messages.save(m);
-                    events.save(EmailEvent.of(m.getId(), m.getCampaignId(), EventType.BOUNCE, null));
+                    events.publish(EmailEvent.of(m.getId(), m.getCampaignId(), EventType.BOUNCE, null));
                 }
             });
         }
@@ -178,10 +195,17 @@ public class WebhookController {
     }
 ```
 
+여기서 `events`는 저장소가 아니라 **`EmailEventPublisher` 포트**입니다 — Kafka 전환 후
+open/click과 마찬가지로 BOUNCE 이벤트도 `publish()`로 `mail.events` 토픽에 실려 나가고
+(infra의 `KafkaEmailEventPublisher`가 campaignId를 키로 JSON 발행), mail-worker의
+`EmailEventProjectionListener`가 이를 소비해 `email_events` 읽기 모델에 적재합니다.
+반면 **상태 변경(`markBounced`, suppression)은 그대로 동기** — Postgres에 즉시 반영됩니다.
+
 두 갈래가 **독립적으로** 수행됩니다:
 
-1. **메시지 상관(있을 때만)**: 해당 `MailMessage`를 `BOUNCED`로 바꾸고 `EmailEvent(BOUNCE)`를
-   남깁니다 → 캠페인별 bounced 지표가 정확해집니다. 이미 `BOUNCED`면 건너뜀(멱등).
+1. **메시지 상관(있을 때만)**: 해당 `MailMessage`를 `BOUNCED`로 바꾸고(동기)
+   `EmailEvent(BOUNCE)`를 Kafka로 발행합니다 → 캠페인별 bounced 지표(메시지 행 기준)가
+   정확해집니다. 이미 `BOUNCED`면 건너뜀(멱등) — 재시도된 웹훅이 이벤트를 중복 발행하지도 않습니다.
 2. **주소 억제(영구 문제일 때)**: HARD_BOUNCE/COMPLAINT면 suppression 목록에 등록 →
    이후 모든 캠페인에서 이 주소는 발송 전에 SKIP됩니다. 이미 등록된 주소는 어댑터의
    `existsByEmail` 체크로 중복 저장되지 않음(멱등).
@@ -207,10 +231,14 @@ public class WebhookController {
   어댑터는 나중에 "raw payload → BounceNotification 변환기"만 추가하면 됩니다(코어 불변).
 - **suppression이 1차, correlation은 2차.** 발송 차단(평판 보호)이 지표 정확도보다
   급하므로, `messageId`가 없어도 이메일 기반 억제는 항상 동작하게 두 갈래를 분리했습니다.
-- **BOUNCE도 EmailEvent 스트림에.** open/click과 같은 이벤트 테이블에 쌓아서(EventType에
-  `BOUNCE` 추가) 나중에 이 스트림을 Kafka 등으로 뺄 때 한 번에 흡수됩니다.
+- **BOUNCE도 EmailEvent 스트림에.** open/click과 같은 `EmailEventPublisher` 포트를 타므로
+  (EventType에 `BOUNCE` 추가) 이벤트 스트림을 Kafka(`mail.events`)로 옮길 때 웹훅 쪽은
+  코드 한 줄(`save` → `publish`) 외에 아무것도 바뀌지 않았습니다 — 포트 분리의 이점이 실제로
+  회수된 사례입니다. 지표에 쓰이는 `email_events` 적재는 worker의 프로젝션(at-least-once,
+  append-only)이 맡습니다.
 - **멱등성은 웹훅의 기본 계약.** 프로바이더는 2xx를 못 받으면 재전송합니다. 상태 체크
-  (`!= BOUNCED`)와 `existsByEmail` 덕에 몇 번을 다시 받아도 안전합니다.
+  (`!= BOUNCED`)와 `existsByEmail` 덕에 몇 번을 다시 받아도 안전합니다. Kafka 프로젝션이
+  중복을 만들어도 distinct 집계가 흡수합니다.
 - **dev 한계**: MailHog는 웹훅을 보내지 않으므로 비동기 바운스는 curl 시뮬레이션으로만
   검증합니다. 또 공유 시크릿 비교는 dev 수준 — 운영은 프로바이더 서명 검증(SNS 서명,
   ECDSA)으로 교체해야 합니다.
@@ -241,7 +269,9 @@ curl -i -X POST localhost:8080/api/webhooks/generic \
   -d '{"email":"b@x.com","type":"SOFT_BOUNCE","reason":"mailbox full"}'
 
 # 5) 결과 확인
-#    - GET /api/campaigns/{id} → bounced 카운트 증가 (messageId 상관 덕분)
+#    - GET /api/campaigns/{id} → bounced 카운트 증가 (messageId 상관 덕분; 메시지 행 기준이라
+#      Kafka/worker 없이도 즉시 반영. email_events 테이블의 BOUNCE 행은 worker가 떠 있어야
+#      mail.events 토픽에서 프로젝션됨)
 #    - a@x.com 을 수신자로 새 캠페인 발송 → 해당 메시지가 SUPPRESSED 로 SKIP 되고
 #      suppressed 카운트로 잡히는지 확인 (b@x.com 은 정상 발송되어야 함)
 #    - 같은 웹훅을 한 번 더 POST 해도 카운트가 더 늘지 않음(멱등)
