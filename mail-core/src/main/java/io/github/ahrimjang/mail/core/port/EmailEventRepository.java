@@ -13,4 +13,15 @@ public interface EmailEventRepository {
 
     /** Count distinct messages having at least one event of the given type in a campaign. */
     long countDistinctMessages(Long campaignId, EventType type);
+
+    /**
+     * Platform-wide daily engagement since {@code since}, bucketed by calendar day
+     * in {@code zone}: distinct messages per (day, event type). Distinct counting
+     * keeps the numbers duplicate-tolerant (the projection is at-least-once).
+     */
+    java.util.List<DailyEngagement> aggregateDailyEngagement(java.time.Instant since, java.time.ZoneId zone);
+
+    /** One (day, type) distinct-message count of the daily engagement aggregation. */
+    record DailyEngagement(java.time.LocalDate day, EventType type, long distinctMessages) {
+    }
 }

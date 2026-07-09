@@ -28,4 +28,14 @@ public class JpaEmailEventRepository implements EmailEventRepository {
     public long countDistinctMessages(Long campaignId, EventType type) {
         return jpa.countDistinctMessages(campaignId, type);
     }
+
+    @Override
+    public java.util.List<DailyEngagement> aggregateDailyEngagement(java.time.Instant since, java.time.ZoneId zone) {
+        return jpa.aggregateDailyEngagement(since, zone.getId()).stream()
+                .map(row -> new DailyEngagement(
+                        ((java.sql.Date) row[0]).toLocalDate(),
+                        EventType.valueOf((String) row[1]),
+                        ((Number) row[2]).longValue()))
+                .toList();
+    }
 }

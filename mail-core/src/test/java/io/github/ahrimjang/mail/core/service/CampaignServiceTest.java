@@ -9,7 +9,9 @@ import io.github.ahrimjang.mail.core.domain.Campaign;
 import io.github.ahrimjang.mail.core.domain.Contact;
 import io.github.ahrimjang.mail.core.domain.MailMessage;
 import io.github.ahrimjang.mail.core.domain.Template;
+import io.github.ahrimjang.mail.core.domain.ContactList;
 import io.github.ahrimjang.mail.core.port.CampaignRepository;
+import io.github.ahrimjang.mail.core.port.ContactListRepository;
 import io.github.ahrimjang.mail.core.port.ContactRepository;
 import io.github.ahrimjang.mail.core.port.EmailEventRepository;
 import io.github.ahrimjang.mail.core.port.MailMessageRepository;
@@ -56,6 +58,8 @@ class CampaignServiceTest {
     private TemplateRepository templates;
     @Mock
     private ContactRepository contacts;
+    @Mock
+    private ContactListRepository lists;
 
     @InjectMocks
     private CampaignService service;
@@ -339,6 +343,117 @@ class CampaignServiceTest {
         verify(campaigns).save(captor.capture());
         assertThat(captor.getValue().getEnqueuedAt()).isNotNull();
         verify(mailQueue).enqueue(100L);
+    }
+
+    @Test
+    void create_recordsTemplateAndListProvenanceAndResolvesNamesInView() {
+        Template template = Template.create("welcome", "Welcome", "<p>Hi</p>");
+        template.setId(7L);
+        when(templates.findById(7L)).thenReturn(Optional.of(template));
+        ContactList list = ContactList.of("뉴스레터 구독자", null);
+        list.setId(5L);
+        when(lists.findById(5L)).thenReturn(Optional.of(list));
+        Contact alice = Contact.of("alice@example.com", "Alice", null, null);
+        alice.setId(11L);
+        when(contacts.findByListId(5L)).thenReturn(List.of(alice));
+        stubCampaignSaveAssigningId();
+        stubMessageSaveAllAssigningIds();
+        stubViewCounts(1, 1);
+
+        CampaignView view = service.create(new CreateCampaignRequest(
+                null, null, null, 7L, 5L, null, null, null));
+
+        ArgumentCaptor<Campaign> captor = ArgumentCaptor.forClass(Campaign.class);
+        verify(campaigns).save(captor.capture());
+        assertThat(captor.getValue().getTemplateId()).isEqualTo(7L);
+        assertThat(captor.getValue().getListId()).isEqualTo(5L);
+        assertThat(view.templateId()).isEqualTo(7L);
+        assertThat(view.templateName()).isEqualTo("welcome");
+        assertThat(view.listId()).isEqualTo(5L);
+        assertThat(view.listName()).isEqualTo("뉴스레터 구독자");
+    }
+
+    @Test
+    void view_ofDeletedTemplateSource_keepsIdButLeavesNameNull() {
+        Campaign existing = Campaign.draft("Hello", "<p>Hi</p>");
+        existing.setId(CAMPAIGN_ID);
+        existing.setTemplateId(7L);
+        when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(existing));
+        when(templates.findById(7L)).thenReturn(Optional.empty());
+        stubViewCounts(1, 0);
+
+        CampaignView view = service.get(CAMPAIGN_ID);
+
+        assertThat(view.templateId()).isEqualTo(7L);
+        assertThat(view.templateName()).isNull();
+    }
+
+    @Test
+    void cancelSchedule_winningClaim_cancelsPendingMessagesAndReturnsCanceledView() {
+        Campaign scheduled = Campaign.draft("Hello", "<p>Hi</p>");
+        scheduled.setId(CAMPAIGN_ID);
+        scheduled.setStatus(CampaignStatus.QUEUED);
+        when(campaigns.findById(CAMPAIGN_ID)).thenAnswer(inv -> {
+            // after the claim the reload sees the canceled row
+            scheduled.setStatus(CampaignStatus.CANCELED);
+            return Optional.of(scheduled);
+        });
+        when(campaigns.claimForCancel(CAMPAIGN_ID)).thenReturn(true);
+        stubViewCounts(3, 0);
+
+        CampaignView view = service.cancelSchedule(CAMPAIGN_ID);
+
+        verify(messages).cancelPendingByCampaign(CAMPAIGN_ID);
+        assertThat(view.status()).isEqualTo(CampaignStatus.CANCELED);
+        verifyNoInteractions(mailQueue);
+    }
+
+    @Test
+    void cancelSchedule_lostClaim_throwsIllegalStateWithoutTouchingMessages() {
+        Campaign released = Campaign.draft("Hello", "<p>Hi</p>");
+        released.setId(CAMPAIGN_ID);
+        when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(released));
+        // the scheduler's claimForEnqueue got there first
+        when(campaigns.claimForCancel(CAMPAIGN_ID)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.cancelSchedule(CAMPAIGN_ID))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining(String.valueOf(CAMPAIGN_ID));
+
+        verify(messages, never()).cancelPendingByCampaign(CAMPAIGN_ID);
+    }
+
+    @Test
+    void cancelSchedule_unknownCampaign_throwsNoSuchElement() {
+        when(campaigns.findById(999L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.cancelSchedule(999L))
+                .isInstanceOf(NoSuchElementException.class)
+                .hasMessageContaining("999");
+        verifyNoInteractions(messages);
+    }
+
+    @Test
+    void content_returnsTheSnapshottedSubjectAndBody() {
+        Campaign existing = Campaign.draft("Hello {{name}}", "<p>Hi {{name}}</p>");
+        existing.setId(CAMPAIGN_ID);
+        when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(existing));
+
+        var content = service.content(CAMPAIGN_ID);
+
+        assertThat(content.subject()).isEqualTo("Hello {{name}}");
+        assertThat(content.htmlBody()).isEqualTo("<p>Hi {{name}}</p>");
+        // content is a plain read of the snapshot — no counting queries involved
+        verifyNoInteractions(messages, events);
+    }
+
+    @Test
+    void content_unknownCampaign_throwsNoSuchElement() {
+        when(campaigns.findById(999L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.content(999L))
+                .isInstanceOf(NoSuchElementException.class)
+                .hasMessageContaining("999");
     }
 
     @Test

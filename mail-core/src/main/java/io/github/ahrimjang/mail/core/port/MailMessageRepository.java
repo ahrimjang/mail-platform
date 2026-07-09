@@ -39,6 +39,15 @@ public interface MailMessageRepository {
     /** Ids of a campaign's PENDING messages — what a scheduled release enqueues. */
     List<Long> findPendingIdsByCampaign(Long campaignId);
 
+    /**
+     * Flips every PENDING message of the campaign to CANCELED (bulk update).
+     * Only meaningful after {@link CampaignRepository#claimForCancel} won —
+     * those rows were never published to the queue, so no consumer can race this.
+     *
+     * @return number of messages canceled
+     */
+    int cancelPendingByCampaign(Long campaignId);
+
     /** Most recently updated messages of a campaign (per-recipient drill-down), newest first. */
     List<MailMessage> findRecentByCampaign(Long campaignId, int limit);
 
@@ -52,6 +61,17 @@ public interface MailMessageRepository {
     /** One aggregated bucket row; {@code sampleError} carries a representative failure reason. */
     record SendLogBucket(java.time.Instant bucketStart, io.github.ahrimjang.mail.common.MessageStatus status,
                          long count, String sampleError) {
+    }
+
+    /**
+     * Platform-wide daily outcome counts since {@code since} (terminal statuses
+     * only), bucketed by calendar day in {@code zone} — feeds the dashboard chart.
+     * Days with no activity are simply absent; the caller fills gaps.
+     */
+    List<DailyOutcome> aggregateDailyOutcomes(java.time.Instant since, java.time.ZoneId zone);
+
+    /** One (day, status) count of the daily outcome aggregation. */
+    record DailyOutcome(java.time.LocalDate day, io.github.ahrimjang.mail.common.MessageStatus status, long count) {
     }
 
     /** Look up a message by its per-message unsubscribe token. */

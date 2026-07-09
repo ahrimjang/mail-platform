@@ -8,6 +8,10 @@ import java.time.Instant;
  * <p>Delivery counts ({@code total/pending/sent/failed/bounced/suppressed}) come
  * from message rows; engagement counts ({@code opened/clicked}) are derived from
  * recorded email events (distinct messages with at least one open/click).
+ *
+ * <p>{@code templateId}/{@code listId} record where content and audience came
+ * from (null = authored directly / raw addresses); the matching names are
+ * resolved at read time and stay null if the source was deleted since.
  */
 public record CampaignView(
         Long id,
@@ -24,6 +28,10 @@ public record CampaignView(
         Instant createdAt,
         String senderName,
         String senderEmail,
-        Instant scheduledAt
+        Instant scheduledAt,
+        Long templateId,
+        String templateName,
+        Long listId,
+        String listName
 ) {
 }

@@ -25,6 +25,18 @@ public interface MailMessageJpaRepository extends JpaRepository<MailMessageEntit
             + "and m.status = io.github.ahrimjang.mail.common.MessageStatus.PENDING")
     java.util.List<Long> findPendingIdsByCampaignId(@Param("campaignId") Long campaignId);
 
+    /**
+     * Bulk-cancel a canceled campaign's PENDING rows. Safe as a plain bulk
+     * update (no claim needed): the campaign lost its release race, so these
+     * ids were never published and no consumer will ever process them.
+     */
+    @Modifying
+    @Transactional
+    @Query("update MailMessageEntity m set m.status = io.github.ahrimjang.mail.common.MessageStatus.CANCELED, "
+            + "m.updatedAt = :now where m.campaignId = :campaignId "
+            + "and m.status = io.github.ahrimjang.mail.common.MessageStatus.PENDING")
+    int cancelPendingByCampaignId(@Param("campaignId") Long campaignId, @Param("now") Instant now);
+
     /** Send-log feed: latest state changes first (id breaks ties within the same instant). */
     java.util.List<MailMessageEntity> findByCampaignIdOrderByUpdatedAtDescIdDesc(
             Long campaignId, org.springframework.data.domain.Pageable pageable);
@@ -49,6 +61,24 @@ public interface MailMessageJpaRepository extends JpaRepository<MailMessageEntit
     java.util.List<Object[]> aggregateLogByCampaign(@Param("campaignId") Long campaignId,
                                                     @Param("bucketSeconds") int bucketSeconds,
                                                     @Param("limit") int limit);
+
+    /**
+     * Dashboard series: platform-wide terminal outcomes per calendar day.
+     * `at time zone :zone` converts the timestamptz into the console's local
+     * calendar before the date cast, so a send at 01:00 KST doesn't land on
+     * the previous (UTC) day. Columns: d(date), status(text), cnt(long).
+     */
+    @Query(value = """
+            select cast(m.updated_at at time zone :zone as date) as d,
+                   m.status as status,
+                   count(*) as cnt
+            from mail_messages m
+            where m.updated_at >= :since
+              and m.status in ('SENT', 'FAILED', 'BOUNCED')
+            group by d, m.status
+            order by d
+            """, nativeQuery = true)
+    java.util.List<Object[]> aggregateDailyOutcomes(@Param("since") Instant since, @Param("zone") String zone);
 
     /**
      * Single conditional UPDATE — the row-level lock Postgres takes while evaluating

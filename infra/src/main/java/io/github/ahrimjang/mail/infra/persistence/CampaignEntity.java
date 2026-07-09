@@ -45,11 +45,18 @@ public class CampaignEntity {
     /** When messages were released to the queue; null = awaiting the scheduler. */
     private Instant enqueuedAt;
 
+    /** Template the content was snapshotted from; null = authored directly. */
+    private Long templateId;
+
+    /** Contact list the recipients were fanned out from; null = raw addresses. */
+    private Long listId;
+
     protected CampaignEntity() {
     }
 
     public CampaignEntity(Long id, String subject, String body, CampaignStatus status, Instant createdAt,
-                          String senderName, String senderEmail, Instant scheduledAt, Instant enqueuedAt) {
+                          String senderName, String senderEmail, Instant scheduledAt, Instant enqueuedAt,
+                          Long templateId, Long listId) {
         this.id = id;
         this.subject = subject;
         this.body = body;
@@ -59,6 +66,8 @@ public class CampaignEntity {
         this.senderEmail = senderEmail;
         this.scheduledAt = scheduledAt;
         this.enqueuedAt = enqueuedAt;
+        this.templateId = templateId;
+        this.listId = listId;
     }
 
     public Long getId() {
@@ -99,5 +108,13 @@ public class CampaignEntity {
 
     public Instant getEnqueuedAt() {
         return enqueuedAt;
+    }
+
+    public Long getTemplateId() {
+        return templateId;
+    }
+
+    public Long getListId() {
+        return listId;
     }
 }

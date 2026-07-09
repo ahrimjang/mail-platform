@@ -43,6 +43,11 @@ public class JpaSuppressionRepository implements SuppressionRepository {
         jpa.deleteByEmail(email);
     }
 
+    @Override
+    public long count() {
+        return jpa.count();
+    }
+
     private Suppression toDomain(SuppressionEntity e) {
         Suppression s = new Suppression();
         s.setEmail(e.getEmail());

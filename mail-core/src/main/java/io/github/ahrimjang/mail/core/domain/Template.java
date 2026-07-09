@@ -15,6 +15,8 @@ public class Template {
     private String htmlBody;
     private Instant createdAt;
     private Instant updatedAt;
+    /** Seed key of a built-in template (null = user-authored). */
+    private String builtinKey;
 
     public Template() {
     }
@@ -76,5 +78,17 @@ public class Template {
 
     public void setUpdatedAt(Instant updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public String getBuiltinKey() {
+        return builtinKey;
+    }
+
+    public void setBuiltinKey(String builtinKey) {
+        this.builtinKey = builtinKey;
+    }
+
+    public boolean isBuiltin() {
+        return builtinKey != null;
     }
 }

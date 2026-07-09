@@ -30,10 +30,24 @@ public interface CampaignRepository {
     /**
      * Atomically claims a due campaign for release by stamping {@code enqueuedAt}
      * (single conditional update on {@code enqueuedAt IS NULL} — the database
-     * serializes concurrent schedulers so only one wins).
+     * serializes concurrent schedulers so only one wins). A canceled campaign
+     * is never claimable: the update also requires {@code status = QUEUED}.
      *
      * @return true if this call won the claim; false means another scheduler
-     *         already released it — the caller must skip, not error.
+     *         already released it (or it was canceled) — the caller must skip,
+     *         not error.
      */
     boolean claimForEnqueue(Long id, Instant now);
+
+    /**
+     * Atomically cancels a still-deferred scheduled campaign (single conditional
+     * update on {@code enqueuedAt IS NULL AND status = QUEUED}). This races the
+     * scheduler's {@link #claimForEnqueue} on the same row: whichever update
+     * commits first wins, so a campaign is either released or canceled — never
+     * both.
+     *
+     * @return true if the campaign flipped to CANCELED; false means it was
+     *         already released (or never deferred) and cannot be canceled.
+     */
+    boolean claimForCancel(Long id);
 }

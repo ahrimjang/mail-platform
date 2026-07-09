@@ -1,5 +1,6 @@
 package io.github.ahrimjang.mail.core.service;
 
+import io.github.ahrimjang.mail.common.CampaignContentView;
 import io.github.ahrimjang.mail.common.CampaignStatus;
 import io.github.ahrimjang.mail.common.CampaignView;
 import io.github.ahrimjang.mail.common.CreateCampaignRequest;
@@ -11,6 +12,7 @@ import io.github.ahrimjang.mail.core.domain.Contact;
 import io.github.ahrimjang.mail.core.domain.MailMessage;
 import io.github.ahrimjang.mail.core.domain.Template;
 import io.github.ahrimjang.mail.core.port.CampaignRepository;
+import io.github.ahrimjang.mail.core.port.ContactListRepository;
 import io.github.ahrimjang.mail.core.port.ContactRepository;
 import io.github.ahrimjang.mail.core.port.EmailEventRepository;
 import io.github.ahrimjang.mail.core.port.MailMessageRepository;
@@ -41,15 +43,18 @@ public class CampaignService {
     private final MailQueue mailQueue;
     private final TemplateRepository templates;
     private final ContactRepository contacts;
+    private final ContactListRepository lists;
 
     public CampaignService(CampaignRepository campaigns, MailMessageRepository messages, EmailEventRepository events,
-                           MailQueue mailQueue, TemplateRepository templates, ContactRepository contacts) {
+                           MailQueue mailQueue, TemplateRepository templates, ContactRepository contacts,
+                           ContactListRepository lists) {
         this.campaigns = campaigns;
         this.messages = messages;
         this.events = events;
         this.mailQueue = mailQueue;
         this.templates = templates;
         this.contacts = contacts;
+        this.lists = lists;
     }
 
     public CampaignView create(CreateCampaignRequest request) {
@@ -80,6 +85,8 @@ public class CampaignService {
         // Immediate campaigns are released right here; scheduled ones keep
         // enqueuedAt null so the worker's scheduler claims them when due.
         campaign.setEnqueuedAt(deferred ? null : now);
+        campaign.setTemplateId(request.templateId());
+        campaign.setListId(request.listId());
         Campaign saved = campaigns.save(campaign);
 
         List<MailMessage> queued;
@@ -123,6 +130,32 @@ public class CampaignService {
                 .toList();
     }
 
+    /**
+     * Cancels a scheduled campaign that has not been released to the queue yet.
+     * The conditional-update claim races the worker's scheduler on the same row,
+     * so exactly one of "released" / "canceled" happens — a message can never be
+     * both sent and canceled. Losing the race (already released, or the campaign
+     * was immediate) is an {@link IllegalStateException} for the caller to map
+     * to a conflict response.
+     */
+    public CampaignView cancelSchedule(Long id) {
+        campaigns.findById(id)
+                .orElseThrow(() -> new NoSuchElementException("campaign not found: " + id));
+        if (!campaigns.claimForCancel(id)) {
+            throw new IllegalStateException("campaign already released or not cancellable: " + id);
+        }
+        // Safe after winning the claim: these rows were never published.
+        messages.cancelPendingByCampaign(id);
+        return get(id);
+    }
+
+    /** The mail this campaign sends (subject + raw HTML body snapshot). */
+    public CampaignContentView content(Long id) {
+        Campaign campaign = campaigns.findById(id)
+                .orElseThrow(() -> new NoSuchElementException("campaign not found: " + id));
+        return new CampaignContentView(campaign.getSubject(), campaign.getBody());
+    }
+
     /** Recent per-recipient deliveries of a campaign, newest first (drill-down feed). */
     public List<MessageView> recentMessages(Long campaignId, int limit) {
         campaigns.findById(campaignId)
@@ -153,6 +186,12 @@ public class CampaignService {
         MessageCounts counts = messages.countByCampaign(campaign.getId());
         long opened = events.countDistinctMessages(campaign.getId(), EventType.OPEN);
         long clicked = events.countDistinctMessages(campaign.getId(), EventType.CLICK);
+        // Soft references: a deleted template/list leaves the id without a name.
+        String templateName = campaign.getTemplateId() == null ? null
+                : templates.findById(campaign.getTemplateId()).map(Template::getName).orElse(null);
+        String listName = campaign.getListId() == null ? null
+                : lists.findById(campaign.getListId())
+                        .map(io.github.ahrimjang.mail.core.domain.ContactList::getName).orElse(null);
         return new CampaignView(
                 campaign.getId(),
                 campaign.getSubject(),
@@ -168,7 +207,11 @@ public class CampaignService {
                 campaign.getCreatedAt(),
                 campaign.getSenderName(),
                 campaign.getSenderEmail(),
-                campaign.getScheduledAt()
+                campaign.getScheduledAt(),
+                campaign.getTemplateId(),
+                templateName,
+                campaign.getListId(),
+                listName
         );
     }
 }

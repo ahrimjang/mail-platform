@@ -11,4 +11,6 @@ public enum MessageStatus {
     FAILED,
     BOUNCED,
     SUPPRESSED,
+    /** The campaign's schedule was canceled before this message was ever published. */
+    CANCELED,
 }

@@ -41,9 +41,14 @@ public class JpaTemplateRepository implements TemplateRepository {
         jpa.deleteById(id);
     }
 
+    @Override
+    public Optional<Template> findByBuiltinKey(String builtinKey) {
+        return jpa.findByBuiltinKey(builtinKey).map(this::toDomain);
+    }
+
     private TemplateEntity toEntity(Template t) {
         return new TemplateEntity(t.getId(), t.getName(), t.getSubject(), t.getHtmlBody(),
-                t.getCreatedAt(), t.getUpdatedAt());
+                t.getCreatedAt(), t.getUpdatedAt(), t.getBuiltinKey());
     }
 
     private Template toDomain(TemplateEntity e) {
@@ -54,6 +59,7 @@ public class JpaTemplateRepository implements TemplateRepository {
         t.setHtmlBody(e.getHtmlBody());
         t.setCreatedAt(e.getCreatedAt());
         t.setUpdatedAt(e.getUpdatedAt());
+        t.setBuiltinKey(e.getBuiltinKey());
         return t;
     }
 }

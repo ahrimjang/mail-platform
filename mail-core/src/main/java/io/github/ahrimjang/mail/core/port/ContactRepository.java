@@ -20,6 +20,9 @@ public interface ContactRepository {
 
     List<Contact> findAll();
 
+    /** Total number of contacts (dashboard audience size). */
+    long count();
+
     /** All contacts that are members of the given list, ordered by id. */
     List<Contact> findByListId(Long listId);
 

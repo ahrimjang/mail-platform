@@ -23,6 +23,10 @@ public class Campaign {
     private String senderEmail;
     private Instant scheduledAt;
     private Instant enqueuedAt;
+    // Soft provenance references (content/audience snapshotted at create time):
+    // kept for display even if the template or list is deleted later.
+    private Long templateId;
+    private Long listId;
 
     public Campaign() {
     }
@@ -107,5 +111,21 @@ public class Campaign {
 
     public void setEnqueuedAt(Instant enqueuedAt) {
         this.enqueuedAt = enqueuedAt;
+    }
+
+    public Long getTemplateId() {
+        return templateId;
+    }
+
+    public void setTemplateId(Long templateId) {
+        this.templateId = templateId;
+    }
+
+    public Long getListId() {
+        return listId;
+    }
+
+    public void setListId(Long listId) {
+        this.listId = listId;
     }
 }

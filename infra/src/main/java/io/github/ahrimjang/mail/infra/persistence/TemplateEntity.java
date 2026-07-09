@@ -32,16 +32,22 @@ public class TemplateEntity {
     @Column(nullable = false)
     private Instant updatedAt;
 
+    /** Seed key of a built-in template (null = user-authored). */
+    @Column(length = 32)
+    private String builtinKey;
+
     protected TemplateEntity() {
     }
 
-    public TemplateEntity(Long id, String name, String subject, String htmlBody, Instant createdAt, Instant updatedAt) {
+    public TemplateEntity(Long id, String name, String subject, String htmlBody, Instant createdAt,
+                          Instant updatedAt, String builtinKey) {
         this.id = id;
         this.name = name;
         this.subject = subject;
         this.htmlBody = htmlBody;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
+        this.builtinKey = builtinKey;
     }
 
     public Long getId() {
@@ -82,5 +88,9 @@ public class TemplateEntity {
 
     public void setUpdatedAt(Instant updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public String getBuiltinKey() {
+        return builtinKey;
     }
 }

@@ -57,7 +57,50 @@ public class TemplateService {
     }
 
     public void delete(Long id) {
+        // Built-ins are a permanent part of the console — offer reset, not delete
+        // (the boot seeder would just resurrect a deleted one anyway).
+        if (load(id).isBuiltin()) {
+            throw new IllegalStateException("built-in templates cannot be deleted — reset them instead: " + id);
+        }
         templates.deleteById(id);
+    }
+
+    /**
+     * Inserts any built-in template that is missing (first boot, or new seeds
+     * added in a release). Existing rows — including user-edited ones — are
+     * left untouched, so edits survive restarts.
+     *
+     * @return number of templates inserted
+     */
+    public int seedBuiltins() {
+        int inserted = 0;
+        for (BuiltinTemplates.Seed seed : BuiltinTemplates.ALL) {
+            if (templates.findByBuiltinKey(seed.key()).isEmpty()) {
+                Template t = Template.create(seed.name(), seed.subject(), seed.htmlBody());
+                t.setBuiltinKey(seed.key());
+                templates.save(t);
+                inserted++;
+            }
+        }
+        return inserted;
+    }
+
+    /** Restores an edited built-in template back to its original seed content. */
+    public TemplateView resetBuiltin(Long id) {
+        Template template = load(id);
+        if (!template.isBuiltin()) {
+            throw new IllegalStateException("not a built-in template: " + id);
+        }
+        BuiltinTemplates.Seed seed = BuiltinTemplates.ALL.stream()
+                .filter(s -> s.key().equals(template.getBuiltinKey()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException(
+                        "unknown built-in key: " + template.getBuiltinKey()));
+        template.setName(seed.name());
+        template.setSubject(seed.subject());
+        template.setHtmlBody(seed.htmlBody());
+        template.setUpdatedAt(Instant.now());
+        return toView(templates.save(template));
     }
 
     /** Render the template's subject and body with the given variables, without persisting. */
@@ -89,7 +132,8 @@ public class TemplateService {
                 template.getSubject(),
                 template.getHtmlBody(),
                 template.getCreatedAt(),
-                template.getUpdatedAt()
+                template.getUpdatedAt(),
+                template.getBuiltinKey()
         );
     }
 }

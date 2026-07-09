@@ -63,6 +63,11 @@ public class JpaMailMessageRepository implements MailMessageRepository {
     }
 
     @Override
+    public int cancelPendingByCampaign(Long campaignId) {
+        return jpa.cancelPendingByCampaignId(campaignId, Instant.now());
+    }
+
+    @Override
     public List<MailMessage> findRecentByCampaign(Long campaignId, int limit) {
         return jpa.findByCampaignIdOrderByUpdatedAtDescIdDesc(
                         campaignId, org.springframework.data.domain.PageRequest.of(0, limit))
@@ -79,6 +84,16 @@ public class JpaMailMessageRepository implements MailMessageRepository {
                         MessageStatus.valueOf((String) row[1]),
                         ((Number) row[2]).longValue(),
                         (String) row[3]))
+                .toList();
+    }
+
+    @Override
+    public List<DailyOutcome> aggregateDailyOutcomes(Instant since, java.time.ZoneId zone) {
+        return jpa.aggregateDailyOutcomes(since, zone.getId()).stream()
+                .map(row -> new DailyOutcome(
+                        ((java.sql.Date) row[0]).toLocalDate(),
+                        MessageStatus.valueOf((String) row[1]),
+                        ((Number) row[2]).longValue()))
                 .toList();
     }
 

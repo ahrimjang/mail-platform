@@ -56,9 +56,15 @@ public class JpaCampaignRepository implements CampaignRepository {
         return jpa.claimForEnqueue(id, now) == 1;
     }
 
+    @Override
+    public boolean claimForCancel(Long id) {
+        return jpa.claimForCancel(id) == 1;
+    }
+
     private CampaignEntity toEntity(Campaign c) {
         return new CampaignEntity(c.getId(), c.getSubject(), c.getBody(), c.getStatus(), c.getCreatedAt(),
-                c.getSenderName(), c.getSenderEmail(), c.getScheduledAt(), c.getEnqueuedAt());
+                c.getSenderName(), c.getSenderEmail(), c.getScheduledAt(), c.getEnqueuedAt(),
+                c.getTemplateId(), c.getListId());
     }
 
     private Campaign toDomain(CampaignEntity e) {
@@ -72,6 +78,8 @@ public class JpaCampaignRepository implements CampaignRepository {
         c.setSenderEmail(e.getSenderEmail());
         c.setScheduledAt(e.getScheduledAt());
         c.setEnqueuedAt(e.getEnqueuedAt());
+        c.setTemplateId(e.getTemplateId());
+        c.setListId(e.getListId());
         return c;
     }
 }

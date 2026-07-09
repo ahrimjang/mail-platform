@@ -17,4 +17,7 @@ public interface TemplateRepository {
     List<Template> findAll();
 
     void deleteById(Long id);
+
+    /** Look up a built-in template by its seed key (used by the boot seeder and reset). */
+    Optional<Template> findByBuiltinKey(String builtinKey);
 }

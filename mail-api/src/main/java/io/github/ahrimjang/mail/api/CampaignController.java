@@ -50,6 +50,22 @@ public class CampaignController {
         return campaigns.get(id);
     }
 
+    /**
+     * Cancel a scheduled campaign before its release. 409 when the campaign was
+     * already released (or was never deferred) — cancellation is only possible
+     * while the queue publish is still pending.
+     */
+    @PostMapping("/{id}/cancel")
+    public CampaignView cancel(@PathVariable Long id) {
+        return campaigns.cancelSchedule(id);
+    }
+
+    /** The mail this campaign sends: subject + HTML body snapshot (heavy — not part of the polled view). */
+    @GetMapping("/{id}/content")
+    public io.github.ahrimjang.mail.common.CampaignContentView content(@PathVariable Long id) {
+        return campaigns.content(id);
+    }
+
     /** Per-recipient drill-down: the campaign's most recently updated deliveries, newest first. */
     @GetMapping("/{id}/messages")
     public List<MessageView> messages(@PathVariable Long id,
@@ -73,5 +89,10 @@ public class CampaignController {
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, String>> badRequest(IllegalArgumentException e) {
         return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+    }
+
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<Map<String, String>> conflict(IllegalStateException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", e.getMessage()));
     }
 }

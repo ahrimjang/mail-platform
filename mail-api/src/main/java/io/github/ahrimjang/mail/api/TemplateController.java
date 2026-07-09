@@ -67,6 +67,12 @@ public class TemplateController {
         return templates.preview(id, variables);
     }
 
+    /** Restore an edited built-in template to its original content. 409 for user templates. */
+    @PostMapping("/{id}/reset")
+    public TemplateView reset(@PathVariable Long id) {
+        return templates.resetBuiltin(id);
+    }
+
     @ExceptionHandler(NoSuchElementException.class)
     public ResponseEntity<Map<String, String>> notFound(NoSuchElementException e) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));

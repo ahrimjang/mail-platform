@@ -17,4 +17,7 @@ public interface SuppressionRepository {
 
     /** Remove the address from the suppression list; a no-op if not present. */
     void deleteByEmail(String email);
+
+    /** Total number of suppressed addresses (dashboard audience health). */
+    long count();
 }

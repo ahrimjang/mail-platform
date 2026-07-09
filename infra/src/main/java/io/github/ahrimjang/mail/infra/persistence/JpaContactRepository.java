@@ -56,6 +56,11 @@ public class JpaContactRepository implements ContactRepository {
     }
 
     @Override
+    public long count() {
+        return jpa.count();
+    }
+
+    @Override
     public List<Contact> findByListId(Long listId) {
         return jpa.findByListId(listId).stream().map(this::toDomain).toList();
     }
