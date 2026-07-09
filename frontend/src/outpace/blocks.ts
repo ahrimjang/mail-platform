@@ -17,6 +17,7 @@ interface BaseStyle {
   bgImage?: string; // background image URL (uploaded or external)
   padY?: number; // vertical padding override (px)
   padX?: number; // horizontal padding override (px)
+  minH?: number; // minimum box height in px (undefined = fit content)
 }
 
 export interface TextBlock extends BaseStyle {
@@ -207,6 +208,14 @@ function bgOf(b: Block): string {
     + (img ? `;background-image:url('${escAttr(img)}');background-size:cover;background-position:center` : "");
 }
 
+/**
+ * Optional minimum height. On a table cell `height` behaves as min-height
+ * (content still expands past it); top alignment matches the canvas.
+ */
+function hOf(b: Block): string {
+  return b.minH ? `;height:${b.minH}px;vertical-align:top` : "";
+}
+
 function blockHtml(b: Block): string {
   switch (b.type) {
     case "text": {
@@ -214,33 +223,33 @@ function blockHtml(b: Block): string {
       const heading = b.heading.trim()
         ? `<h2 style="margin:0 0 12px;font-size:22px;letter-spacing:-0.02em;color:#18181b">${esc(b.heading)}</h2>`
         : "";
-      return `<td style="padding:${padOf(b)};${bgOf(b)};text-align:${b.align}">${heading}<p style="margin:0;font-size:${b.fontSize ?? d.fontSize}px;color:${b.color ?? d.color};line-height:1.75">${b.body}</p></td>`;
+      return `<td style="padding:${padOf(b)};${bgOf(b)}${hOf(b)};text-align:${b.align}">${heading}<p style="margin:0;font-size:${b.fontSize ?? d.fontSize}px;color:${b.color ?? d.color};line-height:1.75">${b.body}</p></td>`;
     }
     case "image":
       if (!b.url.trim()) {
-        return `<td style="padding:0;${bgOf(b)}"></td>`;
+        return `<td style="padding:0;${bgOf(b)}${hOf(b)}"></td>`;
       }
-      return `<td style="padding:${padOf(b)};${bgOf(b)}"><img src="${escAttr(b.url)}" alt="${escAttr(b.alt)}" width="600" style="display:block;width:100%;height:auto"></td>`;
+      return `<td style="padding:${padOf(b)};${bgOf(b)}${hOf(b)}"><img src="${escAttr(b.url)}" alt="${escAttr(b.alt)}" width="600" style="display:block;width:100%;height:auto"></td>`;
     case "button": {
       const d = DEFAULTS.button;
-      return `<td style="padding:${padOf(b)};${bgOf(b)};text-align:${b.align}"><a href="${escAttr(b.url)}" style="display:inline-block;background:${b.btnColor ?? d.btnColor};color:#ffffff;font-size:14.5px;font-weight:bold;padding:13px 32px;border-radius:${b.btnRadius ?? d.btnRadius}px;text-decoration:none">${esc(b.label)}</a></td>`;
+      return `<td style="padding:${padOf(b)};${bgOf(b)}${hOf(b)};text-align:${b.align}"><a href="${escAttr(b.url)}" style="display:inline-block;background:${b.btnColor ?? d.btnColor};color:#ffffff;font-size:14.5px;font-weight:bold;padding:13px 32px;border-radius:${b.btnRadius ?? d.btnRadius}px;text-decoration:none">${esc(b.label)}</a></td>`;
     }
     case "two": {
       const d = DEFAULTS.two;
       const fs = b.fontSize ?? d.fontSize;
       const col = (title: string, body: string) =>
         `<td width="48%" valign="top"><h3 style="margin:0 0 6px;font-size:14px;color:#18181b">${esc(title)}</h3><p style="margin:0;font-size:${fs}px;color:${b.color ?? d.color};line-height:1.6">${body}</p></td>`;
-      return `<td style="padding:${padOf(b)};${bgOf(b)}"><table width="100%" cellpadding="0" cellspacing="0"><tr>`
+      return `<td style="padding:${padOf(b)};${bgOf(b)}${hOf(b)}"><table width="100%" cellpadding="0" cellspacing="0"><tr>`
         + col(b.leftTitle, b.leftBody)
         + `<td width="4%"></td>`
         + col(b.rightTitle, b.rightBody)
         + `</tr></table></td>`;
     }
     case "divider":
-      return `<td style="padding:${padOf(b)};${bgOf(b)}"><hr style="border:none;border-top:1px solid #e4e4e7;margin:0"></td>`;
+      return `<td style="padding:${padOf(b)};${bgOf(b)}${hOf(b)}"><hr style="border:none;border-top:1px solid #e4e4e7;margin:0"></td>`;
     case "footer": {
       const d = DEFAULTS.footer;
-      return `<td style="padding:${padOf(b)};${bgOf(b)};text-align:center"><p style="margin:0;font-size:12px;color:${b.color ?? d.color};line-height:1.75">${b.text}</p></td>`;
+      return `<td style="padding:${padOf(b)};${bgOf(b)}${hOf(b)};text-align:center"><p style="margin:0;font-size:12px;color:${b.color ?? d.color};line-height:1.75">${b.text}</p></td>`;
     }
   }
 }

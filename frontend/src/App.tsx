@@ -4,6 +4,7 @@ import AppShell from "./components/AppShell";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Dashboard from "./pages/Dashboard";
+import Campaigns from "./pages/Campaigns";
 import NewCampaign from "./pages/NewCampaign";
 import CampaignDetail from "./pages/CampaignDetail";
 import Templates from "./pages/Templates";
@@ -41,6 +42,7 @@ function AppRoutes() {
         }
       >
         <Route index element={<Dashboard />} />
+        <Route path="campaigns" element={<Campaigns />} />
         <Route path="campaigns/new" element={<NewCampaign />} />
         <Route path="campaigns/:id" element={<CampaignDetail />} />
         <Route path="templates" element={<Templates />} />

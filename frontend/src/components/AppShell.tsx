@@ -36,7 +36,7 @@ export default function AppShell() {
           </div>
           <nav className="op-navlinks">
             <button className={`op-navlink${isDash ? " active" : ""}`} onClick={() => nav("/")}>대시보드</button>
-            <button className={`op-navlink${isCamp ? " active" : ""}`} onClick={() => nav("/campaigns/new")}>캠페인</button>
+            <button className={`op-navlink${isCamp ? " active" : ""}`} onClick={() => nav("/campaigns")}>캠페인</button>
             <button className={`op-navlink${isTpl ? " active" : ""}`} onClick={() => nav("/templates")}>템플릿</button>
             <button className={`op-navlink${isRcp ? " active" : ""}`} onClick={() => nav("/recipients")}>수신자</button>
             <button className={`op-navlink${isList ? " active" : ""}`} onClick={() => nav("/lists")}>리스트</button>

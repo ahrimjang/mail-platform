@@ -82,6 +82,16 @@ export default function HtmlEditor() {
   }
 
   const preview = useMemo(() => renderPreview(body), [body]);
+  // Debounced full document for the preview iframe. Sandboxed iframes repaint
+  // unreliably when srcdoc is *updated* in place (Chromium: the new doc loads
+  // but can stay blank), so the iframe below is remounted per doc via key= —
+  // debounced here so typing doesn't recreate the frame on every keystroke.
+  const [previewDoc, setPreviewDoc] = useState("");
+  useEffect(() => {
+    const doc = `<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;background:#f4f4f5;padding:16px">${preview}</body></html>`;
+    const t = setTimeout(() => setPreviewDoc(doc), 250);
+    return () => clearTimeout(t);
+  }, [preview]);
   const lineCount = useMemo(() => body.split("\n").length, [body]);
   const gutter = useMemo(
     () => Array.from({ length: lineCount }, (_, i) => i + 1).join("\n"),
@@ -158,12 +168,15 @@ export default function HtmlEditor() {
             </div>
           </div>
           <div className="op-preview-body">
-            <iframe
-              title="template-preview"
-              className={`op-preview-frame${device === "mobile" ? " mobile" : ""}`}
-              sandbox=""
-              srcDoc={`<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;background:#f4f4f5;padding:16px">${preview}</body></html>`}
-            />
+            {previewDoc && (
+              <iframe
+                key={previewDoc}
+                title="template-preview"
+                className={`op-preview-frame${device === "mobile" ? " mobile" : ""}`}
+                sandbox=""
+                srcDoc={previewDoc}
+              />
+            )}
           </div>
         </div>
       </div>

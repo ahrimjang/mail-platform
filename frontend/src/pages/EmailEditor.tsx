@@ -150,7 +150,7 @@ function BlockView({ b, patch, onRichFocus }: {
     case "text": {
       const d = DEFAULTS.text;
       return (
-        <div style={{ padding: pad(d.padY, d.padX), ...bgStyle(b), textAlign: b.align }}>
+        <div style={{ padding: pad(d.padY, d.padX), ...bgStyle(b), minHeight: b.minH, textAlign: b.align }}>
           <Editable
             html={b.heading.trim() ? escText(b.heading) : ""}
             onCommit={(v) => patch({ heading: v })}
@@ -168,9 +168,9 @@ function BlockView({ b, patch, onRichFocus }: {
     }
     case "image":
       return b.url.trim() ? (
-        <div style={bgStyle(b)}><img src={b.url} alt={b.alt} style={{ display: "block", width: "100%" }} /></div>
+        <div style={{ ...bgStyle(b), minHeight: b.minH }}><img src={b.url} alt={b.alt} style={{ display: "block", width: "100%" }} /></div>
       ) : (
-        <div className="op-hatch" style={{ height: 150, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 6 }}>
+        <div className="op-hatch" style={{ height: b.minH ?? 150, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 6 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: "#9a9aa2", fontFamily: "ui-monospace, monospace" }}>이미지 · 권장 1200×400</div>
           <div style={{ fontSize: 11, color: "#b4b4bb" }}>오른쪽 패널에 이미지 URL을 입력하세요</div>
         </div>
@@ -178,7 +178,7 @@ function BlockView({ b, patch, onRichFocus }: {
     case "button": {
       const d = DEFAULTS.button;
       return (
-        <div style={{ padding: pad(d.padY, d.padX), ...bgStyle(b), textAlign: b.align }}>
+        <div style={{ padding: pad(d.padY, d.padX), ...bgStyle(b), minHeight: b.minH, textAlign: b.align }}>
           <span style={{ display: "inline-block", background: b.btnColor ?? d.btnColor, color: "#fff", fontSize: 14.5, fontWeight: 700, padding: "13px 32px", borderRadius: b.btnRadius ?? d.btnRadius }}>
             <Editable tag="span" html={escText(b.label)} onCommit={(v) => patch({ label: v })} />
           </span>
@@ -188,7 +188,7 @@ function BlockView({ b, patch, onRichFocus }: {
     case "two": {
       const d = DEFAULTS.two;
       return (
-        <div style={{ padding: pad(d.padY, d.padX), ...bgStyle(b), display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+        <div style={{ padding: pad(d.padY, d.padX), ...bgStyle(b), minHeight: b.minH, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
           <div>
             <Editable html={escText(b.leftTitle)} onCommit={(v) => patch({ leftTitle: v })} style={{ fontSize: 14, fontWeight: 700, marginBottom: 5 }} />
             <Editable html={b.leftBody} rich onRichFocus={onRichFocus} onCommit={(v) => patch({ leftBody: v })} style={{ fontSize: b.fontSize ?? d.fontSize, color: b.color ?? d.color, lineHeight: 1.6 }} />
@@ -202,12 +202,12 @@ function BlockView({ b, patch, onRichFocus }: {
     }
     case "divider": {
       const d = DEFAULTS.divider;
-      return <div style={{ padding: pad(d.padY, d.padX), ...bgStyle(b) }}><hr style={{ border: "none", borderTop: "1px solid #e4e4e7", margin: 0 }} /></div>;
+      return <div style={{ padding: pad(d.padY, d.padX), ...bgStyle(b), minHeight: b.minH }}><hr style={{ border: "none", borderTop: "1px solid #e4e4e7", margin: 0 }} /></div>;
     }
     case "footer": {
       const d = DEFAULTS.footer;
       return (
-        <div style={{ padding: pad(d.padY, d.padX), ...bgStyle(b), textAlign: "center" }}>
+        <div style={{ padding: pad(d.padY, d.padX), ...bgStyle(b), minHeight: b.minH, textAlign: "center" }}>
           <Editable html={b.text} rich onRichFocus={onRichFocus} onCommit={(v) => patch({ text: v })} style={{ fontSize: 12, color: b.color ?? d.color, lineHeight: 1.75 }} />
         </div>
       );
@@ -271,6 +271,12 @@ function BlockPanel({ b, patch }: { b: Block; patch: (updates: Partial<Block>) =
         <input className="op-num" type="number" min={0} max={80} placeholder={String(d.padX)}
           value={b.padX ?? ""} onChange={(e) => patch({ padX: numOr(e.target.value) })} />
       </div>
+      <div className="op-stylerow">
+        <span className="sl">최소 높이</span>
+        <input className="op-num" type="number" min={0} max={600} placeholder="자동"
+          value={b.minH ?? ""} onChange={(e) => patch({ minH: numOr(e.target.value) })} />
+      </div>
+      <p className="op-rp-note" style={{ marginTop: 6 }}>비우면 내용에 맞춰집니다. 캔버스에서 상자 아래 손잡이를 끌어도 조절돼요.</p>
 
       {/* font size + text color */}
       {(b.type === "text" || b.type === "two") && (
@@ -404,6 +410,27 @@ export default function EmailEditor() {
 
   function patchBlock(blockId: string, updates: Partial<Block>) {
     setBlocks((prev) => prev.map((b) => (b.id === blockId ? ({ ...b, ...updates } as Block) : b)));
+  }
+
+  /* Drag the bottom handle of a selected box to set its minimum height —
+     the box grows live while dragging; releasing keeps the value (minH). */
+  function startResize(e: React.MouseEvent, blockId: string) {
+    e.preventDefault();
+    e.stopPropagation();
+    const box = (e.currentTarget as HTMLElement).closest(".op-box") as HTMLElement | null;
+    if (!box) return;
+    const startY = e.clientY;
+    const startH = box.getBoundingClientRect().height;
+    const onMove = (ev: MouseEvent) => {
+      const h = Math.round(Math.max(24, Math.min(600, startH + ev.clientY - startY)));
+      patchBlock(blockId, { minH: h });
+    };
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
   }
 
   function move(blockId: string, dir: -1 | 1) {
@@ -619,6 +646,15 @@ export default function EmailEditor() {
                     />
                   )}
                   <BlockView b={b} patch={(u) => patchBlock(b.id, u)} onRichFocus={setRichActive} />
+                  {sel === b.id && (
+                    <div
+                      className="op-box-resize"
+                      title="드래그로 높이 조절 · 더블클릭하면 자동 높이"
+                      onMouseDown={(e) => startResize(e, b.id)}
+                      onDoubleClick={(e) => { e.stopPropagation(); patchBlock(b.id, { minH: undefined }); }}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  )}
                 </div>
               );
             })}

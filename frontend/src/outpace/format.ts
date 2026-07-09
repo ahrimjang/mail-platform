@@ -14,6 +14,8 @@ export function badgeClass(status: CampaignStatus): string {
       return "queued";
     case "COMPLETED":
       return "completed";
+    case "CANCELED":
+      return "off";
     default:
       return "draft";
   }
