@@ -40,4 +40,28 @@ public interface CampaignJpaRepository extends JpaRepository<CampaignEntity, Lon
             + "where c.id = :id and c.enqueuedAt is null "
             + "and c.status = io.github.ahrimjang.mail.common.CampaignStatus.QUEUED")
     int claimForCancel(@Param("id") Long id);
+
+    @Modifying
+    @Transactional
+    @Query("update CampaignEntity c set c.status = io.github.ahrimjang.mail.common.CampaignStatus.EXPANDING "
+            + "where c.id = :id and c.status = io.github.ahrimjang.mail.common.CampaignStatus.QUEUED")
+    int claimForFanout(@Param("id") Long id);
+
+    @Modifying
+    @Transactional
+    @Query("update CampaignEntity c set c.status = io.github.ahrimjang.mail.common.CampaignStatus.SENDING "
+            + "where c.id = :id and c.status = io.github.ahrimjang.mail.common.CampaignStatus.EXPANDING")
+    int markExpanded(@Param("id") Long id);
+
+    @Modifying
+    @Transactional
+    @Query("update CampaignEntity c set c.status = io.github.ahrimjang.mail.common.CampaignStatus.SENDING "
+            + "where c.id = :id and c.status = io.github.ahrimjang.mail.common.CampaignStatus.QUEUED")
+    int markSendingIfQueued(@Param("id") Long id);
+
+    @Modifying
+    @Transactional
+    @Query("update CampaignEntity c set c.status = io.github.ahrimjang.mail.common.CampaignStatus.COMPLETED "
+            + "where c.id = :id and c.status = io.github.ahrimjang.mail.common.CampaignStatus.SENDING")
+    int completeIfSending(@Param("id") Long id);
 }

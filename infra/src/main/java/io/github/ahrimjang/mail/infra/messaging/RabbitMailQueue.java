@@ -22,4 +22,10 @@ public class RabbitMailQueue implements MailQueue {
     public void enqueue(Long messageId) {
         rabbitTemplate.convertAndSend(RabbitMailConfig.EXCHANGE, RabbitMailConfig.ROUTING_KEY, new SendJob(messageId));
     }
+
+    @Override
+    public void enqueueFanout(Long campaignId) {
+        rabbitTemplate.convertAndSend(RabbitMailConfig.EXCHANGE, RabbitMailConfig.FANOUT_ROUTING_KEY,
+                new io.github.ahrimjang.mail.common.FanoutJob(campaignId));
+    }
 }

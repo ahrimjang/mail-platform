@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.ahrimjang.mail.core.domain.Contact;
 import io.github.ahrimjang.mail.core.port.ContactRepository;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -63,6 +64,17 @@ public class JpaContactRepository implements ContactRepository {
     @Override
     public List<Contact> findByListId(Long listId) {
         return jpa.findByListId(listId).stream().map(this::toDomain).toList();
+    }
+
+    @Override
+    public List<Contact> findByListIdAfter(Long listId, Long afterId, int limit) {
+        return jpa.findByListIdAfter(listId, afterId, PageRequest.of(0, limit)).stream()
+                .map(this::toDomain).toList();
+    }
+
+    @Override
+    public long countByListId(Long listId) {
+        return jpa.countByListId(listId);
     }
 
     @Override

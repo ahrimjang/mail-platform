@@ -22,6 +22,8 @@ public class RabbitMailConfig {
     public static final String DLX = "mail.dlx";
     public static final String DLQ = "mail.send.dlq";
     public static final String DLQ_ROUTING = "mail.send.dlq";
+    public static final String FANOUT_QUEUE = "mail.fanout.queue";
+    public static final String FANOUT_ROUTING_KEY = "mail.fanout";
 
     @Bean
     public DirectExchange mailExchange() {
@@ -39,6 +41,19 @@ public class RabbitMailConfig {
     @Bean
     public Binding mailBinding() {
         return BindingBuilder.bind(mailQueue()).to(mailExchange()).with(ROUTING_KEY);
+    }
+
+    @Bean
+    public Queue fanoutQueue() {
+        return QueueBuilder.durable(FANOUT_QUEUE)
+                .withArgument("x-dead-letter-exchange", DLX)
+                .withArgument("x-dead-letter-routing-key", DLQ_ROUTING)
+                .build();
+    }
+
+    @Bean
+    public Binding fanoutBinding() {
+        return BindingBuilder.bind(fanoutQueue()).to(mailExchange()).with(FANOUT_ROUTING_KEY);
     }
 
     @Bean

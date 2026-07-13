@@ -50,4 +50,28 @@ public interface CampaignRepository {
      *         already released (or never deferred) and cannot be canceled.
      */
     boolean claimForCancel(Long id);
+
+    /**
+     * QUEUED -> EXPANDING atomic claim for fan-out. True if this caller won
+     * (redelivered jobs lose it). Single atomic conditional UPDATE.
+     */
+    boolean claimForFanout(Long id);
+
+    /**
+     * EXPANDING -> SENDING once fan-out finished creating+enqueuing all messages.
+     * Single atomic conditional UPDATE.
+     */
+    void markExpanded(Long id);
+
+    /**
+     * QUEUED -> SENDING (dispatch marking first progress on an ad-hoc campaign).
+     * True if it flipped. Single atomic conditional UPDATE.
+     */
+    boolean markSendingIfQueued(Long id);
+
+    /**
+     * SENDING -> COMPLETED once drained. No-op while EXPANDING, so fan-out in
+     * progress is never completed early. Single atomic conditional UPDATE.
+     */
+    void completeIfSending(Long id);
 }

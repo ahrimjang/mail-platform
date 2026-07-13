@@ -20,6 +20,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -53,6 +54,21 @@ class CampaignScheduleServiceTest {
         assertThat(released).isEqualTo(1);
         verify(mailQueue).enqueue(100L);
         verify(mailQueue).enqueue(101L);
+    }
+
+    @Test
+    void releaseDue_listCampaign_publishesAFanoutJobInsteadOfPerMessageEnqueues() {
+        Campaign listCampaign = scheduled(1L);
+        listCampaign.setListId(5L);
+        when(campaigns.findDueForEnqueue(any(Instant.class))).thenReturn(List.of(listCampaign));
+        when(campaigns.claimForEnqueue(eq(1L), any(Instant.class))).thenReturn(true);
+
+        int released = service.releaseDue();
+
+        assertThat(released).isEqualTo(1);
+        verify(mailQueue).enqueueFanout(1L);
+        verify(messages, never()).findPendingIdsByCampaign(anyLong());
+        verifyNoMoreInteractions(mailQueue);
     }
 
     @Test

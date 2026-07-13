@@ -61,6 +61,26 @@ public class JpaCampaignRepository implements CampaignRepository {
         return jpa.claimForCancel(id) == 1;
     }
 
+    @Override
+    public boolean claimForFanout(Long id) {
+        return jpa.claimForFanout(id) == 1;
+    }
+
+    @Override
+    public void markExpanded(Long id) {
+        jpa.markExpanded(id);
+    }
+
+    @Override
+    public boolean markSendingIfQueued(Long id) {
+        return jpa.markSendingIfQueued(id) == 1;
+    }
+
+    @Override
+    public void completeIfSending(Long id) {
+        jpa.completeIfSending(id);
+    }
+
     private CampaignEntity toEntity(Campaign c) {
         return new CampaignEntity(c.getId(), c.getSubject(), c.getBody(), c.getStatus(), c.getCreatedAt(),
                 c.getSenderName(), c.getSenderEmail(), c.getScheduledAt(), c.getEnqueuedAt(),

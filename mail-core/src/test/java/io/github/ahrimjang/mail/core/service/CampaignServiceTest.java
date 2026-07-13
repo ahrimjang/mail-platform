@@ -6,7 +6,6 @@ import io.github.ahrimjang.mail.common.CreateCampaignRequest;
 import io.github.ahrimjang.mail.common.EventType;
 import io.github.ahrimjang.mail.common.MessageStatus;
 import io.github.ahrimjang.mail.core.domain.Campaign;
-import io.github.ahrimjang.mail.core.domain.Contact;
 import io.github.ahrimjang.mail.core.domain.MailMessage;
 import io.github.ahrimjang.mail.core.domain.Template;
 import io.github.ahrimjang.mail.core.domain.ContactList;
@@ -176,33 +175,24 @@ class CampaignServiceTest {
     }
 
     @Test
-    void create_withListId_fansOutOneMessagePerMemberCarryingContactId() {
-        Contact alice = Contact.of("alice@example.com", "Alice", null, null);
-        alice.setId(11L);
-        Contact bob = Contact.of("bob@example.com", "Bob", null, null);
-        bob.setId(12L);
-        when(contacts.findByListId(5L)).thenReturn(List.of(alice, bob));
+    void create_withListId_defersRecipientExpansionToAFanoutJob() {
+        // List campaigns are O(1) at create time: no members are loaded and no
+        // messages are saved — the worker expands them off a single fan-out job.
+        when(contacts.countByListId(5L)).thenReturn(2L);
         stubCampaignSaveAssigningId();
-        stubMessageSaveAllAssigningIds();
-        stubViewCounts(2, 2);
+        stubViewCounts(0, 0);
 
         service.create(new CreateCampaignRequest("Subject", "<p>Body</p>", null, null, 5L, null, null, null));
 
-        List<MailMessage> queued = capturedSavedMessages();
-        assertThat(queued).hasSize(2);
-        assertThat(queued).extracting(MailMessage::getRecipient)
-                .containsExactly("alice@example.com", "bob@example.com");
-        assertThat(queued).extracting(MailMessage::getContactId)
-                .containsExactly(11L, 12L);
-        verify(mailQueue).enqueue(100L);
-        verify(mailQueue).enqueue(101L);
+        verify(mailQueue).enqueueFanout(CAMPAIGN_ID);
         verifyNoMoreInteractions(mailQueue);
+        verify(messages, never()).saveAll(anyList());
     }
 
     @Test
     void create_withEmptyList_throwsIllegalArgument() {
         stubCampaignSaveAssigningId();
-        when(contacts.findByListId(5L)).thenReturn(List.of());
+        when(contacts.countByListId(5L)).thenReturn(0L);
 
         assertThatThrownBy(() -> service.create(new CreateCampaignRequest(
                 "Subject", "<p>Body</p>", null, null, 5L, null, null, null)))
@@ -353,12 +343,9 @@ class CampaignServiceTest {
         ContactList list = ContactList.of("뉴스레터 구독자", null);
         list.setId(5L);
         when(lists.findById(5L)).thenReturn(Optional.of(list));
-        Contact alice = Contact.of("alice@example.com", "Alice", null, null);
-        alice.setId(11L);
-        when(contacts.findByListId(5L)).thenReturn(List.of(alice));
+        when(contacts.countByListId(5L)).thenReturn(1L);
         stubCampaignSaveAssigningId();
-        stubMessageSaveAllAssigningIds();
-        stubViewCounts(1, 1);
+        stubViewCounts(0, 0);
 
         CampaignView view = service.create(new CreateCampaignRequest(
                 null, null, null, 7L, 5L, null, null, null));

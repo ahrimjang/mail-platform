@@ -10,4 +10,7 @@ public interface MailQueue {
 
     /** Enqueue one send job for the given message id. */
     void enqueue(Long messageId);
+
+    /** Enqueue a fan-out job so the worker expands a list campaign's recipients. */
+    void enqueueFanout(Long campaignId);
 }

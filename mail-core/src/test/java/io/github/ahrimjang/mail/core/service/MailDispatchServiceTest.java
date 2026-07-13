@@ -1,6 +1,5 @@
 package io.github.ahrimjang.mail.core.service;
 
-import io.github.ahrimjang.mail.common.CampaignStatus;
 import io.github.ahrimjang.mail.common.MessageStatus;
 import io.github.ahrimjang.mail.core.domain.Campaign;
 import io.github.ahrimjang.mail.core.domain.Contact;
@@ -261,7 +260,7 @@ class MailDispatchServiceTest {
 
         service.dispatchOne(MESSAGE_ID);
 
-        verify(campaigns).updateStatus(CAMPAIGN_ID, CampaignStatus.COMPLETED);
+        verify(campaigns).completeIfSending(CAMPAIGN_ID);
     }
 
     @Test
@@ -276,6 +275,6 @@ class MailDispatchServiceTest {
 
         service.dispatchOne(MESSAGE_ID);
 
-        verify(campaigns, never()).updateStatus(CAMPAIGN_ID, CampaignStatus.COMPLETED);
+        verify(campaigns, never()).completeIfSending(CAMPAIGN_ID);
     }
 }

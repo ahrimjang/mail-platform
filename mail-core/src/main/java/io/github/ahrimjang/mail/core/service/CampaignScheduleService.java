@@ -52,11 +52,20 @@ public class CampaignScheduleService {
             if (!campaigns.claimForEnqueue(campaign.getId(), now)) {
                 continue; // another scheduler won the race
             }
-            List<Long> pendingIds = messages.findPendingIdsByCampaign(campaign.getId());
-            pendingIds.forEach(mailQueue::enqueue);
-            released++;
-            log.info("released scheduled campaign {} ({} messages) scheduledAt={}",
-                    campaign.getId(), pendingIds.size(), campaign.getScheduledAt());
+            if (campaign.getListId() != null) {
+                // List campaign: recipients were never expanded at create time — hand
+                // the fan-out job to the worker now that it is due.
+                mailQueue.enqueueFanout(campaign.getId());
+                released++;
+                log.info("released scheduled list campaign {} (fan-out) scheduledAt={}",
+                        campaign.getId(), campaign.getScheduledAt());
+            } else {
+                List<Long> pendingIds = messages.findPendingIdsByCampaign(campaign.getId());
+                pendingIds.forEach(mailQueue::enqueue);
+                released++;
+                log.info("released scheduled campaign {} ({} messages) scheduledAt={}",
+                        campaign.getId(), pendingIds.size(), campaign.getScheduledAt());
+            }
         }
         return released;
     }

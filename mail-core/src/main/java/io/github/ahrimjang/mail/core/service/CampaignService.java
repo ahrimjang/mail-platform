@@ -8,7 +8,6 @@ import io.github.ahrimjang.mail.common.EventType;
 import io.github.ahrimjang.mail.common.MessageView;
 import io.github.ahrimjang.mail.common.SendLogEntry;
 import io.github.ahrimjang.mail.core.domain.Campaign;
-import io.github.ahrimjang.mail.core.domain.Contact;
 import io.github.ahrimjang.mail.core.domain.MailMessage;
 import io.github.ahrimjang.mail.core.domain.Template;
 import io.github.ahrimjang.mail.core.port.CampaignRepository;
@@ -28,11 +27,11 @@ import java.util.NoSuchElementException;
 /**
  * Use cases for authoring and inspecting campaigns.
  *
- * <p>Creation is intentionally cheap: it persists the campaign, fans the
- * recipient list out into PENDING queue rows, enqueues one send job per row,
- * then returns immediately. The actual sending is done asynchronously by the
- * worker — this decoupling is what lets the API stay responsive under large
- * recipient lists.
+ * <p>Creation is intentionally cheap: it persists the campaign and, for list
+ * campaigns, hands one fan-out job to the worker (ad-hoc recipients are expanded
+ * inline since they are bounded by the request body), then returns immediately.
+ * The actual sending is done asynchronously by the worker — this decoupling is
+ * what lets the API stay responsive under large recipient lists.
  */
 @Service
 public class CampaignService {
@@ -89,26 +88,29 @@ public class CampaignService {
         campaign.setListId(request.listId());
         Campaign saved = campaigns.save(campaign);
 
-        List<MailMessage> queued;
         if (request.listId() != null) {
-            List<Contact> members = contacts.findByListId(request.listId());
-            if (members.isEmpty()) {
+            // Large list campaigns fan out asynchronously: persist only the campaign
+            // and hand a single fan-out job to the worker, so create() is O(1) in the
+            // recipient count. Scheduled campaigns publish the fan-out job at release
+            // time (see CampaignScheduleService); immediate ones publish it now.
+            if (contacts.countByListId(request.listId()) == 0) {
                 throw new IllegalArgumentException("list has no members: " + request.listId());
             }
-            queued = members.stream()
-                    .map(c -> MailMessage.queued(saved.getId(), c.getEmail(), c.getId()))
-                    .toList();
+            if (!deferred) {
+                mailQueue.enqueueFanout(saved.getId());
+            }
         } else {
             if (request.recipients() == null || request.recipients().isEmpty()) {
                 throw new IllegalArgumentException("recipients must not be empty");
             }
-            queued = request.recipients().stream()
+            // Ad-hoc recipient lists are bounded by the request body — expand inline.
+            List<MailMessage> queued = request.recipients().stream()
                     .map(recipient -> MailMessage.queued(saved.getId(), recipient))
                     .toList();
-        }
-        List<MailMessage> savedMessages = messages.saveAll(queued);
-        if (!deferred) {
-            savedMessages.forEach(m -> mailQueue.enqueue(m.getId()));
+            List<MailMessage> savedMessages = messages.saveAll(queued);
+            if (!deferred) {
+                savedMessages.forEach(m -> mailQueue.enqueue(m.getId()));
+            }
         }
 
         return toView(saved);

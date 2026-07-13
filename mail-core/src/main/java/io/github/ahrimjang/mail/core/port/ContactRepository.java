@@ -26,5 +26,11 @@ public interface ContactRepository {
     /** All contacts that are members of the given list, ordered by id. */
     List<Contact> findByListId(Long listId);
 
+    /** Keyset page of a list's contacts with id > afterId, ordered by id, at most `limit` — streams large lists without loading all. */
+    List<Contact> findByListIdAfter(Long listId, Long afterId, int limit);
+
+    /** Number of contacts in a list (cheap size check without loading members). */
+    long countByListId(Long listId);
+
     void deleteById(Long id);
 }

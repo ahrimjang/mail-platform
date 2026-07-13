@@ -1,4 +1,4 @@
-export type CampaignStatus = "DRAFT" | "QUEUED" | "SENDING" | "COMPLETED" | "CANCELED";
+export type CampaignStatus = "DRAFT" | "QUEUED" | "EXPANDING" | "SENDING" | "COMPLETED" | "CANCELED";
 
 export type MessageStatus =
   | "PENDING"

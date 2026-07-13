@@ -1,6 +1,5 @@
 package io.github.ahrimjang.mail.core.service;
 
-import io.github.ahrimjang.mail.common.CampaignStatus;
 import io.github.ahrimjang.mail.core.domain.Campaign;
 import io.github.ahrimjang.mail.core.domain.Contact;
 import io.github.ahrimjang.mail.core.domain.MailMessage;
@@ -132,10 +131,9 @@ public class MailDispatchService {
     }
 
     private void markSending(Campaign campaign) {
-        if (campaign.getStatus() != CampaignStatus.SENDING) {
-            campaign.setStatus(CampaignStatus.SENDING);
-            campaigns.updateStatus(campaign.getId(), CampaignStatus.SENDING);
-        }
+        // QUEUED -> SENDING only. A list campaign is EXPANDING here — fan-out owns its
+        // EXPANDING -> SENDING flip — so this is a no-op for it.
+        campaigns.markSendingIfQueued(campaign.getId());
     }
 
     private void completeIfDrained(Long campaignId) {
@@ -143,7 +141,8 @@ public class MailDispatchService {
         // SENDING messages are still in flight (claimed by a concurrent dispatchOne
         // call for this same campaign) — only PENDING+SENDING == 0 means truly drained.
         if (counts.pending() == 0 && counts.sending() == 0) {
-            campaigns.updateStatus(campaignId, CampaignStatus.COMPLETED);
+            // Only from SENDING — never completes a campaign still EXPANDING (fan-out in progress).
+            campaigns.completeIfSending(campaignId);
         }
     }
 }
