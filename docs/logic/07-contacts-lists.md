@@ -43,10 +43,13 @@ POST /api/campaigns {templateId, listId}
         │
         ▼
 CampaignService.create
-        │  contacts.findByListId(listId)  ← 조인 쿼리로 멤버 조회
+        │  countByListId로 빈 리스트만 검증 — 멤버 확장 없음, 팬아웃 잡 1건 발행 (O(1) 반환)
+        ▼
+RabbitMQ(mail.fanout.queue) ──> (worker) CampaignFanoutService.expand
+        │  contacts.findByListIdAfter(listId, afterId, 1000)  ← keyset 페이지로 멤버 스트리밍
         │  멤버마다 MailMessage.queued(campaignId, email, contactId)   ← contactId 연결!
         ▼
-RabbitMQ ──> (worker) dispatchOne ──> contactId로 Contact 로드 ──> toVariables() ──> 개인화 발송
+RabbitMQ(mail.send.queue) ──> (worker) dispatchOne ──> contactId로 Contact 로드 ──> toVariables() ──> 개인화 발송
 ```
 
 ## 3. 단계별 코드
@@ -224,30 +227,35 @@ public class ListMembershipEntity {
 
 ### 3-7. 리스트 타깃 캠페인: contactId를 실은 fan-out
 
-`mail-core/src/main/java/io/github/ahrimjang/mail/core/service/CampaignService.java`
+리스트 캠페인의 팬아웃은 이제 `create()`가 아니라 **worker의 `CampaignFanoutService`가 비동기로**
+수행합니다(02 문서 3-6 참고 — `create()`는 팬아웃 잡 1건만 발행하고 O(1)로 반환). 멤버를 keyset
+페이지로 스트리밍하며 배치마다 큐 행을 만드는 게 아래 루프입니다:
+
+`mail-core/src/main/java/io/github/ahrimjang/mail/core/service/CampaignFanoutService.java`
 ```java
-        List<MailMessage> queued;
-        if (request.listId() != null) {
-            List<Contact> members = contacts.findByListId(request.listId());
-            if (members.isEmpty()) {
-                throw new IllegalArgumentException("list has no members: " + request.listId());
+        long afterId = 0L;
+        long total = 0;
+        while (true) {
+            List<Contact> page = contacts.findByListIdAfter(listId, afterId, PAGE);
+            if (page.isEmpty()) {
+                break;
             }
-            queued = members.stream()
-                    .map(c -> MailMessage.queued(saved.getId(), c.getEmail(), c.getId()))
+            List<MailMessage> batch = page.stream()
+                    .map(c -> MailMessage.queued(campaignId, c.getEmail(), c.getId()))
                     .toList();
-        } else {
-            if (request.recipients() == null || request.recipients().isEmpty()) {
-                throw new IllegalArgumentException("recipients must not be empty");
+            List<MailMessage> saved = messages.saveAll(batch);
+            saved.forEach(m -> mailQueue.enqueue(m.getId()));
+            total += saved.size();
+            afterId = page.get(page.size() - 1).getId();
+            if (page.size() < PAGE) {
+                break;
             }
-            queued = request.recipients().stream()
-                    .map(recipient -> MailMessage.queued(saved.getId(), recipient))
-                    .toList();
         }
 ```
 
-`listId` 분기가 핵심입니다. 리스트 멤버마다 `MailMessage.queued(campaignId, email, **contactId**)`로
-큐 행을 만들어, worker가 나중에 그 연락처의 속성으로 개인화할 수 있게 합니다(06 문서 3-6 참고).
-직접 recipients 방식은 contactId 없이(=개인화 변수는 email뿐) 그대로 유지됩니다.
+핵심은 그대로입니다: 멤버마다 `MailMessage.queued(campaignId, email, **contactId**)`로 큐 행을
+만들어, worker가 나중에 그 연락처의 속성으로 개인화할 수 있게 합니다(06 문서 3-6 참고).
+직접 recipients 방식은 contactId 없이(=개인화 변수는 email뿐) `create()` 안에서 인라인으로 유지됩니다.
 
 `mail-core/src/main/java/io/github/ahrimjang/mail/core/domain/MailMessage.java`
 ```java

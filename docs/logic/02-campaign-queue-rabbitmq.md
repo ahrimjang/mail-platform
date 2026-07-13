@@ -4,11 +4,11 @@
 
 이 플랫폼의 정체성이 담긴 흐름입니다: **API는 일을 "접수"만 하고 즉시 응답하고, 실제 발송은 별도 프로세스(worker)가 큐를 소비하며 비동기로 처리합니다.**
 
-수신자가 10만 명인 캠페인을 만들 때, API가 10만 통을 직접 보내면 HTTP 요청이 몇 분씩 걸리고 타임아웃이 납니다. 대신:
+수신자가 10만 명인 캠페인을 만들 때, API가 10만 통을 직접 보내면 HTTP 요청이 몇 분씩 걸리고 타임아웃이 납니다. 심지어 10만 개의 `MailMessage` 행을 만드는 것조차 요청 스레드에서 하면 무겁습니다. 대신:
 
-1. `POST /api/campaigns` → 캠페인 1건 + 수신자 수만큼의 `MailMessage` 행(모두 `PENDING`)을 **DB에 저장**하고,
-2. 메시지 행마다 **RabbitMQ에 "발송 잡"을 1건씩 발행**한 뒤 바로 응답합니다.
-3. mail-worker의 `@RabbitListener`가 큐에서 잡을 꺼내 한 건씩 발송합니다(발송 자체는 [03 문서](03-dispatch-suppression.md) 참고).
+1. `POST /api/campaigns` → 캠페인 1건(`QUEUED`)을 **DB에 저장**하고,
+2. **리스트 캠페인**(`listId`)이면 수신자를 펼치지 않고 **RabbitMQ에 "팬아웃(fan-out) 잡" 1건만 발행**한 뒤 바로 응답합니다 — 응답 시간이 리스트 크기와 무관한 O(1). 워커가 이 잡을 받아 수신자를 `MailMessage` 행으로 비동기 확장합니다(아래 3-6). **애드혹 캠페인**(요청 본문의 `recipients[]`)이면 개수가 요청 크기로 유계이므로 그 자리에서 행을 만들고 행마다 발송 잡을 발행합니다.
+3. mail-worker의 `@RabbitListener`가 큐에서 발송 잡을 꺼내 한 건씩 발송합니다(발송 자체는 [03 문서](03-dispatch-suppression.md) 참고).
 
 핵심 아이디어: **큐에는 메시지 id만 흘려보냅니다.** 제목/본문/수신자 같은 실제 데이터는 DB가 진실의 원천(source of truth)이고, RabbitMQ는 "이 id를 처리하라"는 신호만 나릅니다.
 
@@ -17,20 +17,28 @@
 ```
  브라우저          mail-api (CampaignService)              Postgres             RabbitMQ              mail-worker
     │ POST /api/campaigns    │                              │                      │                      │
-    ├───────────────────────>│ ① campaign 저장 (QUEUED) ───>│                      │                      │
-    │                        │ ② 수신자별 MailMessage 저장 ─>│ (전부 PENDING)       │                      │
-    │                        │ ③ 행마다 enqueue(id) ───────────────────────────────>│ mail.exchange        │
-    │  201 { campaignId }    │                              │                      │   │routing:mail.send │
-    │<───────────────────────┤ (여기서 끝. 발송은 안 함)     │                      │   ▼                  │
-    │                        │                              │                mail.send.queue             │
-    │                        │                              │                      │  ④ SendJob{id} ─────>│ MailSendListener
+    │  { listId }            │ ① campaign 저장 (QUEUED) ───>│                      │                      │
+    ├───────────────────────>│ ② enqueueFanout(campaignId) ───────────────────────>│ mail.exchange        │
+    │  201 { campaignId }    │   (수신자 확장 없음 — O(1))   │                      │  routing:mail.fanout │
+    │<───────────────────────┤ (여기서 끝. 발송도 확장도 안 함)                     │   ▼                  │
+    │                        │                              │              mail.fanout.queue              │
+    │                        │                              │                      │ ③ FanoutJob{cid} ───>│ CampaignFanoutListener
+    │                        │                              │<── ④ QUEUED→EXPANDING claim ─────────────────┤ expand(cid)
+    │                        │                              │<── ⑤ 수신자를 1000행씩 스트리밍:              │
+    │                        │                              │      MailMessage 저장 + 행마다 enqueue(id) ─>│ mail.exchange
+    │                        │                              │<── ⑥ EXPANDING→SENDING (+드레인됐으면 완료)   │  routing:mail.send
+    │                        │                              │                      │   ▼                  │
+    │                        │                              │                mail.send.queue              │
+    │                        │                              │                      │ ⑦ SendJob{id} ──────>│ MailSendListener
     │                        │                              │<──────────────────────────────────────────── │ dispatchOne(id)
     │ GET /api/campaigns/{id}│                              │  (id로 행 조회→발송→상태 갱신)                │
-    ├───────────────────────>│ ⑤ 카운트 집계로 진행률 응답   │                      │                      │
+    ├───────────────────────>│ ⑧ 카운트 집계로 진행률 응답   │                      │                      │
     │<───────────────────────┤                              │              (실패 3회 → mail.send.dlq)     │
 ```
 
-위 그림은 **즉시 발송** 기준입니다. 요청에 미래의 `scheduledAt`이 있으면 ③(큐 발행)만 보류되고, worker의 스케줄러가 시각 도래 시 대신 발행합니다 — [6장 예약 발송](#6-예약-발송--scheduledat-보류와-원자적-릴리스) 참고.
+**애드혹 캠페인**(`recipients[]`)은 팬아웃을 건너뜁니다 — `create()`가 그 자리에서 `MailMessage` 행을 만들어 곧장 ⑦의 `mail.send.queue`로 발행하므로 ③~⑥ 단계가 없습니다(개수가 요청 크기로 유계라 요청 스레드에서 펼쳐도 안전).
+
+위 그림은 **즉시 발송** 기준입니다. 요청에 미래의 `scheduledAt`이 있으면 ②(팬아웃/발송 잡 발행)만 보류되고, worker의 스케줄러가 시각 도래 시 대신 발행합니다 — [6장 예약 발송](#6-예약-발송--scheduledat-보류와-원자적-릴리스) 참고.
 
 ## 3. 단계별 실제 코드
 
@@ -67,38 +75,43 @@ public record CreateCampaignRequest(
         // Immediate campaigns are released right here; scheduled ones keep
         // enqueuedAt null so the worker's scheduler claims them when due.
         campaign.setEnqueuedAt(deferred ? null : now);
+        campaign.setTemplateId(request.templateId());
+        campaign.setListId(request.listId());
         Campaign saved = campaigns.save(campaign);
 
-        List<MailMessage> queued;
         if (request.listId() != null) {
-            List<Contact> members = contacts.findByListId(request.listId());
-            if (members.isEmpty()) {
+            // Large list campaigns fan out asynchronously: persist only the campaign
+            // and hand a single fan-out job to the worker, so create() is O(1) in the
+            // recipient count. Scheduled campaigns publish the fan-out job at release
+            // time (see CampaignScheduleService); immediate ones publish it now.
+            if (contacts.countByListId(request.listId()) == 0) {
                 throw new IllegalArgumentException("list has no members: " + request.listId());
             }
-            queued = members.stream()
-                    .map(c -> MailMessage.queued(saved.getId(), c.getEmail(), c.getId()))
-                    .toList();
+            if (!deferred) {
+                mailQueue.enqueueFanout(saved.getId());
+            }
         } else {
             if (request.recipients() == null || request.recipients().isEmpty()) {
                 throw new IllegalArgumentException("recipients must not be empty");
             }
-            queued = request.recipients().stream()
+            // Ad-hoc recipient lists are bounded by the request body — expand inline.
+            List<MailMessage> queued = request.recipients().stream()
                     .map(recipient -> MailMessage.queued(saved.getId(), recipient))
                     .toList();
-        }
-        List<MailMessage> savedMessages = messages.saveAll(queued);
-        if (!deferred) {
-            savedMessages.forEach(m -> mailQueue.enqueue(m.getId()));
+            List<MailMessage> savedMessages = messages.saveAll(queued);
+            if (!deferred) {
+                savedMessages.forEach(m -> mailQueue.enqueue(m.getId()));
+            }
         }
 
         return toView(saved);
 ```
 
-읽는 순서 그대로가 흐름입니다: 캠페인 저장 → 수신자 목록(직접 입력 or 연락처 리스트)을 `MailMessage` 행으로 **팬아웃(fan-out)** → 전부 저장 → **저장된 각 행의 id를 큐에 발행** → 즉시 반환. 발송 코드는 이 파일에 한 줄도 없습니다.
+읽는 순서 그대로가 흐름입니다: 캠페인 저장 → **리스트냐 애드혹이냐로 갈라집니다.** `listId`가 있으면 수신자를 여기서 펼치지 않고 멤버가 하나라도 있는지만 확인한 뒤(`countByListId`) 워커에 **팬아웃 잡 1건**을 넘깁니다 — 100만 행짜리 리스트여도 `create()`는 리스트 크기와 무관한 O(1)입니다. 실제 `MailMessage` 팬아웃과 발송 잡 발행은 워커가 비동기로 합니다(아래 3-6). `recipients[]`로 직접 준 애드혹 캠페인은 개수가 요청 크기로 유계이므로 그 자리에서 행을 만들어 저장하고 각 행 id를 큐에 발행합니다. 어느 쪽이든 발송 코드는 이 파일에 한 줄도 없습니다.
 
-수신자는 두 갈래로 옵니다: `listId`가 있으면 M4 연락처 리스트의 멤버를, 없으면 요청에 직접 담긴 `recipients` 배열을 씁니다. (제목/본문도 마찬가지로 `templateId`가 있으면 템플릿에서 가져옵니다 — 같은 파일의 `create()` 앞부분 참고.)
+(제목/본문도 마찬가지로 `templateId`가 있으면 템플릿에서 가져옵니다 — 같은 파일의 `create()` 앞부분 참고.)
 
-`senderName`/`senderEmail`은 선택적 From 오버라이드로 캠페인에 저장돼 발송 시점에 `MailSender`로 전달됩니다(비면 SMTP 기본값). 그리고 **`scheduledAt`이 미래이면 마지막 `enqueue` 단계만 보류됩니다** — 캠페인과 PENDING 행은 똑같이 저장하되 `enqueuedAt`을 `null`로 남기고 RabbitMQ에는 아무것도 발행하지 않습니다. 보류된 캠페인을 시각 도래 시 큐로 풀어주는 흐름은 [6장](#6-예약-발송--scheduledat-보류와-원자적-릴리스)에서 다룹니다.
+`senderName`/`senderEmail`은 선택적 From 오버라이드로 캠페인에 저장돼 발송 시점에 `MailSender`로 전달됩니다(비면 SMTP 기본값). 그리고 **`scheduledAt`이 미래이면 마지막 발행 단계만 보류됩니다** — 캠페인은 똑같이 저장하되(애드혹이면 PENDING 행도 함께 저장) `enqueuedAt`을 `null`로 남기고 RabbitMQ에는 아무것도 발행하지 않습니다(팬아웃 잡도, 발송 잡도). 보류된 캠페인을 시각 도래 시 큐로 풀어주는 흐름은 [6장](#6-예약-발송--scheduledat-보류와-원자적-릴리스)에서 다룹니다.
 
 ### 3-2. 포트 — 큐에는 id만 지나간다
 
@@ -114,6 +127,9 @@ public interface MailQueue {
 
     /** Enqueue one send job for the given message id. */
     void enqueue(Long messageId);
+
+    /** Enqueue a fan-out job so the worker expands a list campaign's recipients. */
+    void enqueueFanout(Long campaignId);
 }
 ```
 
@@ -160,6 +176,8 @@ public class RabbitMailQueue implements MailQueue {
     public static final String DLX = "mail.dlx";
     public static final String DLQ = "mail.send.dlq";
     public static final String DLQ_ROUTING = "mail.send.dlq";
+    public static final String FANOUT_QUEUE = "mail.fanout.queue";
+    public static final String FANOUT_ROUTING_KEY = "mail.fanout";
 
     @Bean
     public DirectExchange mailExchange() {
@@ -178,9 +196,24 @@ public class RabbitMailQueue implements MailQueue {
     public Binding mailBinding() {
         return BindingBuilder.bind(mailQueue()).to(mailExchange()).with(ROUTING_KEY);
     }
+
+    @Bean
+    public Queue fanoutQueue() {
+        return QueueBuilder.durable(FANOUT_QUEUE)
+                .withArgument("x-dead-letter-exchange", DLX)
+                .withArgument("x-dead-letter-routing-key", DLQ_ROUTING)
+                .build();
+    }
+
+    @Bean
+    public Binding fanoutBinding() {
+        return BindingBuilder.bind(fanoutQueue()).to(mailExchange()).with(FANOUT_ROUTING_KEY);
+    }
 ```
 
 RabbitMQ 용어를 풀면: **익스체인지**는 우체국(메시지를 받아 어디로 보낼지 결정), **큐**는 사서함(소비자가 꺼낼 때까지 대기), **바인딩**은 "라우팅 키가 `mail.send`인 메시지는 `mail.send.queue`로" 라는 배달 규칙입니다. `durable(true)`라서 브로커가 재시작해도 큐/메시지가 남습니다.
+
+**같은 `mail.exchange`에 큐가 하나 더 매달려 있습니다**: `mail.fanout.queue`는 라우팅 키 `mail.fanout`으로 바인딩돼 리스트 캠페인의 **팬아웃 잡**(`FanoutJob{campaignId}`)을 받습니다 — 발송 잡(`mail.send`)과 팬아웃 잡(`mail.fanout`)이 하나의 익스체인지에서 라우팅 키로 갈라져 각자의 큐로 갑니다. 팬아웃 큐도 발송 큐와 **동일한 DLX/DLQ로 데드레터링**하므로, 계속 실패하는 팬아웃 잡도 같은 `mail.send.dlq`에 격리됩니다. 팬아웃 잡을 소비해 수신자를 펼치는 리스너는 [3-6](#3-6-팬아웃-확장--리스트-캠페인을-워커가-비동기로-펼친다)에서 다룹니다.
 
 `x-dead-letter-*` 인자가 중요합니다: 소비자가 메시지를 **거부(reject)** 하면 버려지는 대신 `mail.dlx` → `mail.send.dlq`로 이동합니다(사후 분석/재처리용 "불량품 상자"). DLX/DLQ 빈 선언은 같은 파일 아래쪽에 있습니다.
 
@@ -206,7 +239,71 @@ public class MailSendListener {
 
 `@RabbitListener`가 붙은 메서드는 Spring이 알아서 큐를 구독시켜 줍니다. 잡이 도착할 때마다 `dispatchOne(id)`이 호출되고, 메서드가 정상 리턴하면 ack(처리 완료), 예외가 나면 아래 재시도 정책을 탑니다.
 
-### 3-6. 소비자 정책 — worker 설정
+### 3-6. 팬아웃 확장 — 리스트 캠페인을 워커가 비동기로 펼친다
+
+리스트 캠페인의 `create()`는 수신자를 펼치지 않고 팬아웃 잡 1건만 남겼습니다(3-1). 그 잡을 받아 실제 `MailMessage` 행을 만드는 곳이 여기입니다 — 무거운 N행 확장을 요청 경로 밖으로 밀어낸 "지연된 나머지 절반"입니다.
+
+`mail-worker/src/main/java/io/github/ahrimjang/mail/worker/CampaignFanoutListener.java`
+```java
+    @RabbitListener(queues = RabbitMailConfig.FANOUT_QUEUE)
+    public void onFanoutJob(FanoutJob job) {
+        fanout.expand(job.campaignId());
+    }
+```
+
+`mail.send.queue`를 구독하는 `MailSendListener`(3-5)와 완전히 대칭입니다 — 이쪽은 `mail.fanout.queue`를 구독하고, 잡 1건마다 `expand(campaignId)`를 호출합니다. 로직은 core의 `CampaignFanoutService`에 있습니다.
+
+`mail-core/src/main/java/io/github/ahrimjang/mail/core/service/CampaignFanoutService.java`
+```java
+    public void expand(Long campaignId) {
+        if (!campaigns.claimForFanout(campaignId)) {
+            log.debug("skip fan-out: campaign {} already claimed/expanded by another consumer", campaignId);
+            return;
+        }
+        Campaign campaign = campaigns.findById(campaignId).orElse(null);
+        if (campaign == null || campaign.getListId() == null) {
+            return;
+        }
+        Long listId = campaign.getListId();
+
+        long afterId = 0L;
+        long total = 0;
+        while (true) {
+            List<Contact> page = contacts.findByListIdAfter(listId, afterId, PAGE);
+            if (page.isEmpty()) {
+                break;
+            }
+            List<MailMessage> batch = page.stream()
+                    .map(c -> MailMessage.queued(campaignId, c.getEmail(), c.getId()))
+                    .toList();
+            List<MailMessage> saved = messages.saveAll(batch);
+            saved.forEach(m -> mailQueue.enqueue(m.getId()));
+            total += saved.size();
+            afterId = page.get(page.size() - 1).getId();
+            if (page.size() < PAGE) {
+                break;
+            }
+        }
+
+        campaigns.markExpanded(campaignId); // EXPANDING -> SENDING
+        // If every message already drained before we flipped to SENDING (fast sends /
+        // empty list), finish it here — cheap EXISTS, not a full count.
+        if (!messages.hasPendingOrSending(campaignId)) {
+            campaigns.completeIfSending(campaignId);
+        }
+        log.info("fanned out campaign {} into {} messages", campaignId, total);
+    }
+```
+
+세 가지가 핵심입니다:
+
+- **멱등한 QUEUED→EXPANDING 클레임**: RabbitMQ는 at-least-once라 같은 팬아웃 잡이 두 번 올 수 있습니다. `claimForFanout`이 조건부 UPDATE 한 방으로 캠페인을 `QUEUED`에서 `EXPANDING`으로 넘기고, 진 재배달분은 조용히 스킵합니다 — 03 문서의 메시지 claim과 같은 패턴을 캠페인 상태에 적용한 것입니다. 이게 없으면 재배달이 수신자 행을 두 배로 만들 수 있습니다.
+- **키셋 페이지네이션 스트리밍**: 리스트 전체를 메모리에 올리지 않고 `findByListIdAfter(listId, afterId, PAGE=1000)`로 id 오름차순 1000행씩 끊어 읽습니다. 배치마다 `saveAll` + 행 id를 `mail.send.queue`에 발행하므로, 100만 행 리스트여도 워커 메모리는 유계이고 발송은 첫 배치부터 곧바로 시작됩니다.
+- **EXPANDING→SENDING 플립과 조기완료 방지**: 새 캠페인 상태 `EXPANDING`이 `QUEUED`와 `SENDING` 사이에 끼어들어, 팬아웃이 도는 동안 캠페인이 조기 완료되는 것을 막습니다(뒤 배치의 메시지는 아직 생성 전이니까). 확장이 끝나면 `markExpanded`로 `SENDING`으로 넘기고, 그 사이 이미 모든 메시지가 드레인됐으면(빠른 발송/빈 리스트) 여기서 완료 처리합니다 — 완료가 `SENDING`에서만 발화하는 이유는 [03 문서 3-5](03-dispatch-suppression.md#3-5-캠페인-완료-판정--completeifdrained) 참고.
+
+상태 머신에 한 칸이 늘었습니다: 리스트 캠페인은 `QUEUED → EXPANDING → SENDING → COMPLETED`, 애드혹 캠페인은 팬아웃이 없으므로 그대로 `QUEUED → SENDING → COMPLETED`.
+
+### 3-7. 소비자 정책 — worker 설정
 
 `mail-worker/src/main/resources/application.yml`
 ```yaml
@@ -217,7 +314,9 @@ public class MailSendListener {
     password: ${RABBITMQ_PASSWORD:guest}
     listener:
       simple:
-        prefetch: 10
+        concurrency: ${RABBITMQ_CONCURRENCY:8}
+        max-concurrency: ${RABBITMQ_MAX_CONCURRENCY:16}
+        prefetch: ${RABBITMQ_PREFETCH:10}
         default-requeue-rejected: false
         retry:
           enabled: true
@@ -228,11 +327,12 @@ public class MailSendListener {
 
 (접속 정보는 `${ENV_VAR:기본값}` 플레이스홀더입니다 — 로컬 개발은 기본값으로 compose 인프라에 붙고, 프로덕션은 환경변수를 주입합니다. 전체 목록은 `.env.example`.)
 
-- `prefetch: 10` — 워커가 한 번에 미리 받아두는 미확인(unacked) 메시지 수. 처리 속도 조절 밸브입니다.
+- `concurrency: 8` (max `16`) — 워커 한 대가 발송 잡을 **8개까지 병렬로** 처리합니다. 발송 경로는 DB 왕복 + SMTP로 I/O 바운드라, 한 번에 한 건씩(기본값 1) 처리하면 워커가 대부분 대기만 합니다. 부하가 몰리면 브로커가 최대 16 소비자까지 늘립니다.
+- `prefetch: 10` — 소비자 하나가 한 번에 미리 받아두는 미확인(unacked) 메시지 수. 처리 속도 조절 밸브입니다.
 - `retry: max-attempts: 3, initial-interval: 2000, multiplier: 2.0` — 리스너가 예외를 던지면 2초 → 4초 간격으로 총 3회까지 재시도.
 - `default-requeue-rejected: false` — 3회 모두 실패하면 큐에 되돌리지(무한루프) 않고 **거부** → DLQ 인자 덕분에 `mail.send.dlq`로 이동.
 
-### 3-7. 진행 조회 부가 API — 집계 발송 로그와 드릴다운
+### 3-8. 진행 조회 부가 API — 집계 발송 로그와 드릴다운
 
 기본 폴링(`GET /api/campaigns/{id}`, 카운트 집계)에 더해, 캠페인 상세 화면용 조회 API가 두 개 있습니다.
 
@@ -294,6 +394,7 @@ public class MailSendListener {
 
 ## 4. 설계 포인트 (왜 이렇게)
 
+- **비동기 팬아웃으로 O(1) 생성**: 리스트 캠페인은 `create()`가 수신자를 펼치지 않고 팬아웃 잡 1건만 발행하므로, 응답 시간이 리스트 크기와 무관합니다(100만 행이어도 즉시 201). 무거운 N행 확장은 워커가 배치로 처리하고, `QUEUED→EXPANDING` 클레임이 재배달 시 중복 생성을 막습니다(3-6). 애드혹 `recipients[]`는 요청 크기로 유계라 인라인 확장이 안전합니다.
 - **id만 큐에 태우는 이유**: 본문을 통째로 큐에 실으면 DB와 큐 두 곳에 진실이 생겨 어긋날 수 있습니다. id만 나르면 소비 시점에 DB에서 최신 상태를 읽으므로 항상 일관됩니다. 메시지도 가볍습니다.
 - **at-least-once와 멱등성**: RabbitMQ는 "최소 1회 전달"을 보장합니다 — 즉 같은 잡이 **두 번** 올 수 있습니다. 그래서 소비 측 `dispatchOne`이 "이미 PENDING이 아니면 스킵"하는 멱등 설계입니다(03 문서 참고). 큐를 믿는 게 아니라 DB 상태를 믿습니다.
 - **DLQ**: 계속 실패하는 잡(포이즌 메시지)이 큐를 막고 무한 재시도되는 것을 막는 표준 패턴. 운영자는 DLQ만 모니터링하면 됩니다.
@@ -332,7 +433,9 @@ curl -s "http://localhost:8080/api/campaigns/1/messages?limit=50" -H "Authorizat
 
 ### 6-1. 개요 (무엇을, 왜)
 
-"내일 아침 9시에 보내줘"를 지원합니다. 핵심 아이디어는 **새 파이프라인을 만들지 않는 것**: 예약 캠페인도 생성 시점에 캠페인 + PENDING 메시지 행을 전부 저장하고, 오직 **RabbitMQ 발행 한 단계만 보류**합니다. 시각이 되면 worker의 스케줄러가 보류된 발행을 대신 수행하고, 그 이후는 즉시 발송과 완전히 동일한 흐름(3-5의 리스너 → dispatchOne)을 탑니다.
+"내일 아침 9시에 보내줘"를 지원합니다. 핵심 아이디어는 **새 파이프라인을 만들지 않는 것**: 예약 캠페인도 생성 시점에 캠페인 행을 저장하되(애드혹이면 PENDING 메시지 행까지) 오직 **RabbitMQ 발행 한 단계만 보류**합니다. 시각이 되면 worker의 스케줄러가 보류된 발행을 대신 수행하고, 그 이후는 즉시 발송과 완전히 동일한 흐름(3-5의 리스너 → dispatchOne)을 탑니다.
+
+리스트 캠페인은 즉시 발송과 마찬가지로 생성 시점에 수신자를 펼치지 않습니다 — 스케줄러가 시각 도래 시 발행하는 것도 발송 잡이 아니라 **팬아웃 잡**이고, 그때부터 3-6의 확장이 도는 것만 다릅니다(아래 6-3 참고). 애드혹 캠페인은 생성 시 PENDING 행을 저장해 두고 발송 잡 발행만 보류합니다.
 
 "보류됨/릴리스됨"의 판별자는 `campaigns.enqueued_at` 컬럼 하나입니다:
 
@@ -346,20 +449,21 @@ curl -s "http://localhost:8080/api/campaigns/1/messages?limit=50" -H "Authorizat
     │ POST /api/campaigns        │                      │                           │
     │  { scheduledAt: 미래 }     │                      │                           │
     ├───────────────────────────>│ campaign 저장 ───────>│ enqueued_at = NULL        │
-    │                            │ MailMessage 저장 ────>│ (전부 PENDING)            │
+    │                            │ (애드혹이면 MailMessage 저장, 전부 PENDING)         │
     │  201 (RabbitMQ 발행 없음!) │                      │                           │
     │<───────────────────────────┤                      │                           │
     │                                                   │      ScheduledCampaignReleaser (@Scheduled)
     │                                                   │<── ① findDueForEnqueue(now) ──┤ 시각 도래 + 미릴리스 조회
     │                                                   │<── ② claimForEnqueue(id) ─────┤ 조건부 UPDATE (1행 or 0행)
-    │                                                   │<── ③ PENDING id 목록 조회 ────┤ claim을 이긴 워커만
-    │                                                   │    ④ id마다 enqueue ──> RabbitMQ ──> MailSendListener
+    │                                                   │<── ③ claim을 이긴 워커만 발행: ┤
+    │                                                   │      · 리스트 → enqueueFanout ──> RabbitMQ ──> CampaignFanoutListener → 3-6
+    │                                                   │      · 애드혹 → PENDING id마다 enqueue ──> RabbitMQ ──> MailSendListener
     │                                                   │       (여기부터는 즉시 발송과 동일)
 ```
 
 ### 6-3. 단계별 실제 코드
 
-**접수 측**은 3-1에서 이미 봤습니다 — `deferred`면 `enqueuedAt`을 `null`로 두고 마지막 `enqueue` 루프를 건너뜁니다.
+**접수 측**은 3-1에서 이미 봤습니다 — `deferred`면 `enqueuedAt`을 `null`로 두고 마지막 발행 단계(리스트면 `enqueueFanout`, 애드혹이면 `enqueue` 루프)를 건너뜁니다.
 
 **스키마**: 발신자/예약 컬럼은 Flyway V2 마이그레이션으로 추가됐습니다.
 
@@ -432,17 +536,26 @@ CREATE INDEX idx_campaigns_due ON campaigns (scheduled_at) WHERE enqueued_at IS 
             if (!campaigns.claimForEnqueue(campaign.getId(), now)) {
                 continue; // another scheduler won the race
             }
-            List<Long> pendingIds = messages.findPendingIdsByCampaign(campaign.getId());
-            pendingIds.forEach(mailQueue::enqueue);
-            released++;
-            log.info("released scheduled campaign {} ({} messages) scheduledAt={}",
-                    campaign.getId(), pendingIds.size(), campaign.getScheduledAt());
+            if (campaign.getListId() != null) {
+                // List campaign: recipients were never expanded at create time — hand
+                // the fan-out job to the worker now that it is due.
+                mailQueue.enqueueFanout(campaign.getId());
+                released++;
+                log.info("released scheduled list campaign {} (fan-out) scheduledAt={}",
+                        campaign.getId(), campaign.getScheduledAt());
+            } else {
+                List<Long> pendingIds = messages.findPendingIdsByCampaign(campaign.getId());
+                pendingIds.forEach(mailQueue::enqueue);
+                released++;
+                log.info("released scheduled campaign {} ({} messages) scheduledAt={}",
+                        campaign.getId(), pendingIds.size(), campaign.getScheduledAt());
+            }
         }
         return released;
     }
 ```
 
-조회는 느슨하게(여러 워커가 같은 캠페인을 볼 수 있음), 결정은 엄격하게(claim에 이긴 하나만 발행). `findPendingIdsByCampaign`은 id만 뽑아옵니다 — 발행에 필요한 건 id뿐이니까요(3-2의 "큐에는 id만" 원칙 그대로).
+조회는 느슨하게(여러 워커가 같은 캠페인을 볼 수 있음), 결정은 엄격하게(claim에 이긴 하나만 발행). claim을 이긴 뒤에는 캠페인 종류에 따라 갈립니다: **리스트 캠페인**이면 생성 시 수신자를 펼치지 않았으므로 이제 **팬아웃 잡**을 발행해 워커가 확장하게 하고(3-6), **애드혹 캠페인**이면 생성 시 저장해 둔 PENDING 행의 id를 뽑아 발송 잡을 발행합니다. `findPendingIdsByCampaign`은 id만 뽑아옵니다 — 발행에 필요한 건 id뿐이니까요(3-2의 "큐에는 id만" 원칙 그대로).
 
 **트리거 — worker의 @Scheduled** (주기만 소유하고 로직은 core에 위임):
 

@@ -10,7 +10,7 @@
 2. **억제(suppression) 체크** — 수신거부했거나 반송된 주소면 보내지 않고 `SUPPRESSED`로 마킹.
 3. **HTML 조립** — 개인화 변수 치환 → 링크를 클릭 추적 URL로 재작성 → 수신거부 푸터 → 오픈 픽셀 순으로 본문을 쌓습니다.
 4. **발송 + 결과 기록** — 캠페인에 발신자(From) 오버라이드가 있으면 함께 넘겨 발송하고, 성공이면 `SENT`, 실패면 `BOUNCED` + 해당 주소를 억제 목록에 자동 등록.
-5. **completeIfDrained** — 캠페인의 PENDING과 SENDING이 모두 0이 되면 캠페인을 `COMPLETED`로 전환.
+5. **completeIfDrained** — 캠페인에 PENDING/SENDING이 하나라도 남았는지 값싼 EXISTS로 확인하고, 안 남았으면 `SENDING → COMPLETED`로만 전환(`completeIfSending`). 팬아웃이 도는 중(`EXPANDING`)인 리스트 캠페인은 조기 완료되지 않습니다.
 
 **억제 목록(suppression list)** 은 "다시는 보내면 안 되는 주소"의 전역 명단입니다. 수신거부 링크 클릭과 발송 실패(반송) 두 경로로 채워지고, 모든 캠페인의 발송 시점에 존중됩니다. 스팸 신고를 피하고 발신자 평판을 지키는, 메일 플랫폼의 필수 장치입니다.
 
@@ -28,7 +28,7 @@ SendJob{id} 도착 (MailSendListener → dispatchOne)
       │
  캠페인 조회 ──없음──> markFailed → 저장 → 리턴
       │예
- 캠페인 SENDING 전환 (첫 진행 시 1회)
+ 캠페인 QUEUED→SENDING 전환 (markSendingIfQueued — EXPANDING이면 no-op)
       │
  억제 목록에 있는 주소? ──예──> SUPPRESSED 마킹 ─┐
       │아니오                                    │
@@ -38,7 +38,7 @@ SendJob{id} 도착 (MailSendListener → dispatchOne)
       │실패                                       │
  BOUNCED 마킹 + 주소를 억제 목록에 추가 ──────────┤
                                                  ▼
-                              completeIfDrained: pending==0 && sending==0 → 캠페인 COMPLETED
+                              completeIfDrained: hasPendingOrSending? ──아니오──> completeIfSending (SENDING→COMPLETED만)
 
 [수신거부 경로]  메일 푸터의 링크 클릭
   GET /api/unsubscribe/{token} → SuppressionService → 억제 목록 저장
@@ -159,16 +159,22 @@ RabbitMQ는 at-least-once라 같은 `SendJob`이 재배달될 수 있고, 재배
 `mail-core/src/main/java/io/github/ahrimjang/mail/core/service/MailDispatchService.java`
 ```java
     private void completeIfDrained(Long campaignId) {
-        MessageCounts counts = messages.countByCampaign(campaignId);
-        // SENDING messages are still in flight (claimed by a concurrent dispatchOne
-        // call for this same campaign) — only PENDING+SENDING == 0 means truly drained.
-        if (counts.pending() == 0 && counts.sending() == 0) {
-            campaigns.updateStatus(campaignId, CampaignStatus.COMPLETED);
+        // Cheap EXISTS instead of a full per-status count on every send: a campaign
+        // with any PENDING/SENDING left is still draining. completeIfSending only
+        // fires from SENDING, so a campaign mid-EXPANDING is never completed early.
+        if (!messages.hasPendingOrSending(campaignId)) {
+            campaigns.completeIfSending(campaignId);
         }
     }
 ```
 
-"내가 마지막 한 건이었나?"를 매번 DB 카운트로 물어봅니다. `PENDING`뿐 아니라 `SENDING`(다른 소비자가 지금 막 클레임해 처리 중인 행)도 0이어야 진짜 완료입니다 — 안 그러면, 같은 캠페인의 메시지 여러 건이 동시에 처리되는 도중 마지막 PENDING이 방금 SENDING으로 넘어간 그 찰나에 다른 메시지의 `completeIfDrained`가 "PENDING 0"만 보고 캠페인을 조기에 `COMPLETED`로 확정해버리는 착시가 생깁니다.
+"내가 마지막 한 건이었나?"를 매 발송마다 물어보되, 예전처럼 상태별 카운트를 세지 않고 **값싼 EXISTS 하나**(`hasPendingOrSending`)로 끝냅니다 — `PENDING`이든 `SENDING`이든 하나라도 걸리면 즉시 short-circuit해서 "아직 드레인 안 됨"을 반환합니다. `SENDING`(다른 소비자가 지금 막 클레임해 처리 중인 행)까지 봐야 하는 이유는 그대로입니다: 그게 남아 있으면, 같은 캠페인의 메시지 여러 건이 동시에 처리되는 도중 마지막 PENDING이 방금 SENDING으로 넘어간 그 찰나에 다른 메시지의 `completeIfDrained`가 "PENDING 0"만 보고 캠페인을 조기에 `COMPLETED`로 확정해버리는 착시가 생깁니다.
+
+완료는 `completeIfSending`으로 **`SENDING → COMPLETED`만** 승인합니다. 덕분에 팬아웃이 도는 중(`EXPANDING`)인 리스트 캠페인은 — 앞 배치가 다 나갔어도 뒤 배치의 메시지가 아직 만들어지지 않았을 그 순간에도 — 절대 조기 완료되지 않습니다(팬아웃이 확장을 마치고 `SENDING`으로 넘긴 뒤에야 완료 가능; [02 문서 3-6](02-campaign-queue-rabbitmq.md#3-6-팬아웃-확장--리스트-캠페인을-워커가-비동기로-펼친다) 참고).
+
+참고로 첫 진행 시의 `markSending`도 조건부입니다 — `markSendingIfQueued`는 `QUEUED → SENDING`만 수행하므로, 이미 `EXPANDING`인 리스트 캠페인에는 no-op입니다(그 캠페인의 `EXPANDING → SENDING` 전환은 팬아웃이 소유). 애드혹 캠페인은 `QUEUED`에서 바로 시작하니 첫 발송이 `SENDING`으로 올립니다.
+
+이 EXISTS 한 방은 예전의 `countByCampaign`(상태별 7×COUNT)을 대체한 것입니다. 발송 1건마다 7개 COUNT를 세면 캠페인이 커질수록 발송 총비용이 O(N²)로 불어납니다. 드레인 체크와 대시보드 카운트 모두 `(campaign_id, status)` 복합 인덱스(V7 `idx_msg_campaign_status`)가 받쳐주고, EXISTS는 그 인덱스에서 첫 매치만 찾고 멈춥니다.
 
 ### 3-6. 수신거부 — 토큰 → 억제 목록
 
@@ -296,6 +302,7 @@ public class LoggingMailSender implements MailSender {
 - **멱등 소비자 + 원자적 클레임**: at-least-once 큐 앞에서는 "중복이 와도 안전한 소비자"가 정답입니다. 처음엔 상태 체크(`!= PENDING → 스킵`) 하나로 해결했지만, **조회와 저장 사이에 락이 없어** 워커 여러 대(또는 재배달)가 동시에 같은 id를 읽으면 둘 다 PENDING을 보고 둘 다 발송해버리는 이중 발송 창이 있었습니다. 지금은 `claim()`이 단일 조건부 UPDATE(`WHERE id=? AND status='PENDING'`)로 그 read-then-write 사이의 창을 없앱니다 — DB가 행 단위로 동시 UPDATE를 직렬화해주므로 정확히 하나만 이깁니다.
   - `SELECT ... FOR UPDATE SKIP LOCKED`가 아니라 **단일 조건부 UPDATE**를 택한 이유: `FOR UPDATE SKIP LOCKED`는 "대기 중인 여러 후보 중 아직 안 잠긴 N개를 골라온다"(배치 폴링/클레임)에 어울리는 기법인데, RabbitMQ가 이미 처리할 `messageId`를 콕 집어 넘겨주는 지금 구조엔 안 맞습니다. 조건부 UPDATE는 같은 원자성 보장을 SQL 한 문장으로 주면서, 느린 SMTP 호출 동안 DB 락/커넥션을 붙들고 있을 필요도 없습니다.
   - **잔여 한계**: 클레임에 `SENDING` 상태를 도입하면서, 소비자가 발송 도중 크래시하면 메시지가 `SENDING`에 갇힐 위험이 생겼습니다. `STALE_CLAIM_AFTER`(2분)가 지난 `SENDING` 행도 재클레임 대상에 포함시켜서 완화했지만, 크래시가 그 2분 창 안에서 재배달과 겹치면 그 안에서는 재시도되지 않습니다(POC 수준 트레이드오프 — 창을 줄이면 복구는 빨라지지만 정상 처리 중인 느린 발송을 오탐으로 재클레임할 여지가 커집니다).
+- **완료 판정은 값싼 EXISTS로, 발송은 병렬로**: 예전엔 발송 1건이 끝날 때마다 상태별 7×COUNT(`countByCampaign`)로 드레인을 확인해, 캠페인이 커질수록 발송 총비용이 O(N²)로 불어났습니다. 지금은 첫 매치에서 멈추는 short-circuit EXISTS(`hasPendingOrSending`)로 발송당 비용을 일정하게 유지하고, `(campaign_id, status)` 복합 인덱스(V7)가 이 체크와 대시보드 카운트를 함께 받칩니다. 완료는 `completeIfSending`으로 `SENDING`에서만 승인하므로 `EXPANDING` 캠페인의 조기 완료도 막습니다. 발송 경로가 I/O 바운드(DB 왕복 + SMTP)라 워커 리스너 동시성도 1→8(`spring.rabbitmq.listener.simple.concurrency`, env로 조정)로 올려 워커 한 대가 여러 건을 병렬 발송하며, 여러 소비자가 완료 판정을 동시에 쳐도 SENDING-only 게이트가 조기 완료를 막습니다.
 - **메시지 상태는 "전달 결과"만**: `PENDING → SENT | FAILED | BOUNCED | SUPPRESSED`. 열람/클릭은 상태가 아니라 별도 `EmailEvent`로 쌓습니다. 한 메시지가 "보내졌고 + 열렸고 + 클릭됐다"는 다차원 사실을 단일 상태로 욱여넣지 않기 위해서입니다.
 - **억제는 전역, 두 경로로 유입**: 수신거부(명시적 거절)와 반송(죽은 주소) 모두 같은 명단으로 갑니다. `reason` 필드("unsubscribe"/"bounce")로 유입 경로는 구분됩니다.
 - **발신자(From)는 캠페인의 속성, 폴백은 어댑터의 몫**: `senderName`/`senderEmail`은 캠페인 행에 저장돼 발송 시 포트로 그대로 전달되고, `null` 처리(기본 발신자 폴백)는 각 어댑터가 책임집니다. core는 "오버라이드가 있으면 넘긴다"만 알면 되고, 기본 발신자가 무엇인지(SMTP 세션 설정)는 infra 관심사로 남습니다.
