@@ -36,6 +36,13 @@ public interface MailMessageRepository {
     /** Aggregate per-status counts for one campaign. */
     MessageCounts countByCampaign(Long campaignId);
 
+    /**
+     * Cheap drain check: true if the campaign still has any PENDING or SENDING
+     * message. Short-circuits on the first hit — used on the hot dispatch path
+     * instead of a full per-status count.
+     */
+    boolean hasPendingOrSending(Long campaignId);
+
     /** Ids of a campaign's PENDING messages — what a scheduled release enqueues. */
     List<Long> findPendingIdsByCampaign(Long campaignId);
 

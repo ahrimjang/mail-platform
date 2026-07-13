@@ -16,6 +16,8 @@ public interface MailMessageJpaRepository extends JpaRepository<MailMessageEntit
 
     long countByCampaignIdAndStatus(Long campaignId, MessageStatus status);
 
+    boolean existsByCampaignIdAndStatusIn(Long campaignId, java.util.Collection<MessageStatus> statuses);
+
     Optional<MailMessageEntity> findByUnsubToken(String unsubToken);
 
     Optional<MailMessageEntity> findByTrackingToken(String trackingToken);

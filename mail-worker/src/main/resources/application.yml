@@ -32,7 +32,11 @@ spring:
     password: ${RABBITMQ_PASSWORD:guest}
     listener:
       simple:
-        prefetch: 10
+        # One consumer processed a message at a time (default) — the send path is
+        # I/O-bound (DB round-trips + SMTP), so run several in parallel per worker.
+        concurrency: ${RABBITMQ_CONCURRENCY:8}
+        max-concurrency: ${RABBITMQ_MAX_CONCURRENCY:16}
+        prefetch: ${RABBITMQ_PREFETCH:10}
         default-requeue-rejected: false
         retry:
           enabled: true

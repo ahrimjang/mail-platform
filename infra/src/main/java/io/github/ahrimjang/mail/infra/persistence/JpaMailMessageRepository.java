@@ -98,6 +98,12 @@ public class JpaMailMessageRepository implements MailMessageRepository {
     }
 
     @Override
+    public boolean hasPendingOrSending(Long campaignId) {
+        return jpa.existsByCampaignIdAndStatusIn(campaignId,
+                java.util.List.of(MessageStatus.PENDING, MessageStatus.SENDING));
+    }
+
+    @Override
     public MessageCounts countByCampaign(Long campaignId) {
         long total = jpa.countByCampaignId(campaignId);
         long pending = jpa.countByCampaignIdAndStatus(campaignId, MessageStatus.PENDING);

@@ -6,7 +6,6 @@ import io.github.ahrimjang.mail.core.domain.MailMessage;
 import io.github.ahrimjang.mail.core.port.CampaignRepository;
 import io.github.ahrimjang.mail.core.port.ContactRepository;
 import io.github.ahrimjang.mail.core.port.MailMessageRepository;
-import io.github.ahrimjang.mail.core.port.MailMessageRepository.MessageCounts;
 import io.github.ahrimjang.mail.core.port.MailQueue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -86,7 +85,7 @@ class CampaignFanoutServiceTest {
         when(contacts.findByListIdAfter(eq(LIST_ID), eq(0L), eq(PAGE))).thenReturn(full);
         when(contacts.findByListIdAfter(eq(LIST_ID), eq((long) PAGE), eq(PAGE))).thenReturn(partial);
         stubSaveAllAssigningIds();
-        when(messages.countByCampaign(CAMPAIGN_ID)).thenReturn(new MessageCounts(1500, 1500, 0, 0, 0, 0, 0));
+        when(messages.hasPendingOrSending(CAMPAIGN_ID)).thenReturn(true);
 
         service.expand(CAMPAIGN_ID);
 
@@ -114,7 +113,7 @@ class CampaignFanoutServiceTest {
         when(campaigns.claimForFanout(CAMPAIGN_ID)).thenReturn(true);
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(listCampaign()));
         when(contacts.findByListIdAfter(eq(LIST_ID), eq(0L), eq(PAGE))).thenReturn(List.of());
-        when(messages.countByCampaign(CAMPAIGN_ID)).thenReturn(new MessageCounts(0, 0, 0, 0, 0, 0, 0));
+        when(messages.hasPendingOrSending(CAMPAIGN_ID)).thenReturn(false);
 
         service.expand(CAMPAIGN_ID);
 

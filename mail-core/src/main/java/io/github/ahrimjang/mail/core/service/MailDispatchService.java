@@ -6,7 +6,6 @@ import io.github.ahrimjang.mail.core.domain.MailMessage;
 import io.github.ahrimjang.mail.core.port.CampaignRepository;
 import io.github.ahrimjang.mail.core.port.ContactRepository;
 import io.github.ahrimjang.mail.core.port.MailMessageRepository;
-import io.github.ahrimjang.mail.core.port.MailMessageRepository.MessageCounts;
 import io.github.ahrimjang.mail.core.port.MailSender;
 import io.github.ahrimjang.mail.core.port.SuppressionRepository;
 import io.github.ahrimjang.mail.core.domain.Suppression;
@@ -137,11 +136,10 @@ public class MailDispatchService {
     }
 
     private void completeIfDrained(Long campaignId) {
-        MessageCounts counts = messages.countByCampaign(campaignId);
-        // SENDING messages are still in flight (claimed by a concurrent dispatchOne
-        // call for this same campaign) — only PENDING+SENDING == 0 means truly drained.
-        if (counts.pending() == 0 && counts.sending() == 0) {
-            // Only from SENDING — never completes a campaign still EXPANDING (fan-out in progress).
+        // Cheap EXISTS instead of a full per-status count on every send: a campaign
+        // with any PENDING/SENDING left is still draining. completeIfSending only
+        // fires from SENDING, so a campaign mid-EXPANDING is never completed early.
+        if (!messages.hasPendingOrSending(campaignId)) {
             campaigns.completeIfSending(campaignId);
         }
     }

@@ -6,7 +6,6 @@ import io.github.ahrimjang.mail.core.domain.MailMessage;
 import io.github.ahrimjang.mail.core.port.CampaignRepository;
 import io.github.ahrimjang.mail.core.port.ContactRepository;
 import io.github.ahrimjang.mail.core.port.MailMessageRepository;
-import io.github.ahrimjang.mail.core.port.MailMessageRepository.MessageCounts;
 import io.github.ahrimjang.mail.core.port.MailQueue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -85,9 +84,8 @@ public class CampaignFanoutService {
 
         campaigns.markExpanded(campaignId); // EXPANDING -> SENDING
         // If every message already drained before we flipped to SENDING (fast sends /
-        // empty list), no dispatch will run completeIfDrained again — finish it here.
-        MessageCounts counts = messages.countByCampaign(campaignId);
-        if (counts.pending() == 0 && counts.sending() == 0) {
+        // empty list), finish it here — cheap EXISTS, not a full count.
+        if (!messages.hasPendingOrSending(campaignId)) {
             campaigns.completeIfSending(campaignId);
         }
         log.info("fanned out campaign {} into {} messages", campaignId, total);
