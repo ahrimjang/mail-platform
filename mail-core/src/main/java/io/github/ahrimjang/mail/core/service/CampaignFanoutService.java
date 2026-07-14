@@ -68,7 +68,7 @@ public class CampaignFanoutService {
         long afterId = 0L;
         long total = 0;
         while (true) {
-            List<Contact> page = contacts.findByListIdAfter(listId, afterId, PAGE);
+            List<Contact> page = contacts.findSubscribedByListIdAfter(listId, afterId, PAGE);
             if (page.isEmpty()) {
                 break;
             }

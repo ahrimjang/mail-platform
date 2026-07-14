@@ -88,6 +88,19 @@ public class ContactController {
         return suppressions.updateSubscription(id, request.suppressed());
     }
 
+    /** Lists this contact opted out of via the unsubscribe page (memberships stay). */
+    @GetMapping("/{id}/list-unsubscribes")
+    public List<Long> listUnsubscribes(@PathVariable Long id) {
+        return suppressions.listUnsubscribesOf(id);
+    }
+
+    /** Operator-side re-subscribe: drop the contact's opt-out of the given list. */
+    @DeleteMapping("/{id}/list-unsubscribes/{listId}")
+    public List<Long> resubscribeToList(@PathVariable Long id, @PathVariable Long listId) {
+        suppressions.resubscribeToList(id, listId);
+        return suppressions.listUnsubscribesOf(id);
+    }
+
     /** Import "email,firstName,lastName" lines; existing addresses are skipped, all end up in {@code listId} if given. */
     @PostMapping(value = "/import", consumes = MediaType.TEXT_PLAIN_VALUE)
     public ImportResult importCsv(@RequestBody String csv,

@@ -1,0 +1,45 @@
+package io.github.ahrimjang.mail.infra.persistence;
+
+import io.github.ahrimjang.mail.core.port.ListUnsubscribeRepository;
+import org.springframework.stereotype.Repository;
+
+import java.time.Instant;
+import java.util.List;
+
+/**
+ * Adapter: implements the core {@link ListUnsubscribeRepository} port over Spring Data JPA.
+ */
+@Repository
+public class JpaListUnsubscribeRepository implements ListUnsubscribeRepository {
+
+    private final ListUnsubscribeJpaRepository jpa;
+
+    public JpaListUnsubscribeRepository(ListUnsubscribeJpaRepository jpa) {
+        this.jpa = jpa;
+    }
+
+    @Override
+    public void save(Long listId, Long contactId, String reason) {
+        // Idempotent: a second unsubscribe click keeps the original record (and its
+        // timestamp) instead of tripping the unique constraint.
+        if (jpa.existsByListIdAndContactId(listId, contactId)) {
+            return;
+        }
+        jpa.save(new ListUnsubscribeEntity(null, listId, contactId, reason, Instant.now()));
+    }
+
+    @Override
+    public boolean exists(Long listId, Long contactId) {
+        return jpa.existsByListIdAndContactId(listId, contactId);
+    }
+
+    @Override
+    public List<Long> findListIdsByContactId(Long contactId) {
+        return jpa.findListIdsByContactId(contactId);
+    }
+
+    @Override
+    public void delete(Long listId, Long contactId) {
+        jpa.deleteByListIdAndContactId(listId, contactId);
+    }
+}

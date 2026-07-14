@@ -67,8 +67,8 @@ public class JpaContactRepository implements ContactRepository {
     }
 
     @Override
-    public List<Contact> findByListIdAfter(Long listId, Long afterId, int limit) {
-        return jpa.findByListIdAfter(listId, afterId, PageRequest.of(0, limit)).stream()
+    public List<Contact> findSubscribedByListIdAfter(Long listId, Long afterId, int limit) {
+        return jpa.findSubscribedByListIdAfter(listId, afterId, PageRequest.of(0, limit)).stream()
                 .map(this::toDomain).toList();
     }
 

@@ -85,8 +85,8 @@ class CampaignFanoutServiceTest {
         // A full page (id 1..1000) followed by a partial page (id 1001..1500), then empty.
         List<Contact> full = contactPage(1L, PAGE);
         List<Contact> partial = contactPage(PAGE + 1L, 500);
-        when(contacts.findByListIdAfter(eq(LIST_ID), eq(0L), eq(PAGE))).thenReturn(full);
-        when(contacts.findByListIdAfter(eq(LIST_ID), eq((long) PAGE), eq(PAGE))).thenReturn(partial);
+        when(contacts.findSubscribedByListIdAfter(eq(LIST_ID), eq(0L), eq(PAGE))).thenReturn(full);
+        when(contacts.findSubscribedByListIdAfter(eq(LIST_ID), eq((long) PAGE), eq(PAGE))).thenReturn(partial);
         stubSaveAllAssigningIds();
         when(messages.hasPendingOrSending(CAMPAIGN_ID)).thenReturn(true);
 
@@ -109,7 +109,7 @@ class CampaignFanoutServiceTest {
         ab.setAbSplitPercent(50);
         when(campaigns.claimForFanout(CAMPAIGN_ID)).thenReturn(true);
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(ab));
-        when(contacts.findByListIdAfter(eq(LIST_ID), eq(0L), eq(PAGE))).thenReturn(contactPage(1L, 100));
+        when(contacts.findSubscribedByListIdAfter(eq(LIST_ID), eq(0L), eq(PAGE))).thenReturn(contactPage(1L, 100));
         stubSaveAllAssigningIds();
         when(messages.hasPendingOrSending(CAMPAIGN_ID)).thenReturn(true);
 
@@ -132,7 +132,7 @@ class CampaignFanoutServiceTest {
         winnerFlow.setAbEvalWaitMinutes(30);
         when(campaigns.claimForFanout(CAMPAIGN_ID)).thenReturn(true);
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(winnerFlow));
-        when(contacts.findByListIdAfter(eq(LIST_ID), eq(0L), eq(PAGE))).thenReturn(contactPage(1L, 200));
+        when(contacts.findSubscribedByListIdAfter(eq(LIST_ID), eq(0L), eq(PAGE))).thenReturn(contactPage(1L, 200));
         stubSaveAllAssigningIds();
         when(messages.hasPendingOrSending(CAMPAIGN_ID)).thenReturn(true);
 
@@ -164,7 +164,7 @@ class CampaignFanoutServiceTest {
     void expand_emptyList_marksExpandedThenCompletesImmediately() {
         when(campaigns.claimForFanout(CAMPAIGN_ID)).thenReturn(true);
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(listCampaign()));
-        when(contacts.findByListIdAfter(eq(LIST_ID), eq(0L), eq(PAGE))).thenReturn(List.of());
+        when(contacts.findSubscribedByListIdAfter(eq(LIST_ID), eq(0L), eq(PAGE))).thenReturn(List.of());
         when(messages.hasPendingOrSending(CAMPAIGN_ID)).thenReturn(false);
 
         service.expand(CAMPAIGN_ID);

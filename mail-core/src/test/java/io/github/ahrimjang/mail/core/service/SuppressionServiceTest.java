@@ -1,10 +1,15 @@
 package io.github.ahrimjang.mail.core.service;
 
 import io.github.ahrimjang.mail.common.SubscriptionView;
+import io.github.ahrimjang.mail.core.domain.Campaign;
 import io.github.ahrimjang.mail.core.domain.Contact;
+import io.github.ahrimjang.mail.core.domain.ContactList;
 import io.github.ahrimjang.mail.core.domain.MailMessage;
 import io.github.ahrimjang.mail.core.domain.Suppression;
+import io.github.ahrimjang.mail.core.port.CampaignRepository;
+import io.github.ahrimjang.mail.core.port.ContactListRepository;
 import io.github.ahrimjang.mail.core.port.ContactRepository;
+import io.github.ahrimjang.mail.core.port.ListUnsubscribeRepository;
 import io.github.ahrimjang.mail.core.port.MailMessageRepository;
 import io.github.ahrimjang.mail.core.port.SuppressionRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -37,17 +42,99 @@ class SuppressionServiceTest {
     @Mock
     private ContactRepository contacts;
 
+    @Mock
+    private CampaignRepository campaigns;
+
+    @Mock
+    private ContactListRepository lists;
+
+    @Mock
+    private ListUnsubscribeRepository listUnsubscribes;
+
     private SuppressionService service;
 
     @BeforeEach
     void setUp() {
-        service = new SuppressionService(messages, suppressions, contacts);
+        service = new SuppressionService(messages, suppressions, contacts, campaigns, lists, listUnsubscribes);
     }
 
     private Contact contactWithId(Long id, String email) {
         Contact c = Contact.of(email, null, null, Map.of());
         c.setId(id);
         return c;
+    }
+
+    /** A message from a list campaign: contactId set, campaign targets list 5 ("뉴스레터"). */
+    private MailMessage listCampaignMessage() {
+        MailMessage message = MailMessage.queued(10L, "member@x.com", 77L);
+        Campaign campaign = Campaign.draft("s", "b");
+        campaign.setId(10L);
+        campaign.setListId(5L);
+        ContactList list = ContactList.of("뉴스레터", null);
+        list.setId(5L);
+        when(campaigns.findById(10L)).thenReturn(Optional.of(campaign));
+        when(lists.findById(5L)).thenReturn(Optional.of(list));
+        return message;
+    }
+
+    @Test
+    void unsubscribeContext_listCampaignRecipientGetsTheListChoice() {
+        MailMessage message = listCampaignMessage();
+        when(messages.findByUnsubToken("tok")).thenReturn(Optional.of(message));
+
+        var ctx = service.unsubscribeContext("tok");
+
+        assertThat(ctx).isPresent();
+        assertThat(ctx.get().canUnsubscribeFromList()).isTrue();
+        assertThat(ctx.get().listId()).isEqualTo(5L);
+        assertThat(ctx.get().listName()).isEqualTo("뉴스레터");
+        assertThat(ctx.get().recipient()).isEqualTo("member@x.com");
+    }
+
+    @Test
+    void unsubscribeContext_adHocRecipientOnlyGetsTheGlobalChoice() {
+        // No contactId — an ad-hoc recipient has no membership to remove.
+        MailMessage message = MailMessage.queued(10L, "adhoc@x.com");
+        when(messages.findByUnsubToken("tok")).thenReturn(Optional.of(message));
+
+        var ctx = service.unsubscribeContext("tok");
+
+        assertThat(ctx).isPresent();
+        assertThat(ctx.get().canUnsubscribeFromList()).isFalse();
+    }
+
+    @Test
+    void unsubscribeContext_unknownTokenIsEmpty() {
+        when(messages.findByUnsubToken("nope")).thenReturn(Optional.empty());
+
+        assertThat(service.unsubscribeContext("nope")).isEmpty();
+    }
+
+    @Test
+    void unsubscribeFromList_recordsOptOutKeepingMembershipAndSuppressionUntouched() {
+        MailMessage message = listCampaignMessage();
+        when(messages.findByUnsubToken("tok")).thenReturn(Optional.of(message));
+
+        var ctx = service.unsubscribeFromList("tok");
+
+        assertThat(ctx).isPresent();
+        // The opt-out is its own durable record; the operator's membership row stays,
+        // so a CSV re-import cannot silently re-subscribe the recipient.
+        verify(listUnsubscribes).save(5L, 77L, "unsubscribe");
+        verify(lists, never()).removeMember(any(), any());
+        verify(suppressions, never()).save(any());
+    }
+
+    @Test
+    void unsubscribeFromList_adHocTokenRemovesNothing() {
+        MailMessage message = MailMessage.queued(10L, "adhoc@x.com");
+        when(messages.findByUnsubToken("tok")).thenReturn(Optional.of(message));
+
+        var ctx = service.unsubscribeFromList("tok");
+
+        assertThat(ctx).isEmpty();
+        verify(listUnsubscribes, never()).save(any(), any(), any());
+        verify(suppressions, never()).save(any());
     }
 
     @Test

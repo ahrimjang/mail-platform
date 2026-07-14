@@ -301,6 +301,15 @@ public class ListMembershipEntity {
 reason `"manual"`로 남아 `"unsubscribe"`(수신자 본인)·`"bounce"`(자동)와 구분됩니다.
 반환 뷰는 저장 후 다시 조회한 값이라 항상 테이블의 현재 상태를 비춥니다.
 
+**리스트 단위 구독 해지는 별도 개념**입니다(`list_unsubscribes`, V11). 멤버십은 *운영자의
+분류*라 구독 의사를 담지 않습니다 — 수신자가 수신거부 페이지에서 "이 리스트만 그만 받기"를
+선택하면 멤버십은 그대로 두고 옵트아웃 행(list_id, contact_id, reason, created_at)을 남기며,
+리스트 팬아웃 쿼리(`findSubscribedByListIdAfter`)가 발송 시점에 이들을 제외합니다. 멤버십을
+지우는 방식과 달리 **CSV 재가져오기나 수동 재추가로 해지 의사가 조용히 뒤집히지 않고**, 복원은
+운영자의 명시적 "해지 취소"(DELETE `/api/contacts/{id}/list-unsubscribes/{listId}`)로만 됩니다.
+전역 억제(모든 메일)와 리스트 옵트아웃(그 리스트만)이 같은 원칙 — *수신자의 결정은 별도 기록으로
+보존한다* — 을 두 층위에서 반복하는 셈입니다.
+
 `mail-api/src/main/java/io/github/ahrimjang/mail/api/ContactController.java`
 ```java
     /** Subscription state of this contact, derived from the suppression list. */

@@ -16,9 +16,12 @@ public interface ContactJpaRepository extends JpaRepository<ContactEntity, Long>
     @Query("select c from ContactEntity c, ListMembershipEntity m where m.listId = ?1 and m.contactId = c.id order by c.id")
     List<ContactEntity> findByListId(Long listId);
 
+    /** Members past the keyset cursor, minus contacts who opted out of this list. */
     @Query("select c from ContactEntity c, ListMembershipEntity m where m.listId = ?1 and m.contactId = c.id "
-            + "and c.id > ?2 order by c.id")
-    List<ContactEntity> findByListIdAfter(Long listId, Long afterId, Pageable pageable);
+            + "and c.id > ?2 "
+            + "and not exists (select 1 from ListUnsubscribeEntity u where u.listId = ?1 and u.contactId = c.id) "
+            + "order by c.id")
+    List<ContactEntity> findSubscribedByListIdAfter(Long listId, Long afterId, Pageable pageable);
 
     @Query("select count(c) from ContactEntity c, ListMembershipEntity m where m.listId = ?1 and m.contactId = c.id")
     long countByListId(Long listId);
