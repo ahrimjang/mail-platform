@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
-import type { TemplateView } from "../types";
+import type { CampaignView, TemplateView } from "../types";
 import Portal from "../components/Portal";
+import { badgeClass, fmt } from "../outpace/format";
 import { editorRouteFor } from "../outpace/blocks";
 import { renderPreview } from "../outpace/starters";
 
-type Tab = "list" | "scratch";
+type Tab = "list" | "scratch" | "usage";
 type SourceFilter = "all" | "builtin" | "mine";
 
 /* Display category per built-in seed key (badge on the card). */
@@ -157,6 +158,8 @@ export default function Templates() {
   const [loaded, setLoaded] = useState(false);
   const [deleting, setDeleting] = useState<TemplateView | null>(null);
   const [resetting, setResetting] = useState<TemplateView | null>(null);
+  // Campaign→template usage rows for the 매핑 tab; fetched once on first open.
+  const [campaigns, setCampaigns] = useState<CampaignView[] | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -170,6 +173,15 @@ export default function Templates() {
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
+
+  useEffect(() => {
+    if (tab !== "usage" || campaigns !== null) return;
+    let cancelled = false;
+    api("/api/campaigns")
+      .then(async (res) => { if (res.ok && !cancelled) setCampaigns(await res.json()); })
+      .catch(() => { if (!cancelled) setCampaigns([]); });
+    return () => { cancelled = true; };
+  }, [tab, campaigns]);
 
   const builtins = templates
     .filter((t) => t.builtinKey)
@@ -195,7 +207,60 @@ export default function Templates() {
       <div className="op-tabs">
         <button className={`op-tab${tab === "list" ? " active" : ""}`} onClick={() => setTab("list")}>템플릿</button>
         <button className={`op-tab${tab === "scratch" ? " active" : ""}`} onClick={() => setTab("scratch")}>직접 만들기</button>
+        <button className={`op-tab${tab === "usage" ? " active" : ""}`} onClick={() => setTab("usage")}>캠페인 매핑</button>
       </div>
+
+      {tab === "usage" && (() => {
+        // Campaigns whose content was snapshotted from a template, newest first.
+        const used = (campaigns ?? [])
+          .filter((c) => c.templateId != null)
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        const tplName = (id: number) => templates.find((t) => t.id === id)?.name ?? `#${id} (삭제됨)`;
+        const USAGE_COLS = "minmax(160px, 2fr) 90px minmax(140px, 1.4fr) 120px";
+        return (
+          <div className="op-card">
+            <div className="op-thead" style={{ gridTemplateColumns: USAGE_COLS }}>
+              <span>캠페인</span>
+              <span>상태</span>
+              <span>사용 템플릿</span>
+              <span>생성일</span>
+            </div>
+            {campaigns === null && (
+              <div className="op-list-row"><span className="meta">불러오는 중…</span></div>
+            )}
+            {campaigns !== null && used.length === 0 && (
+              <div className="op-list-row"><span className="meta">템플릿으로 만든 캠페인이 아직 없습니다. 새 캠페인에서 ‘템플릿 사용’을 선택하거나 에디터의 ‘다음 · 발송 설정’으로 시작해 보세요.</span></div>
+            )}
+            {used.map((c) => {
+              const tpl = templates.find((t) => t.id === c.templateId);
+              return (
+                <div
+                  key={c.id}
+                  className="op-trow clickable"
+                  style={{ gridTemplateColumns: USAGE_COLS }}
+                  onClick={() => nav(`/campaigns/${c.id}`)}
+                >
+                  <div style={{ minWidth: 0 }}>
+                    <div className="strong op-ell">{c.name ?? c.subject}</div>
+                    <div className="faint op-ell">수신자 {fmt(c.total)}명 · 발송 {fmt(c.sent)}</div>
+                  </div>
+                  <span><span className={`op-badge ${badgeClass(c.status)}`}>{c.status === "CANCELED" ? "취소됨" : c.status}</span></span>
+                  <span>
+                    <span
+                      className="op-minibadge blue link"
+                      title={tpl ? `'${tpl.name}' 편집 화면 열기` : "삭제된 템플릿"}
+                      onClick={(e) => { e.stopPropagation(); if (tpl) nav(editorRouteFor(tpl)); }}
+                    >
+                      {tplName(c.templateId as number)}
+                    </span>
+                  </span>
+                  <span className="faint">{new Date(c.createdAt).toLocaleDateString("ko-KR")}</span>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
 
       {tab === "list" && (
         <>

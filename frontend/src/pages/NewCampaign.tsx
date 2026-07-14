@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import Portal from "../components/Portal";
 import { fmt } from "../outpace/format";
@@ -29,6 +29,10 @@ function minScheduleLocal(): string {
 
 export default function NewCampaign() {
   const nav = useNavigate();
+  // ?templateId= — the editors' "다음 · 발송 설정" hands over the just-saved
+  // template so it arrives here already selected.
+  const [searchParams] = useSearchParams();
+  const initialTemplateId = searchParams.get("templateId") ?? "";
   const recipientsRef = useRef<HTMLTextAreaElement>(null);
 
   const [name, setName] = useState("월간 뉴스레터 7월호");
@@ -58,8 +62,8 @@ export default function NewCampaign() {
   // Content can come from a saved template (snapshotted server-side at create),
   // and the audience from a contact list (fanned out server-side). Variant B
   // mirrors the same direct/template choice.
-  const [contentSource, setContentSource] = useState<ContentSource>("direct");
-  const [templateId, setTemplateId] = useState<string>("");
+  const [contentSource, setContentSource] = useState<ContentSource>(initialTemplateId ? "template" : "direct");
+  const [templateId, setTemplateId] = useState<string>(initialTemplateId);
   const [abContentSource, setAbContentSource] = useState<ContentSource>("direct");
   const [abTemplateId, setAbTemplateId] = useState<string>("");
   const [templates, setTemplates] = useState<TemplateView[]>([]);

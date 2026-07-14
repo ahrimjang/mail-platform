@@ -74,10 +74,10 @@ export default function TextEditor() {
     });
   }
 
-  async function save(): Promise<boolean> {
+  async function save(): Promise<number | null> {
     if (!name.trim() || !subject.trim() || !text.trim()) {
       setError("이름, 제목, 본문을 모두 입력해 주세요.");
-      return false;
+      return null;
     }
     setSaving(true);
     setError(null);
@@ -94,16 +94,16 @@ export default function TextEditor() {
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         setError(data.error ?? "저장에 실패했습니다.");
-        return false;
+        return null;
       }
       const view: TemplateView = await res.json();
       setSavedId(view.id);
       setSavedAt(new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }));
       if (!id && !savedId) nav(`/editor/text/${view.id}`, { replace: true });
-      return true;
+      return view.id;
     } catch {
       setError("저장에 실패했습니다.");
-      return false;
+      return null;
     } finally {
       setSaving(false);
     }
@@ -130,7 +130,7 @@ export default function TextEditor() {
           <button
             className="op-tbtn primary"
             disabled={saving}
-            onClick={async () => { if (await save()) nav("/campaigns/new"); }}
+            onClick={async () => { const tid = await save(); if (tid) nav(`/campaigns/new?templateId=${tid}`); }}
           >
             다음 · 발송 설정
           </button>

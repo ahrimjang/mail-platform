@@ -508,13 +508,13 @@ export default function EmailEditor() {
     document.execCommand("createLink", false, url);
   }
 
-  async function save(): Promise<boolean> {
+  async function save(): Promise<number | null> {
     // commit any in-progress inline edit before serializing
     (document.activeElement as HTMLElement | null)?.blur?.();
     await new Promise((r) => setTimeout(r, 0));
     if (!name.trim() || !subject.trim() || blocks.length === 0) {
       setError("이름, 제목을 입력하고 상자를 1개 이상 두세요.");
-      return false;
+      return null;
     }
     setSaving(true);
     setError(null);
@@ -526,15 +526,15 @@ export default function EmailEditor() {
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         setError(data.error ?? "저장에 실패했습니다.");
-        return false;
+        return null;
       }
       const view: TemplateView = await res.json();
       setSavedAt(new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }));
       if (!id) nav(`/editor/${view.id}`, { replace: true });
-      return true;
+      return view.id;
     } catch {
       setError("저장에 실패했습니다.");
-      return false;
+      return null;
     } finally {
       setSaving(false);
     }
@@ -575,7 +575,7 @@ export default function EmailEditor() {
           <button
             className="op-tbtn primary"
             disabled={saving}
-            onClick={async () => { if (await save()) nav("/campaigns/new"); }}
+            onClick={async () => { const tid = await save(); if (tid) nav(`/campaigns/new?templateId=${tid}`); }}
           >
             다음 · 발송 설정
           </button>
