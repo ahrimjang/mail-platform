@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 
@@ -59,6 +60,16 @@ public class CampaignScheduleService {
                 released++;
                 log.info("released scheduled list campaign {} (fan-out) scheduledAt={}",
                         campaign.getId(), campaign.getScheduledAt());
+            } else if (campaign.hasWinnerFlow()) {
+                // Winner flow: only the test batch (variant assigned) is released;
+                // held rows wait for the winner scheduler, which starts counting now.
+                List<Long> testIds = messages.findPendingTestIdsByCampaign(campaign.getId());
+                testIds.forEach(mailQueue::enqueue);
+                campaigns.scheduleAbEvaluation(campaign.getId(),
+                        now.plus(Duration.ofMinutes(campaign.getAbEvalWaitMinutes())));
+                released++;
+                log.info("released scheduled A/B test batch of campaign {} ({} messages) scheduledAt={}",
+                        campaign.getId(), testIds.size(), campaign.getScheduledAt());
             } else {
                 List<Long> pendingIds = messages.findPendingIdsByCampaign(campaign.getId());
                 pendingIds.forEach(mailQueue::enqueue);

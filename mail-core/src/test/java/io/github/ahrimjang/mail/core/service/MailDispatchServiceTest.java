@@ -221,6 +221,126 @@ class MailDispatchServiceTest {
     }
 
     @Test
+    void dispatchOne_variantB_rendersTheBSubjectAndBody() throws Exception {
+        MailMessage message = queuedMessage(null);
+        message.setVariant("B");
+        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(true);
+        when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(message));
+        Campaign abCampaign = campaign("Hello A", "<p>Body A</p>");
+        abCampaign.setAbSubjectB("Hello B");
+        abCampaign.setAbBodyB("<p>Body B</p>");
+        abCampaign.setAbSplitPercent(50);
+        when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(abCampaign));
+        when(suppressions.existsByEmail(RECIPIENT)).thenReturn(false);
+        when(messages.hasPendingOrSending(CAMPAIGN_ID)).thenReturn(true);
+
+        service.dispatchOne(MESSAGE_ID);
+
+        ArgumentCaptor<String> subject = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
+        verify(sender).send(eq(RECIPIENT), subject.capture(), body.capture(), anyString(), any(), any());
+        assertThat(subject.getValue()).isEqualTo("Hello B");
+        assertThat(body.getValue()).contains("<p>Body B</p>");
+        assertThat(body.getValue()).doesNotContain("<p>Body A</p>");
+    }
+
+    @Test
+    void dispatchOne_variantBWithSubjectOnlyTest_keepsTheSharedBody() throws Exception {
+        MailMessage message = queuedMessage(null);
+        message.setVariant("B");
+        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(true);
+        when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(message));
+        Campaign abCampaign = campaign("Hello A", "<p>Shared body</p>");
+        abCampaign.setAbSubjectB("Hello B");
+        abCampaign.setAbSplitPercent(50);
+        when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(abCampaign));
+        when(suppressions.existsByEmail(RECIPIENT)).thenReturn(false);
+        when(messages.hasPendingOrSending(CAMPAIGN_ID)).thenReturn(true);
+
+        service.dispatchOne(MESSAGE_ID);
+
+        ArgumentCaptor<String> subject = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
+        verify(sender).send(eq(RECIPIENT), subject.capture(), body.capture(), anyString(), any(), any());
+        assertThat(subject.getValue()).isEqualTo("Hello B");
+        assertThat(body.getValue()).contains("<p>Shared body</p>");
+    }
+
+    @Test
+    void dispatchOne_variantA_rendersTheACampaignContent() throws Exception {
+        MailMessage message = queuedMessage(null);
+        message.setVariant("A");
+        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(true);
+        when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(message));
+        Campaign abCampaign = campaign("Hello A", "<p>Body A</p>");
+        abCampaign.setAbSubjectB("Hello B");
+        abCampaign.setAbBodyB("<p>Body B</p>");
+        abCampaign.setAbSplitPercent(50);
+        when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(abCampaign));
+        when(suppressions.existsByEmail(RECIPIENT)).thenReturn(false);
+        when(messages.hasPendingOrSending(CAMPAIGN_ID)).thenReturn(true);
+
+        service.dispatchOne(MESSAGE_ID);
+
+        ArgumentCaptor<String> subject = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
+        verify(sender).send(eq(RECIPIENT), subject.capture(), body.capture(), anyString(), any(), any());
+        assertThat(subject.getValue()).isEqualTo("Hello A");
+        assertThat(body.getValue()).contains("<p>Body A</p>");
+        assertThat(body.getValue()).doesNotContain("<p>Body B</p>");
+    }
+
+    @Test
+    void dispatchOne_heldMessageOfDecidedCampaign_rendersTheWinnerContent() throws Exception {
+        // Held rows keep variant null forever; once the campaign has a winner,
+        // dispatch renders the winner's content without rewriting the row.
+        MailMessage message = queuedMessage(null);
+        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(true);
+        when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(message));
+        Campaign abCampaign = campaign("Hello A", "<p>Body A</p>");
+        abCampaign.setAbSubjectB("Hello B");
+        abCampaign.setAbBodyB("<p>Body B</p>");
+        abCampaign.setAbSplitPercent(50);
+        abCampaign.setAbTestPercent(20);
+        abCampaign.setAbWinner("B");
+        when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(abCampaign));
+        when(suppressions.existsByEmail(RECIPIENT)).thenReturn(false);
+        when(messages.hasPendingOrSending(CAMPAIGN_ID)).thenReturn(true);
+
+        service.dispatchOne(MESSAGE_ID);
+
+        ArgumentCaptor<String> subject = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
+        verify(sender).send(eq(RECIPIENT), subject.capture(), body.capture(), anyString(), any(), any());
+        assertThat(subject.getValue()).isEqualTo("Hello B");
+        assertThat(body.getValue()).contains("<p>Body B</p>");
+        assertThat(body.getValue()).doesNotContain("<p>Body A</p>");
+    }
+
+    @Test
+    void dispatchOne_variantNullWithoutWinner_rendersTheACampaignContent() throws Exception {
+        MailMessage message = queuedMessage(null);
+        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(true);
+        when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(message));
+        Campaign abCampaign = campaign("Hello A", "<p>Body A</p>");
+        abCampaign.setAbSubjectB("Hello B");
+        abCampaign.setAbBodyB("<p>Body B</p>");
+        abCampaign.setAbSplitPercent(50);
+        when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(abCampaign));
+        when(suppressions.existsByEmail(RECIPIENT)).thenReturn(false);
+        when(messages.hasPendingOrSending(CAMPAIGN_ID)).thenReturn(true);
+
+        service.dispatchOne(MESSAGE_ID);
+
+        ArgumentCaptor<String> subject = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
+        verify(sender).send(eq(RECIPIENT), subject.capture(), body.capture(), anyString(), any(), any());
+        assertThat(subject.getValue()).isEqualTo("Hello A");
+        assertThat(body.getValue()).contains("<p>Body A</p>");
+        assertThat(body.getValue()).doesNotContain("<p>Body B</p>");
+    }
+
+    @Test
     void dispatchOne_marksBouncedAndSuppressesOnSendFailure() throws Exception {
         MailMessage message = queuedMessage(null);
         when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(true);

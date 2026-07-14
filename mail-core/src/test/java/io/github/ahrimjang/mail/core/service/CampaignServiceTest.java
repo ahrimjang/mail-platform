@@ -34,6 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -104,7 +105,8 @@ class CampaignServiceTest {
         stubViewCounts(2, 2);
 
         CampaignView view = service.create(new CreateCampaignRequest(
-                "Hello", "<p>Hi there</p>", List.of("a@example.com", "b@example.com"), null, null, null, null, null));
+                "Hello", "<p>Hi there</p>", List.of("a@example.com", "b@example.com"), null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null));
 
         ArgumentCaptor<Campaign> campaignCaptor = ArgumentCaptor.forClass(Campaign.class);
         verify(campaigns).save(campaignCaptor.capture());
@@ -137,7 +139,8 @@ class CampaignServiceTest {
         stubViewCounts(2, 2);
 
         service.create(new CreateCampaignRequest(
-                "Hello", "<p>Hi</p>", List.of("a@example.com", "b@example.com"), null, null, null, null, null));
+                "Hello", "<p>Hi</p>", List.of("a@example.com", "b@example.com"), null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null));
 
         verify(mailQueue).enqueue(100L);
         verify(mailQueue).enqueue(101L);
@@ -154,7 +157,8 @@ class CampaignServiceTest {
 
         // Direct subject/body must be ignored when templateId is present.
         service.create(new CreateCampaignRequest(
-                "ignored subject", "ignored body", List.of("a@example.com"), 7L, null, null, null, null));
+                "ignored subject", "ignored body", List.of("a@example.com"), 7L, null, null, null, null,
+                null, null, null, null, null, null, null, null, null));
 
         ArgumentCaptor<Campaign> captor = ArgumentCaptor.forClass(Campaign.class);
         verify(campaigns).save(captor.capture());
@@ -167,7 +171,7 @@ class CampaignServiceTest {
         when(templates.findById(99L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.create(new CreateCampaignRequest(
-                null, null, List.of("a@example.com"), 99L, null, null, null, null)))
+                null, null, List.of("a@example.com"), 99L, null, null, null, null, null, null, null, null, null, null, null, null, null)))
                 .isInstanceOf(NoSuchElementException.class)
                 .hasMessageContaining("99");
 
@@ -182,7 +186,8 @@ class CampaignServiceTest {
         stubCampaignSaveAssigningId();
         stubViewCounts(0, 0);
 
-        service.create(new CreateCampaignRequest("Subject", "<p>Body</p>", null, null, 5L, null, null, null));
+        service.create(new CreateCampaignRequest(
+                "Subject", "<p>Body</p>", null, null, 5L, null, null, null, null, null, null, null, null, null, null, null, null));
 
         verify(mailQueue).enqueueFanout(CAMPAIGN_ID);
         verifyNoMoreInteractions(mailQueue);
@@ -195,7 +200,7 @@ class CampaignServiceTest {
         when(contacts.countByListId(5L)).thenReturn(0L);
 
         assertThatThrownBy(() -> service.create(new CreateCampaignRequest(
-                "Subject", "<p>Body</p>", null, null, 5L, null, null, null)))
+                "Subject", "<p>Body</p>", null, null, 5L, null, null, null, null, null, null, null, null, null, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("5");
 
@@ -206,11 +211,11 @@ class CampaignServiceTest {
     @Test
     void create_withBlankSubjectOrBodyAndNoTemplate_throwsIllegalArgument() {
         assertThatThrownBy(() -> service.create(new CreateCampaignRequest(
-                "  ", "<p>Body</p>", List.of("a@example.com"), null, null, null, null, null)))
+                "  ", "<p>Body</p>", List.of("a@example.com"), null, null, null, null, null, null, null, null, null, null, null, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class);
 
         assertThatThrownBy(() -> service.create(new CreateCampaignRequest(
-                "Subject", null, List.of("a@example.com"), null, null, null, null, null)))
+                "Subject", null, List.of("a@example.com"), null, null, null, null, null, null, null, null, null, null, null, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class);
 
         // Validation happens before any persistence or queueing.
@@ -287,7 +292,7 @@ class CampaignServiceTest {
 
         CampaignView view = service.create(new CreateCampaignRequest(
                 "Hello", "<p>Hi</p>", List.of("a@example.com"), null, null,
-                "Acme 팀", "hello@acme.io", null));
+                "Acme 팀", "hello@acme.io", null, null, null, null, null, null, null, null, null, null));
 
         ArgumentCaptor<Campaign> captor = ArgumentCaptor.forClass(Campaign.class);
         verify(campaigns).save(captor.capture());
@@ -306,7 +311,7 @@ class CampaignServiceTest {
 
         CampaignView view = service.create(new CreateCampaignRequest(
                 "Hello", "<p>Hi</p>", List.of("a@example.com", "b@example.com"), null, null,
-                null, null, later));
+                null, null, later, null, null, null, null, null, null, null, null, null));
 
         // Messages are persisted as PENDING for the scheduler to release later...
         assertThat(capturedSavedMessages()).hasSize(2);
@@ -327,7 +332,7 @@ class CampaignServiceTest {
 
         service.create(new CreateCampaignRequest(
                 "Hello", "<p>Hi</p>", List.of("a@example.com"), null, null,
-                null, null, Instant.now().minus(1, ChronoUnit.MINUTES)));
+                null, null, Instant.now().minus(1, ChronoUnit.MINUTES), null, null, null, null, null, null, null, null, null));
 
         ArgumentCaptor<Campaign> captor = ArgumentCaptor.forClass(Campaign.class);
         verify(campaigns).save(captor.capture());
@@ -348,7 +353,7 @@ class CampaignServiceTest {
         stubViewCounts(0, 0);
 
         CampaignView view = service.create(new CreateCampaignRequest(
-                null, null, null, 7L, 5L, null, null, null));
+                null, null, null, 7L, 5L, null, null, null, null, null, null, null, null, null, null, null, null));
 
         ArgumentCaptor<Campaign> captor = ArgumentCaptor.forClass(Campaign.class);
         verify(campaigns).save(captor.capture());
@@ -444,15 +449,230 @@ class CampaignServiceTest {
     }
 
     @Test
+    void create_abTest_storesVariantFieldsAndAssignsVariantsOnAdHocMessages() {
+        stubCampaignSaveAssigningId();
+        stubMessageSaveAllAssigningIds();
+        stubViewCounts(2, 2);
+
+        // Pick one recipient per bucket side so both variants provably appear;
+        // computing the expectation via the assigner keeps the test hash-proof.
+        String recipientA = firstEmailWithVariant("A", 50);
+        String recipientB = firstEmailWithVariant("B", 50);
+
+        service.create(new CreateCampaignRequest(
+                "Hello", "<p>A body</p>", List.of(recipientA, recipientB), null, null, null, null, null,
+                "Hello B", "<p>B body</p>", null, null, null, null, null, null, null));
+
+        ArgumentCaptor<Campaign> campaignCaptor = ArgumentCaptor.forClass(Campaign.class);
+        verify(campaigns).save(campaignCaptor.capture());
+        Campaign saved = campaignCaptor.getValue();
+        assertThat(saved.isAbTest()).isTrue();
+        assertThat(saved.getAbSubjectB()).isEqualTo("Hello B");
+        assertThat(saved.getAbBodyB()).isEqualTo("<p>B body</p>");
+        assertThat(saved.getAbSplitPercent()).isEqualTo(50); // null split defaults to 50
+
+        List<MailMessage> queued = capturedSavedMessages();
+        assertThat(queued).extracting(MailMessage::getVariant).containsExactly("A", "B");
+    }
+
+    @Test
+    void create_abTest_withSplitPercentOutOfRange_throwsIllegalArgument() {
+        assertThatThrownBy(() -> service.create(new CreateCampaignRequest(
+                "Hello", "<p>Hi</p>", List.of("a@example.com"), null, null, null, null, null,
+                "Hello B", null, null, 0, null, null, null, null, null)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("abSplitPercent");
+
+        assertThatThrownBy(() -> service.create(new CreateCampaignRequest(
+                "Hello", "<p>Hi</p>", List.of("a@example.com"), null, null, null, null, null,
+                "Hello B", null, null, 100, null, null, null, null, null)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("abSplitPercent");
+
+        verifyNoInteractions(campaigns, messages, mailQueue);
+    }
+
+    @Test
+    void create_abTest_withAbTemplateId_snapshotsTemplateAsVariantB() {
+        Template abTemplate = Template.create("promo-b", "B from template", "<p>B body from template</p>");
+        when(templates.findById(8L)).thenReturn(Optional.of(abTemplate));
+        stubCampaignSaveAssigningId();
+        stubMessageSaveAllAssigningIds();
+        stubViewCounts(1, 1);
+
+        // Direct B fields must be ignored when abTemplateId is present — the
+        // A/B mirror of how templateId overrides the main subject/body.
+        service.create(new CreateCampaignRequest(
+                "Hello", "<p>A body</p>", List.of("a@example.com"), null, null, null, null, null,
+                "ignored B subject", "ignored B body", 8L, null, null, null, null, null, null));
+
+        ArgumentCaptor<Campaign> captor = ArgumentCaptor.forClass(Campaign.class);
+        verify(campaigns).save(captor.capture());
+        assertThat(captor.getValue().getAbSubjectB()).isEqualTo("B from template");
+        assertThat(captor.getValue().getAbBodyB()).isEqualTo("<p>B body from template</p>");
+        assertThat(captor.getValue().getAbSplitPercent()).isEqualTo(50);
+    }
+
+    @Test
+    void view_ofAbCampaign_carriesPerVariantDeliveryAndEngagementStats() {
+        Campaign existing = Campaign.draft("Hello", "<p>Hi</p>");
+        existing.setId(CAMPAIGN_ID);
+        existing.setAbSubjectB("Hello B");
+        existing.setAbSplitPercent(50);
+        when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(existing));
+        stubViewCounts(10, 0);
+        when(messages.countByCampaignAndVariant(CAMPAIGN_ID)).thenReturn(List.of(
+                new MailMessageRepository.VariantDelivery("A", 6, 5),
+                new MailMessageRepository.VariantDelivery("B", 4, 4)));
+        when(events.countDistinctMessagesByVariant(CAMPAIGN_ID, EventType.OPEN, "A")).thenReturn(3L);
+        when(events.countDistinctMessagesByVariant(CAMPAIGN_ID, EventType.CLICK, "A")).thenReturn(1L);
+        when(events.countDistinctMessagesByVariant(CAMPAIGN_ID, EventType.OPEN, "B")).thenReturn(2L);
+        when(events.countDistinctMessagesByVariant(CAMPAIGN_ID, EventType.CLICK, "B")).thenReturn(2L);
+
+        CampaignView view = service.get(CAMPAIGN_ID);
+
+        assertThat(view.variants()).containsExactly(
+                new CampaignView.VariantStats("A", 6, 5, 3, 1),
+                new CampaignView.VariantStats("B", 4, 4, 2, 2));
+    }
+
+    @Test
+    void view_ofPlainCampaign_hasNullVariants() {
+        Campaign existing = Campaign.draft("Hello", "<p>Hi</p>");
+        existing.setId(CAMPAIGN_ID);
+        when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(existing));
+        stubViewCounts(1, 0);
+
+        CampaignView view = service.get(CAMPAIGN_ID);
+
+        assertThat(view.variants()).isNull();
+        verify(messages, never()).countByCampaignAndVariant(CAMPAIGN_ID);
+    }
+
+    @Test
+    void create_winnerFlow_enqueuesOnlyTheTestBatchAndSchedulesEvaluation() {
+        stubCampaignSaveAssigningId();
+        stubMessageSaveAllAssigningIds();
+        stubViewCounts(2, 2);
+
+        // One recipient in the test group and one in the holdout, hash-proof
+        // via the assigner itself — held rows must be saved but never enqueued.
+        String tested = firstEmailWithHoldout(false, 20, 50);
+        String held = firstEmailWithHoldout(true, 20, 50);
+        Instant before = Instant.now();
+
+        service.create(new CreateCampaignRequest(
+                "Hello", "<p>A body</p>", List.of(tested, held), null, null, null, null, null,
+                "Hello B", "<p>B body</p>", null, null, 20, "OPEN", 30, null, null));
+
+        ArgumentCaptor<Campaign> campaignCaptor = ArgumentCaptor.forClass(Campaign.class);
+        verify(campaigns).save(campaignCaptor.capture());
+        Campaign saved = campaignCaptor.getValue();
+        assertThat(saved.hasWinnerFlow()).isTrue();
+        assertThat(saved.getAbTestPercent()).isEqualTo(20);
+        assertThat(saved.getAbEvalMetric()).isEqualTo("OPEN");
+        assertThat(saved.getAbEvalWaitMinutes()).isEqualTo(30);
+
+        List<MailMessage> queued = capturedSavedMessages();
+        assertThat(queued).hasSize(2);
+        assertThat(queued.get(0).getVariant()).isNotNull();
+        assertThat(queued.get(1).getVariant()).isNull();
+        // Only the test row (id 100) is published; the held row (id 101) waits.
+        verify(mailQueue).enqueue(100L);
+        verify(mailQueue, never()).enqueue(101L);
+
+        ArgumentCaptor<Instant> evaluateAt = ArgumentCaptor.forClass(Instant.class);
+        verify(campaigns).scheduleAbEvaluation(eq(CAMPAIGN_ID), evaluateAt.capture());
+        assertThat(evaluateAt.getValue()).isAfter(before);
+    }
+
+    @Test
+    void create_winnerFlow_defaultsMetricToOpenAndWaitToSixtyMinutes() {
+        stubCampaignSaveAssigningId();
+        stubMessageSaveAllAssigningIds();
+        stubViewCounts(1, 1);
+
+        service.create(new CreateCampaignRequest(
+                "Hello", "<p>A body</p>", List.of("a@example.com"), null, null, null, null, null,
+                "Hello B", null, null, null, 20, null, null, null, null));
+
+        ArgumentCaptor<Campaign> captor = ArgumentCaptor.forClass(Campaign.class);
+        verify(campaigns).save(captor.capture());
+        assertThat(captor.getValue().getAbEvalMetric()).isEqualTo("OPEN");
+        assertThat(captor.getValue().getAbEvalWaitMinutes()).isEqualTo(60);
+    }
+
+    @Test
+    void create_withAbTestPercentButNoBContent_throwsIllegalArgument() {
+        assertThatThrownBy(() -> service.create(new CreateCampaignRequest(
+                "Hello", "<p>Hi</p>", List.of("a@example.com"), null, null, null, null, null,
+                null, null, null, null, 20, null, null, null, null)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("A/B content");
+
+        verifyNoInteractions(campaigns, messages, mailQueue);
+    }
+
+    @Test
+    void create_withAbTestPercentOutOfRange_throwsIllegalArgument() {
+        assertThatThrownBy(() -> service.create(new CreateCampaignRequest(
+                "Hello", "<p>Hi</p>", List.of("a@example.com"), null, null, null, null, null,
+                "Hello B", null, null, null, 4, null, null, null, null)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("abTestPercent");
+
+        assertThatThrownBy(() -> service.create(new CreateCampaignRequest(
+                "Hello", "<p>Hi</p>", List.of("a@example.com"), null, null, null, null, null,
+                "Hello B", null, null, null, 91, null, null, null, null)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("abTestPercent");
+
+        verifyNoInteractions(campaigns, messages, mailQueue);
+    }
+
+    @Test
+    void create_withBadEvalMetric_throwsIllegalArgument() {
+        assertThatThrownBy(() -> service.create(new CreateCampaignRequest(
+                "Hello", "<p>Hi</p>", List.of("a@example.com"), null, null, null, null, null,
+                "Hello B", null, null, null, 20, "BOUNCE", null, null, null)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("abEvalMetric");
+
+        verifyNoInteractions(campaigns, messages, mailQueue);
+    }
+
+    /** First generated address the assigner puts on {@code variant} at the given split. */
+    private static String firstEmailWithVariant(String variant, int splitPercent) {
+        for (int i = 0; i < 1000; i++) {
+            String email = "user" + i + "@example.com";
+            if (variant.equals(AbVariantAssigner.assign(email, splitPercent))) {
+                return email;
+            }
+        }
+        throw new IllegalStateException("no email found for variant " + variant);
+    }
+
+    /** First generated address the holdout assigner holds back (or not) at the given shares. */
+    private static String firstEmailWithHoldout(boolean held, int testPercent, int splitPercent) {
+        for (int i = 0; i < 1000; i++) {
+            String email = "user" + i + "@example.com";
+            if (held == (AbVariantAssigner.assignWithHoldout(email, testPercent, splitPercent) == null)) {
+                return email;
+            }
+        }
+        throw new IllegalStateException("no email found with held=" + held);
+    }
+
+    @Test
     void create_withEmptyRecipientsAndNoListId_throwsIllegalArgument() {
         stubCampaignSaveAssigningId();
 
         assertThatThrownBy(() -> service.create(new CreateCampaignRequest(
-                "Subject", "<p>Body</p>", List.of(), null, null, null, null, null)))
+                "Subject", "<p>Body</p>", List.of(), null, null, null, null, null, null, null, null, null, null, null, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class);
 
         assertThatThrownBy(() -> service.create(new CreateCampaignRequest(
-                "Subject", "<p>Body</p>", null, null, null, null, null, null)))
+                "Subject", "<p>Body</p>", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class);
 
         verify(messages, never()).saveAll(anyList());

@@ -9,6 +9,7 @@ import io.github.ahrimjang.mail.core.port.MailMessageRepository;
 import io.github.ahrimjang.mail.core.port.MailQueue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -17,6 +18,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
@@ -96,6 +99,55 @@ class CampaignFanoutServiceTest {
         verify(campaigns).markExpanded(CAMPAIGN_ID);
         // Still PENDING, so no early completion.
         verify(campaigns, never()).completeIfSending(CAMPAIGN_ID);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void expand_abCampaign_assignsAVariantToEveryExpandedMessage() {
+        Campaign ab = listCampaign();
+        ab.setAbSubjectB("B subject");
+        ab.setAbSplitPercent(50);
+        when(campaigns.claimForFanout(CAMPAIGN_ID)).thenReturn(true);
+        when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(ab));
+        when(contacts.findByListIdAfter(eq(LIST_ID), eq(0L), eq(PAGE))).thenReturn(contactPage(1L, 100));
+        stubSaveAllAssigningIds();
+        when(messages.hasPendingOrSending(CAMPAIGN_ID)).thenReturn(true);
+
+        service.expand(CAMPAIGN_ID);
+
+        ArgumentCaptor<List<MailMessage>> captor = ArgumentCaptor.forClass(List.class);
+        verify(messages).saveAll(captor.capture());
+        // Every message carries the deterministic assignment for its recipient.
+        assertThat(captor.getValue()).isNotEmpty().allSatisfy(m ->
+                assertThat(m.getVariant()).isEqualTo(AbVariantAssigner.assign(m.getRecipient(), 50)));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void expand_winnerFlowCampaign_savesHeldRowsWithoutEnqueuingAndStampsEvaluation() {
+        Campaign winnerFlow = listCampaign();
+        winnerFlow.setAbSubjectB("B subject");
+        winnerFlow.setAbSplitPercent(50);
+        winnerFlow.setAbTestPercent(20);
+        winnerFlow.setAbEvalWaitMinutes(30);
+        when(campaigns.claimForFanout(CAMPAIGN_ID)).thenReturn(true);
+        when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(winnerFlow));
+        when(contacts.findByListIdAfter(eq(LIST_ID), eq(0L), eq(PAGE))).thenReturn(contactPage(1L, 200));
+        stubSaveAllAssigningIds();
+        when(messages.hasPendingOrSending(CAMPAIGN_ID)).thenReturn(true);
+
+        service.expand(CAMPAIGN_ID);
+
+        ArgumentCaptor<List<MailMessage>> captor = ArgumentCaptor.forClass(List.class);
+        verify(messages).saveAll(captor.capture());
+        List<MailMessage> saved = captor.getValue();
+        // The holdout (variant null) is persisted but never published; only the
+        // test batch is enqueued.
+        long testRows = saved.stream().filter(m -> m.getVariant() != null).count();
+        assertThat(testRows).isPositive().isLessThan(saved.size());
+        verify(mailQueue, times((int) testRows)).enqueue(anyLong());
+        verify(campaigns).markExpanded(CAMPAIGN_ID);
+        verify(campaigns).scheduleAbEvaluation(eq(CAMPAIGN_ID), any(java.time.Instant.class));
     }
 
     @Test

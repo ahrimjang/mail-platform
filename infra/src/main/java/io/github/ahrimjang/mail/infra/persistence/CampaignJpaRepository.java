@@ -64,4 +64,26 @@ public interface CampaignJpaRepository extends JpaRepository<CampaignEntity, Lon
     @Query("update CampaignEntity c set c.status = io.github.ahrimjang.mail.common.CampaignStatus.COMPLETED "
             + "where c.id = :id and c.status = io.github.ahrimjang.mail.common.CampaignStatus.SENDING")
     int completeIfSending(@Param("id") Long id);
+
+    /** Winner-flow campaigns due for evaluation: no winner yet, evaluate time passed. */
+    @Query("select c from CampaignEntity c where c.abWinner is null and c.abEvaluateAt is not null "
+            + "and c.abEvaluateAt <= :now")
+    List<CampaignEntity> findDueForAbEvaluation(@Param("now") Instant now);
+
+    /** Stamps when the winner scheduler should evaluate the released test batch. */
+    @Modifying
+    @Transactional
+    @Query("update CampaignEntity c set c.abEvaluateAt = :evaluateAt where c.id = :id")
+    int scheduleAbEvaluation(@Param("id") Long id, @Param("evaluateAt") Instant evaluateAt);
+
+    /**
+     * Single conditional UPDATE claiming the winner decision — same pattern as
+     * {@link #claimForEnqueue}: concurrent winner schedulers race on
+     * {@code ab_winner IS NULL} and the database picks exactly one, so the held
+     * remainder is only ever released once.
+     */
+    @Modifying
+    @Transactional
+    @Query("update CampaignEntity c set c.abWinner = :winner where c.id = :id and c.abWinner is null")
+    int claimAbWinner(@Param("id") Long id, @Param("winner") String winner);
 }

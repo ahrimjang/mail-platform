@@ -20,6 +20,8 @@ public class MailMessage {
     private String trackingToken;
     private Long contactId;
     private Instant updatedAt;
+    /** A/B variant this delivery renders ("A"/"B"); null for non-A/B campaigns. */
+    private String variant;
 
     public MailMessage() {
     }
@@ -149,5 +151,13 @@ public class MailMessage {
 
     public void setUpdatedAt(Instant updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public String getVariant() {
+        return variant;
+    }
+
+    public void setVariant(String variant) {
+        this.variant = variant;
     }
 }

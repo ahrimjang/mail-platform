@@ -14,6 +14,9 @@ public interface EmailEventRepository {
     /** Count distinct messages having at least one event of the given type in a campaign. */
     long countDistinctMessages(Long campaignId, EventType type);
 
+    /** Distinct engaged messages of one variant (A/B) of a campaign. */
+    long countDistinctMessagesByVariant(Long campaignId, EventType type, String variant);
+
     /**
      * Platform-wide daily engagement since {@code since}, bucketed by calendar day
      * in {@code zone}: distinct messages per (day, event type). Distinct counting

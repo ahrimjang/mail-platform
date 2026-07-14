@@ -99,6 +99,21 @@ public class MailDispatchService {
         }
         String subject = campaign.getSubject();
         String bodySrc = campaign.getBody();
+        // A/B: a held (variant-null) message of a decided campaign renders the winner.
+        String variant = message.getVariant();
+        if (variant == null && campaign.getAbWinner() != null) {
+            variant = campaign.getAbWinner();
+        }
+        if ("B".equals(variant)) {
+            // A/B variant B: swap in the B subject/body where provided (a null B body
+            // means a subject-only test — the body stays shared).
+            if (campaign.getAbSubjectB() != null) {
+                subject = campaign.getAbSubjectB();
+            }
+            if (campaign.getAbBodyB() != null) {
+                bodySrc = campaign.getAbBodyB();
+            }
+        }
         Map<String, String> vars = Map.of("email", message.getRecipient());
         if (message.getContactId() != null) {
             vars = contacts.findById(message.getContactId()).map(Contact::toVariables).orElse(vars);

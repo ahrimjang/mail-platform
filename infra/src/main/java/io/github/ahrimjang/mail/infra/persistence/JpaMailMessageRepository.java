@@ -63,6 +63,16 @@ public class JpaMailMessageRepository implements MailMessageRepository {
     }
 
     @Override
+    public List<Long> findPendingTestIdsByCampaign(Long campaignId) {
+        return jpa.findPendingTestIdsByCampaignId(campaignId);
+    }
+
+    @Override
+    public List<Long> findPendingHeldIdsByCampaign(Long campaignId) {
+        return jpa.findPendingHeldIdsByCampaignId(campaignId);
+    }
+
+    @Override
     public int cancelPendingByCampaign(Long campaignId) {
         return jpa.cancelPendingByCampaignId(campaignId, Instant.now());
     }
@@ -115,11 +125,21 @@ public class JpaMailMessageRepository implements MailMessageRepository {
         return new MessageCounts(total, pending, sending, sent, failed, bounced, suppressed);
     }
 
+    @Override
+    public List<VariantDelivery> countByCampaignAndVariant(Long campaignId) {
+        return jpa.countByCampaignIdGroupByVariant(campaignId).stream()
+                .map(row -> new VariantDelivery(
+                        (String) row[0],
+                        ((Number) row[1]).longValue(),
+                        row[2] == null ? 0L : ((Number) row[2]).longValue()))
+                .toList();
+    }
+
     private MailMessageEntity toEntity(MailMessage m) {
         return new MailMessageEntity(
                 m.getId(), m.getCampaignId(), m.getRecipient(), m.getStatus(),
                 m.getAttempts(), m.getErrorMessage(), m.getUpdatedAt(), m.getUnsubToken(),
-                m.getTrackingToken(), m.getContactId());
+                m.getTrackingToken(), m.getContactId(), m.getVariant());
     }
 
     private MailMessage toDomain(MailMessageEntity e) {
@@ -134,6 +154,7 @@ public class JpaMailMessageRepository implements MailMessageRepository {
         m.setUnsubToken(e.getUnsubToken());
         m.setTrackingToken(e.getTrackingToken());
         m.setContactId(e.getContactId());
+        m.setVariant(e.getVariant());
         return m;
     }
 }

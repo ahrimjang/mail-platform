@@ -15,6 +15,9 @@ import java.time.Instant;
 public class Campaign {
 
     private Long id;
+    // Console display name (null = fall back to subject) and free-form note.
+    private String name;
+    private String description;
     private String subject;
     private String body;
     private CampaignStatus status;
@@ -27,6 +30,19 @@ public class Campaign {
     // kept for display even if the template or list is deleted later.
     private Long templateId;
     private Long listId;
+    // A/B split test: variant B content and the share of recipients getting it.
+    // Either B field non-null makes the campaign an A/B test.
+    private String abSubjectB;
+    private String abBodyB;
+    private Integer abSplitPercent;
+    // A/B winner flow: only abTestPercent% of the audience gets the test; after
+    // abEvalWaitMinutes the better variant (by abEvalMetric) becomes abWinner and
+    // the held-back remainder is sent with it. All null = plain split-only A/B.
+    private Integer abTestPercent;
+    private String abEvalMetric;
+    private Integer abEvalWaitMinutes;
+    private Instant abEvaluateAt;
+    private String abWinner;
 
     public Campaign() {
     }
@@ -47,6 +63,22 @@ public class Campaign {
 
     public void setId(Long id) {
         this.id = id;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
     }
 
     public String getSubject() {
@@ -127,5 +159,79 @@ public class Campaign {
 
     public void setListId(Long listId) {
         this.listId = listId;
+    }
+
+    /** True when the campaign carries any variant B content (subject and/or body). */
+    public boolean isAbTest() {
+        return abSubjectB != null || abBodyB != null;
+    }
+
+    public String getAbSubjectB() {
+        return abSubjectB;
+    }
+
+    public void setAbSubjectB(String abSubjectB) {
+        this.abSubjectB = abSubjectB;
+    }
+
+    public String getAbBodyB() {
+        return abBodyB;
+    }
+
+    public void setAbBodyB(String abBodyB) {
+        this.abBodyB = abBodyB;
+    }
+
+    public Integer getAbSplitPercent() {
+        return abSplitPercent;
+    }
+
+    public void setAbSplitPercent(Integer abSplitPercent) {
+        this.abSplitPercent = abSplitPercent;
+    }
+
+    /** True when this A/B campaign runs the winner flow (test share + held-out remainder). */
+    public boolean hasWinnerFlow() {
+        return isAbTest() && abTestPercent != null;
+    }
+
+    public Integer getAbTestPercent() {
+        return abTestPercent;
+    }
+
+    public void setAbTestPercent(Integer abTestPercent) {
+        this.abTestPercent = abTestPercent;
+    }
+
+    public String getAbEvalMetric() {
+        return abEvalMetric;
+    }
+
+    public void setAbEvalMetric(String abEvalMetric) {
+        this.abEvalMetric = abEvalMetric;
+    }
+
+    public Integer getAbEvalWaitMinutes() {
+        return abEvalWaitMinutes;
+    }
+
+    public void setAbEvalWaitMinutes(Integer abEvalWaitMinutes) {
+        this.abEvalWaitMinutes = abEvalWaitMinutes;
+    }
+
+    public Instant getAbEvaluateAt() {
+        return abEvaluateAt;
+    }
+
+    public void setAbEvaluateAt(Instant abEvaluateAt) {
+        this.abEvaluateAt = abEvaluateAt;
+    }
+
+    public String getAbWinner() {
+        return abWinner;
+    }
+
+    public void setAbWinner(String abWinner) {
+        this.abWinner = abWinner;
     }
 }

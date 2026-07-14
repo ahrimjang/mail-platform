@@ -36,6 +36,12 @@ public interface MailMessageRepository {
     /** Aggregate per-status counts for one campaign. */
     MessageCounts countByCampaign(Long campaignId);
 
+    /** Per-variant (A/B) delivery counts of a campaign: one row per variant. */
+    List<VariantDelivery> countByCampaignAndVariant(Long campaignId);
+
+    /** One variant's delivery counts. */
+    record VariantDelivery(String variant, long total, long sent) {}
+
     /**
      * Cheap drain check: true if the campaign still has any PENDING or SENDING
      * message. Short-circuits on the first hit — used on the hot dispatch path
@@ -45,6 +51,12 @@ public interface MailMessageRepository {
 
     /** Ids of a campaign's PENDING messages — what a scheduled release enqueues. */
     List<Long> findPendingIdsByCampaign(Long campaignId);
+
+    /** PENDING test-batch ids (variant assigned) — what a scheduled winner-flow release enqueues. */
+    List<Long> findPendingTestIdsByCampaign(Long campaignId);
+
+    /** PENDING held ids (no variant) — released with the winner's content once decided. */
+    List<Long> findPendingHeldIdsByCampaign(Long campaignId);
 
     /**
      * Flips every PENDING message of the campaign to CANCELED (bulk update).

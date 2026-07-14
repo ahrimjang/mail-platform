@@ -54,12 +54,16 @@ public class MailMessageEntity {
     /** Optional link to the contact this message targets (null for raw-recipient sends). */
     private Long contactId;
 
+    /** A/B variant this delivery renders ("A"/"B"); null for non-A/B campaigns. */
+    @Column(length = 1)
+    private String variant;
+
     protected MailMessageEntity() {
     }
 
     public MailMessageEntity(Long id, Long campaignId, String recipient, MessageStatus status,
                              int attempts, String errorMessage, Instant updatedAt, String unsubToken,
-                             String trackingToken, Long contactId) {
+                             String trackingToken, Long contactId, String variant) {
         this.id = id;
         this.campaignId = campaignId;
         this.recipient = recipient;
@@ -70,6 +74,7 @@ public class MailMessageEntity {
         this.unsubToken = unsubToken;
         this.trackingToken = trackingToken;
         this.contactId = contactId;
+        this.variant = variant;
     }
 
     public Long getId() {
@@ -110,5 +115,9 @@ public class MailMessageEntity {
 
     public Long getContactId() {
         return contactId;
+    }
+
+    public String getVariant() {
+        return variant;
     }
 }

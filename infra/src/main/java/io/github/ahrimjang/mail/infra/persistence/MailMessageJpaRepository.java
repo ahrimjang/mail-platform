@@ -18,6 +18,13 @@ public interface MailMessageJpaRepository extends JpaRepository<MailMessageEntit
 
     boolean existsByCampaignIdAndStatusIn(Long campaignId, java.util.Collection<MessageStatus> statuses);
 
+    /** Per-variant delivery counts of an A/B campaign. Columns: variant(text), total(long), sent(long). */
+    @Query("select m.variant as variant, count(m) as total, "
+            + "sum(case when m.status = io.github.ahrimjang.mail.common.MessageStatus.SENT then 1 else 0 end) as sent "
+            + "from MailMessageEntity m where m.campaignId = :campaignId and m.variant is not null "
+            + "group by m.variant order by m.variant")
+    java.util.List<Object[]> countByCampaignIdGroupByVariant(@Param("campaignId") Long campaignId);
+
     Optional<MailMessageEntity> findByUnsubToken(String unsubToken);
 
     Optional<MailMessageEntity> findByTrackingToken(String trackingToken);
@@ -26,6 +33,18 @@ public interface MailMessageJpaRepository extends JpaRepository<MailMessageEntit
     @Query("select m.id from MailMessageEntity m where m.campaignId = :campaignId "
             + "and m.status = io.github.ahrimjang.mail.common.MessageStatus.PENDING")
     java.util.List<Long> findPendingIdsByCampaignId(@Param("campaignId") Long campaignId);
+
+    /** PENDING test-batch rows of a winner-flow campaign (a variant was assigned). */
+    @Query("select m.id from MailMessageEntity m where m.campaignId = :campaignId "
+            + "and m.status = io.github.ahrimjang.mail.common.MessageStatus.PENDING "
+            + "and m.variant is not null")
+    java.util.List<Long> findPendingTestIdsByCampaignId(@Param("campaignId") Long campaignId);
+
+    /** PENDING held rows of a winner-flow campaign (no variant — waiting for the winner). */
+    @Query("select m.id from MailMessageEntity m where m.campaignId = :campaignId "
+            + "and m.status = io.github.ahrimjang.mail.common.MessageStatus.PENDING "
+            + "and m.variant is null")
+    java.util.List<Long> findPendingHeldIdsByCampaignId(@Param("campaignId") Long campaignId);
 
     /**
      * Bulk-cancel a canceled campaign's PENDING rows. Safe as a plain bulk

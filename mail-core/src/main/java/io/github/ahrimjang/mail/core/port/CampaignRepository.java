@@ -74,4 +74,13 @@ public interface CampaignRepository {
      * progress is never completed early. Single atomic conditional UPDATE.
      */
     void completeIfSending(Long id);
+
+    /** Stamp when a winner-flow A/B campaign's test batch should be evaluated. */
+    void scheduleAbEvaluation(Long id, Instant evaluateAt);
+
+    /** Winner-flow campaigns due for evaluation (no winner yet, evaluate time passed). */
+    List<Campaign> findDueForAbEvaluation(Instant now);
+
+    /** Atomically claims the winner decision (single conditional UPDATE on ab_winner IS NULL). */
+    boolean claimAbWinner(Long id, String winner);
 }

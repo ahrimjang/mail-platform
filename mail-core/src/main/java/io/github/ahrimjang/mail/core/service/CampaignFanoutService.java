@@ -11,6 +11,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -71,10 +73,23 @@ public class CampaignFanoutService {
                 break;
             }
             List<MailMessage> batch = page.stream()
-                    .map(c -> MailMessage.queued(campaignId, c.getEmail(), c.getId()))
+                    .map(c -> {
+                        MailMessage m = MailMessage.queued(campaignId, c.getEmail(), c.getId());
+                        if (campaign.isAbTest()) {
+                            m.setVariant(campaign.hasWinnerFlow()
+                                    ? AbVariantAssigner.assignWithHoldout(c.getEmail(),
+                                            campaign.getAbTestPercent(), campaign.getAbSplitPercent())
+                                    : AbVariantAssigner.assign(c.getEmail(), campaign.getAbSplitPercent()));
+                        }
+                        return m;
+                    })
                     .toList();
             List<MailMessage> saved = messages.saveAll(batch);
-            saved.forEach(m -> mailQueue.enqueue(m.getId()));
+            // Winner flow only enqueues the test batch: held rows (variant null)
+            // stay PENDING until the winner is decided.
+            saved.stream()
+                    .filter(m -> !campaign.hasWinnerFlow() || m.getVariant() != null)
+                    .forEach(m -> mailQueue.enqueue(m.getId()));
             total += saved.size();
             afterId = page.get(page.size() - 1).getId();
             if (page.size() < PAGE) {
@@ -83,6 +98,12 @@ public class CampaignFanoutService {
         }
 
         campaigns.markExpanded(campaignId); // EXPANDING -> SENDING
+        // Winner flow: the test batch just went out — stamp when the winner scheduler
+        // should evaluate it and release the held-out remainder.
+        if (campaign.hasWinnerFlow()) {
+            campaigns.scheduleAbEvaluation(campaignId,
+                    Instant.now().plus(Duration.ofMinutes(campaign.getAbEvalWaitMinutes())));
+        }
         // If every message already drained before we flipped to SENDING (fast sends /
         // empty list), finish it here — cheap EXISTS, not a full count.
         if (!messages.hasPendingOrSending(campaignId)) {

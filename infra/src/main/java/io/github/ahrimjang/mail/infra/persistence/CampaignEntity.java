@@ -20,6 +20,13 @@ public class CampaignEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /** Console display name; null = fall back to the subject. */
+    private String name;
+
+    /** Free-form description of the campaign's purpose; null = none. */
+    @Column(length = 1000)
+    private String description;
+
     @Column(nullable = false)
     private String subject;
 
@@ -51,13 +58,52 @@ public class CampaignEntity {
     /** Contact list the recipients were fanned out from; null = raw addresses. */
     private Long listId;
 
+    // Explicit column names: the default naming strategy maps the trailing
+    // capital (abBodyB -> ab_bodyb) and would miss the migration's ab_body_b.
+    /** A/B variant B subject; null = no subject test. */
+    @Column(name = "ab_subject_b")
+    private String abSubjectB;
+
+    /** A/B variant B body; null = body shared between variants. */
+    @Column(name = "ab_body_b", columnDefinition = "text")
+    private String abBodyB;
+
+    /** Share of recipients receiving variant B (1..99); null = not an A/B test. */
+    @Column(name = "ab_split_percent")
+    private Integer abSplitPercent;
+
+    /** Share of the audience entering the A/B test (5..90); null = split-only A/B. */
+    @Column(name = "ab_test_percent")
+    private Integer abTestPercent;
+
+    /** Winner metric, OPEN or CLICK; null = split-only A/B. */
+    @Column(name = "ab_eval_metric", length = 8)
+    private String abEvalMetric;
+
+    /** Evaluation wait after the test batch is released, minutes. */
+    @Column(name = "ab_eval_wait_minutes")
+    private Integer abEvalWaitMinutes;
+
+    /** When the winner should be decided; stamped when the test batch is released. */
+    @Column(name = "ab_evaluate_at")
+    private Instant abEvaluateAt;
+
+    /** Decided winning variant ("A"/"B"); null until evaluated. */
+    @Column(name = "ab_winner", length = 1)
+    private String abWinner;
+
     protected CampaignEntity() {
     }
 
-    public CampaignEntity(Long id, String subject, String body, CampaignStatus status, Instant createdAt,
+    public CampaignEntity(Long id, String name, String description, String subject, String body,
+                          CampaignStatus status, Instant createdAt,
                           String senderName, String senderEmail, Instant scheduledAt, Instant enqueuedAt,
-                          Long templateId, Long listId) {
+                          Long templateId, Long listId, String abSubjectB, String abBodyB, Integer abSplitPercent,
+                          Integer abTestPercent, String abEvalMetric, Integer abEvalWaitMinutes,
+                          Instant abEvaluateAt, String abWinner) {
         this.id = id;
+        this.name = name;
+        this.description = description;
         this.subject = subject;
         this.body = body;
         this.status = status;
@@ -68,10 +114,26 @@ public class CampaignEntity {
         this.enqueuedAt = enqueuedAt;
         this.templateId = templateId;
         this.listId = listId;
+        this.abSubjectB = abSubjectB;
+        this.abBodyB = abBodyB;
+        this.abSplitPercent = abSplitPercent;
+        this.abTestPercent = abTestPercent;
+        this.abEvalMetric = abEvalMetric;
+        this.abEvalWaitMinutes = abEvalWaitMinutes;
+        this.abEvaluateAt = abEvaluateAt;
+        this.abWinner = abWinner;
     }
 
     public Long getId() {
         return id;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public String getDescription() {
+        return description;
     }
 
     public String getSubject() {
@@ -116,5 +178,37 @@ public class CampaignEntity {
 
     public Long getListId() {
         return listId;
+    }
+
+    public String getAbSubjectB() {
+        return abSubjectB;
+    }
+
+    public String getAbBodyB() {
+        return abBodyB;
+    }
+
+    public Integer getAbSplitPercent() {
+        return abSplitPercent;
+    }
+
+    public Integer getAbTestPercent() {
+        return abTestPercent;
+    }
+
+    public String getAbEvalMetric() {
+        return abEvalMetric;
+    }
+
+    public Integer getAbEvalWaitMinutes() {
+        return abEvalWaitMinutes;
+    }
+
+    public Instant getAbEvaluateAt() {
+        return abEvaluateAt;
+    }
+
+    public String getAbWinner() {
+        return abWinner;
     }
 }

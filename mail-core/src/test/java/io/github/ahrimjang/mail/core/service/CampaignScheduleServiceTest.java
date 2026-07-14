@@ -72,6 +72,28 @@ class CampaignScheduleServiceTest {
     }
 
     @Test
+    void releaseDue_winnerFlowCampaign_publishesOnlyTestIdsAndStampsEvaluation() {
+        Campaign winnerFlow = scheduled(1L);
+        winnerFlow.setAbSubjectB("B subject");
+        winnerFlow.setAbSplitPercent(50);
+        winnerFlow.setAbTestPercent(20);
+        winnerFlow.setAbEvalWaitMinutes(30);
+        when(campaigns.findDueForEnqueue(any(Instant.class))).thenReturn(List.of(winnerFlow));
+        when(campaigns.claimForEnqueue(eq(1L), any(Instant.class))).thenReturn(true);
+        when(messages.findPendingTestIdsByCampaign(1L)).thenReturn(List.of(100L, 101L));
+
+        int released = service.releaseDue();
+
+        assertThat(released).isEqualTo(1);
+        // Only the test batch goes out; held rows wait for the winner scheduler.
+        verify(mailQueue).enqueue(100L);
+        verify(mailQueue).enqueue(101L);
+        verifyNoMoreInteractions(mailQueue);
+        verify(messages, never()).findPendingIdsByCampaign(anyLong());
+        verify(campaigns).scheduleAbEvaluation(eq(1L), any(Instant.class));
+    }
+
+    @Test
     void releaseDue_skipsCampaignsWhoseClaimIsLost() {
         // Two schedulers polling concurrently: the losing claim must be a silent no-op.
         when(campaigns.findDueForEnqueue(any(Instant.class))).thenReturn(List.of(scheduled(1L)));

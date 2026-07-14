@@ -81,15 +81,35 @@ public class JpaCampaignRepository implements CampaignRepository {
         jpa.completeIfSending(id);
     }
 
+    @Override
+    public void scheduleAbEvaluation(Long id, Instant evaluateAt) {
+        jpa.scheduleAbEvaluation(id, evaluateAt);
+    }
+
+    @Override
+    public List<Campaign> findDueForAbEvaluation(Instant now) {
+        return jpa.findDueForAbEvaluation(now).stream().map(this::toDomain).toList();
+    }
+
+    @Override
+    public boolean claimAbWinner(Long id, String winner) {
+        return jpa.claimAbWinner(id, winner) == 1;
+    }
+
     private CampaignEntity toEntity(Campaign c) {
-        return new CampaignEntity(c.getId(), c.getSubject(), c.getBody(), c.getStatus(), c.getCreatedAt(),
+        return new CampaignEntity(c.getId(), c.getName(), c.getDescription(),
+                c.getSubject(), c.getBody(), c.getStatus(), c.getCreatedAt(),
                 c.getSenderName(), c.getSenderEmail(), c.getScheduledAt(), c.getEnqueuedAt(),
-                c.getTemplateId(), c.getListId());
+                c.getTemplateId(), c.getListId(), c.getAbSubjectB(), c.getAbBodyB(), c.getAbSplitPercent(),
+                c.getAbTestPercent(), c.getAbEvalMetric(), c.getAbEvalWaitMinutes(),
+                c.getAbEvaluateAt(), c.getAbWinner());
     }
 
     private Campaign toDomain(CampaignEntity e) {
         Campaign c = new Campaign();
         c.setId(e.getId());
+        c.setName(e.getName());
+        c.setDescription(e.getDescription());
         c.setSubject(e.getSubject());
         c.setBody(e.getBody());
         c.setStatus(e.getStatus());
@@ -100,6 +120,14 @@ public class JpaCampaignRepository implements CampaignRepository {
         c.setEnqueuedAt(e.getEnqueuedAt());
         c.setTemplateId(e.getTemplateId());
         c.setListId(e.getListId());
+        c.setAbSubjectB(e.getAbSubjectB());
+        c.setAbBodyB(e.getAbBodyB());
+        c.setAbSplitPercent(e.getAbSplitPercent());
+        c.setAbTestPercent(e.getAbTestPercent());
+        c.setAbEvalMetric(e.getAbEvalMetric());
+        c.setAbEvalWaitMinutes(e.getAbEvalWaitMinutes());
+        c.setAbEvaluateAt(e.getAbEvaluateAt());
+        c.setAbWinner(e.getAbWinner());
         return c;
     }
 }

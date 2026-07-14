@@ -20,6 +20,7 @@ import io.github.ahrimjang.mail.core.port.MailQueue;
 import io.github.ahrimjang.mail.core.port.TemplateRepository;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.NoSuchElementException;
@@ -78,6 +79,8 @@ public class CampaignService {
 
         Campaign campaign = Campaign.draft(subject, body);
         campaign.setStatus(CampaignStatus.QUEUED);
+        campaign.setName(blankToNull(request.name()));
+        campaign.setDescription(blankToNull(request.description()));
         campaign.setSenderName(blankToNull(request.senderName()));
         campaign.setSenderEmail(blankToNull(request.senderEmail()));
         campaign.setScheduledAt(request.scheduledAt());
@@ -86,6 +89,47 @@ public class CampaignService {
         campaign.setEnqueuedAt(deferred ? null : now);
         campaign.setTemplateId(request.templateId());
         campaign.setListId(request.listId());
+        // A/B split test: any non-blank B content makes this an A/B campaign.
+        // Variant B mirrors the main content sourcing — direct subject/body or a
+        // template snapshotted at create time.
+        if (request.abTemplateId() != null) {
+            Template abTemplate = templates.findById(request.abTemplateId())
+                    .orElseThrow(() -> new NoSuchElementException("template not found: " + request.abTemplateId()));
+            campaign.setAbSubjectB(abTemplate.getSubject());
+            campaign.setAbBodyB(abTemplate.getHtmlBody());
+        } else {
+            campaign.setAbSubjectB(blankToNull(request.abSubjectB()));
+            campaign.setAbBodyB(blankToNull(request.abBodyB()));
+        }
+        if (campaign.isAbTest()) {
+            int split = request.abSplitPercent() == null ? 50 : request.abSplitPercent();
+            if (split < 1 || split > 99) {
+                throw new IllegalArgumentException("abSplitPercent must be between 1 and 99");
+            }
+            campaign.setAbSplitPercent(split);
+        }
+        // Winner flow: only abTestPercent% of the audience gets the test; the rest
+        // waits and later receives the variant that performed better on the metric.
+        if (request.abTestPercent() != null) {
+            if (!campaign.isAbTest()) {
+                throw new IllegalArgumentException("abTestPercent requires A/B content");
+            }
+            int testPercent = request.abTestPercent();
+            if (testPercent < 5 || testPercent > 90) {
+                throw new IllegalArgumentException("abTestPercent must be between 5 and 90");
+            }
+            campaign.setAbTestPercent(testPercent);
+            String metric = request.abEvalMetric() == null ? "OPEN" : request.abEvalMetric().toUpperCase();
+            if (!"OPEN".equals(metric) && !"CLICK".equals(metric)) {
+                throw new IllegalArgumentException("abEvalMetric must be OPEN or CLICK");
+            }
+            int wait = request.abEvalWaitMinutes() == null ? 60 : request.abEvalWaitMinutes();
+            if (wait < 1) {
+                throw new IllegalArgumentException("abEvalWaitMinutes must be at least 1");
+            }
+            campaign.setAbEvalMetric(metric);
+            campaign.setAbEvalWaitMinutes(wait);
+        }
         Campaign saved = campaigns.save(campaign);
 
         if (request.listId() != null) {
@@ -105,11 +149,28 @@ public class CampaignService {
             }
             // Ad-hoc recipient lists are bounded by the request body — expand inline.
             List<MailMessage> queued = request.recipients().stream()
-                    .map(recipient -> MailMessage.queued(saved.getId(), recipient))
+                    .map(recipient -> {
+                        MailMessage m = MailMessage.queued(saved.getId(), recipient);
+                        if (saved.isAbTest()) {
+                            m.setVariant(saved.hasWinnerFlow()
+                                    ? AbVariantAssigner.assignWithHoldout(recipient,
+                                            saved.getAbTestPercent(), saved.getAbSplitPercent())
+                                    : AbVariantAssigner.assign(recipient, saved.getAbSplitPercent()));
+                        }
+                        return m;
+                    })
                     .toList();
             List<MailMessage> savedMessages = messages.saveAll(queued);
             if (!deferred) {
-                savedMessages.forEach(m -> mailQueue.enqueue(m.getId()));
+                // Winner flow only releases the test batch: held rows (variant null)
+                // stay PENDING until the winner is decided.
+                savedMessages.stream()
+                        .filter(m -> !saved.hasWinnerFlow() || m.getVariant() != null)
+                        .forEach(m -> mailQueue.enqueue(m.getId()));
+                if (saved.hasWinnerFlow()) {
+                    campaigns.scheduleAbEvaluation(saved.getId(),
+                            now.plus(Duration.ofMinutes(saved.getAbEvalWaitMinutes())));
+                }
             }
         }
 
@@ -151,11 +212,12 @@ public class CampaignService {
         return get(id);
     }
 
-    /** The mail this campaign sends (subject + raw HTML body snapshot). */
+    /** The mail this campaign sends (subject + raw HTML body snapshot, A/B variant B included). */
     public CampaignContentView content(Long id) {
         Campaign campaign = campaigns.findById(id)
                 .orElseThrow(() -> new NoSuchElementException("campaign not found: " + id));
-        return new CampaignContentView(campaign.getSubject(), campaign.getBody());
+        return new CampaignContentView(campaign.getSubject(), campaign.getBody(),
+                campaign.getAbSubjectB(), campaign.getAbBodyB());
     }
 
     /** Recent per-recipient deliveries of a campaign, newest first (drill-down feed). */
@@ -196,6 +258,8 @@ public class CampaignService {
                         .map(io.github.ahrimjang.mail.core.domain.ContactList::getName).orElse(null);
         return new CampaignView(
                 campaign.getId(),
+                campaign.getName(),
+                campaign.getDescription(),
                 campaign.getSubject(),
                 campaign.getStatus(),
                 counts.total(),
@@ -213,7 +277,27 @@ public class CampaignService {
                 campaign.getTemplateId(),
                 templateName,
                 campaign.getListId(),
-                listName
+                listName,
+                campaign.getAbTestPercent(),
+                campaign.getAbEvalMetric(),
+                campaign.getAbWinner(),
+                campaign.getAbEvaluateAt(),
+                variantStats(campaign)
         );
+    }
+
+    /** Per-variant delivery + engagement rows of an A/B campaign; null for plain ones. */
+    private List<CampaignView.VariantStats> variantStats(Campaign campaign) {
+        if (!campaign.isAbTest()) {
+            return null;
+        }
+        return messages.countByCampaignAndVariant(campaign.getId()).stream()
+                .map(v -> new CampaignView.VariantStats(
+                        v.variant(),
+                        v.total(),
+                        v.sent(),
+                        events.countDistinctMessagesByVariant(campaign.getId(), EventType.OPEN, v.variant()),
+                        events.countDistinctMessagesByVariant(campaign.getId(), EventType.CLICK, v.variant())))
+                .toList();
     }
 }
