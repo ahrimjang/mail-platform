@@ -23,6 +23,14 @@ function timeOf(iso: string): string {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
+/* Engagement rate over delivered mail; "—" until anything was sent. */
+function rateOf(part: number, sent: number): string {
+  return sent > 0 ? `${Math.round((part / sent) * 1000) / 10}%` : "—";
+}
+
+/* Grid columns of the A/B comparison table. */
+const AB_COLS = "80px 1fr 1fr 1.4fr 1.4fr";
+
 export default function CampaignDetail() {
   const nav = useNavigate();
   const { id } = useParams();
@@ -36,6 +44,8 @@ export default function CampaignDetail() {
   const [cancelOpen, setCancelOpen] = useState(false);
   const [canceling, setCanceling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  // A/B variant preview popup ("A" | "B" | null = closed).
+  const [previewVariant, setPreviewVariant] = useState<"A" | "B" | null>(null);
 
   async function cancelSchedule() {
     setCanceling(true);
@@ -140,12 +150,13 @@ export default function CampaignDetail() {
       <div className="op-detail-head">
         <div>
           <div className="op-detail-title">
-            <h2>{campaign.subject}</h2>
+            <h2>{campaign.name ?? campaign.subject}</h2>
             <span className={`op-badge ${badgeClass(campaign.status)}`}>
               {campaign.status === "CANCELED" ? "취소됨" : campaign.status}
             </span>
           </div>
           <p className="op-detail-meta">{meta.join(" · ")}</p>
+          {campaign.description && <p className="op-detail-meta">{campaign.description}</p>}
         </div>
         {/* cancellable only while the scheduled release is still deferred */}
         {campaign.status === "QUEUED" && campaign.scheduledAt
@@ -172,6 +183,41 @@ export default function CampaignDetail() {
                 {canceling ? "취소 중…" : "예약 취소"}
               </button>
             </div>
+          </div>
+        </div>
+        </Portal>
+      )}
+
+      {/* A/B variant mail preview popup — variant B falls back to A's content
+          where it isn't overridden (subject-only test shares the body). */}
+      {previewVariant && content && (
+        <Portal>
+        <div className="op-modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setPreviewVariant(null); }}>
+          <div className="op-modal op-modal-preview">
+            <div className="op-pvhead">
+              <div>
+                <h3 style={{ margin: 0 }}>{previewVariant}안 메일 미리보기</h3>
+                <p className="op-modal-sub" style={{ margin: "6px 0 0" }}>
+                  발송 시점에 스냅샷된 내용입니다. {"{{변수}}"}는 수신자별로 채워집니다.
+                  {previewVariant === "B" && content.abBodyB == null && " — B안은 제목만 다르고 본문은 A안과 공통입니다."}
+                </p>
+              </div>
+              <button className="op-btn op-btn-sm op-btn-ghost" onClick={() => setPreviewVariant(null)}>닫기</button>
+            </div>
+            <div className="op-pvsubject">
+              <span className="k">제목</span>
+              <span className="v">
+                {previewVariant === "B" ? content.abSubjectB ?? content.subject : content.subject}
+              </span>
+            </div>
+            {/* keyed remount per variant: updating a sandbox iframe's srcDoc in place can skip the repaint */}
+            <iframe
+              key={previewVariant}
+              className="op-pvframe"
+              title={`${previewVariant}안 메일 미리보기`}
+              sandbox=""
+              srcDoc={previewVariant === "B" ? content.abBodyB ?? content.htmlBody : content.htmlBody}
+            />
           </div>
         </div>
         </Portal>
@@ -217,8 +263,85 @@ export default function CampaignDetail() {
         <div className="op-statcard"><div className="k">발송 제외</div><div className="v">{fmt(campaign.suppressed)}</div></div>
       </div>
 
-      <div className="op-detail-cols">
-        {/* what was sent: subject + HTML body snapshot (variables render per recipient) */}
+      {/* A/B split test: side-by-side delivery + engagement per variant.
+          The strictly leading open/click rate is highlighted. */}
+      {campaign.variants && campaign.variants.length > 0 && (() => {
+        const variants = campaign.variants;
+        const leads = (rate: (v: (typeof variants)[number]) => number) => {
+          const rates = variants.map((v) => (v.sent > 0 ? rate(v) : -1));
+          const max = Math.max(...rates);
+          return variants.map((_, i) => rates[i] >= 0 && rates[i] === max
+            && rates.some((r) => r < max));
+        };
+        const openLead = leads((v) => v.opened / v.sent);
+        const clickLead = leads((v) => v.clicked / v.sent);
+        return (
+          <div className="op-card">
+            <div className="op-log-title" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+              <span>A/B 테스트 결과</span>
+              {/* per-variant mail previews open in a popup (content comes from /content) */}
+              <span style={{ display: "flex", gap: 8 }}>
+                <button className="op-btn op-btn-sm op-btn-ghost" disabled={!content} onClick={() => setPreviewVariant("A")}>
+                  A안 미리보기
+                </button>
+                <button className="op-btn op-btn-sm op-btn-ghost" disabled={!content} onClick={() => setPreviewVariant("B")}>
+                  B안 미리보기
+                </button>
+              </span>
+            </div>
+            <div className="op-thead" style={{ gridTemplateColumns: AB_COLS }}>
+              <span>변형</span>
+              <span>발송대상</span>
+              <span>발송</span>
+              <span>오픈</span>
+              <span>클릭</span>
+            </div>
+            {variants.map((v, i) => (
+              <div key={v.variant} className="op-trow" style={{ gridTemplateColumns: AB_COLS }}>
+                <span className="strong">{v.variant}안</span>
+                <span>{fmt(v.total)}</span>
+                <span>{fmt(v.sent)}</span>
+                <span className={openLead[i] ? "strong" : undefined}>
+                  {fmt(v.opened)} · {rateOf(v.opened, v.sent)}
+                </span>
+                <span className={clickLead[i] ? "strong" : undefined}>
+                  {fmt(v.clicked)} · {rateOf(v.clicked, v.sent)}
+                </span>
+              </div>
+            ))}
+            {/* winner flow: the table above covers the test group only; the held-out
+                remainder is released with the decided winner */}
+            {campaign.abTestPercent != null && (
+              campaign.abWinner ? (
+                <div className="op-ab-note winner">
+                  <span className="chip">승자 {campaign.abWinner}안</span>
+                  <span>
+                    테스트 그룹 {campaign.abTestPercent}%의 {campaign.abEvalMetric === "CLICK" ? "클릭율" : "오픈율"} 비교 결과,
+                    나머지 {100 - campaign.abTestPercent}%는 {campaign.abWinner}안으로 자동 발송됩니다.
+                    <span className="sub">위 표는 테스트 그룹 기준입니다.</span>
+                  </span>
+                </div>
+              ) : (
+                <div className="op-ab-note pending">
+                  <span className="chip">평가 대기</span>
+                  <span>
+                    테스트 그룹 {campaign.abTestPercent}% · {campaign.abEvalMetric === "CLICK" ? "클릭율" : "오픈율"} 기준
+                    {campaign.abEvaluateAt
+                      ? ` · ${new Date(campaign.abEvaluateAt).toLocaleString("ko-KR")}에 승자를 평가합니다.`
+                      : " · 테스트 발송이 끝나면 승자를 평가합니다."}
+                    <span className="sub">위 표는 테스트 그룹 기준입니다.</span>
+                  </span>
+                </div>
+              )
+            )}
+          </div>
+        );
+      })()}
+
+      {/* A/B campaigns hide the single-variant mail card — both variants are viewable
+          from the A/B 결과 preview popups; recipients then take the full width. */}
+      <div className="op-detail-cols" style={campaign.variants && campaign.variants.length > 0 ? { gridTemplateColumns: "1fr" } : undefined}>
+        {!(campaign.variants && campaign.variants.length > 0) && (
         <div className="op-card op-mailpreview">
           <div className="op-log-title">메일 내용</div>
           {content ? (
@@ -238,6 +361,7 @@ export default function CampaignDetail() {
             <div className="op-log-row"><span className="msg" style={{ color: "var(--op-faint)" }}>내용을 불러오는 중…</span></div>
           )}
         </div>
+        )}
 
         {/* who it went to: per-recipient delivery rows, newest first */}
         <div className="op-card op-recipients">

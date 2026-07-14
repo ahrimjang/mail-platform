@@ -6,7 +6,7 @@ import { badgeClass, fmt, pctOf } from "../outpace/format";
 import { MOCK_CAMPAIGNS } from "../outpace/mock";
 
 /* Column template shared by the header and body rows. */
-const COLS = "minmax(140px, 2.4fr) 76px 64px minmax(96px, 1.2fr) 60px 60px 118px";
+const COLS = "minmax(140px, 2.4fr) 76px 56px 64px minmax(96px, 1.2fr) 60px 60px 118px";
 
 type Tab = "all" | "sending" | "scheduled" | "done";
 
@@ -84,6 +84,7 @@ export default function Campaigns() {
       })
       .filter((c) =>
         !q
+        || (c.name ?? "").toLowerCase().includes(q)
         || c.subject.toLowerCase().includes(q)
         || (c.senderName ?? "").toLowerCase().includes(q)
         || (c.senderEmail ?? "").toLowerCase().includes(q))
@@ -135,6 +136,7 @@ export default function Campaigns() {
         <div className="op-thead" style={{ gridTemplateColumns: COLS }}>
           <span>캠페인</span>
           <span>상태</span>
+          <span>A/B</span>
           <span>수신자</span>
           <span>발송</span>
           <span>오픈율</span>
@@ -160,7 +162,7 @@ export default function Campaigns() {
                 onClick={() => nav(`/campaigns/${c.id}`)}
               >
                 <div style={{ minWidth: 0 }}>
-                  <div className="strong op-ell">{c.subject}</div>
+                  <div className="strong op-ell">{c.name ?? c.subject}</div>
                   <div className="faint op-ell">
                     {c.senderName || c.senderEmail
                       ? `${c.senderName ?? ""}${c.senderEmail ? ` <${c.senderEmail}>` : ""}`
@@ -168,6 +170,16 @@ export default function Campaigns() {
                   </div>
                 </div>
                 <span><span className={`op-badge ${badgeClass(c.status)}`}>{statusLabel(c)}</span></span>
+                {/* A/B campaigns get a chip; once the winner flow decides, it shows who won */}
+                <span>
+                  {c.variants && c.variants.length > 0 ? (
+                    <span className="op-badge" style={{ background: "var(--op-primary-soft)", color: "var(--op-primary)" }}>
+                      {c.abWinner ? `${c.abWinner} 승` : "A/B"}
+                    </span>
+                  ) : (
+                    <span className="faint">–</span>
+                  )}
+                </span>
                 <span>{fmt(c.total)}</span>
                 <span className="op-minibar">
                   <span className="op-bar"><span className="op-bar-fill" style={{ width: `${pct}%` }} /></span>

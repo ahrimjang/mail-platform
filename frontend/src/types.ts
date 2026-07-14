@@ -26,8 +26,19 @@ export interface SendLogEntry {
   detail: string | null; // representative failure reason for FAILED/BOUNCED buckets
 }
 
+// Per-variant delivery/engagement stats of an A/B campaign.
+export interface VariantStats {
+  variant: string; // "A" | "B"
+  total: number;
+  sent: number;
+  opened: number;
+  clicked: number;
+}
+
 export interface CampaignView {
   id: number;
+  name?: string | null; // console display name; null = fall back to subject
+  description?: string | null; // free-form note; null = none
   subject: string;
   status: CampaignStatus;
   total: number;
@@ -46,12 +57,21 @@ export interface CampaignView {
   templateName: string | null; // resolved at read time; null if deleted since
   listId: number | null; // audience source (null = raw addresses)
   listName: string | null; // resolved at read time; null if deleted since
+  // A/B winner flow (all null/absent for split-only A/B and plain campaigns):
+  abTestPercent?: number | null; // share of the audience in the test; the rest gets the winner
+  abEvalMetric?: string | null; // "OPEN" | "CLICK"
+  abWinner?: string | null; // "A" | "B"; null until decided
+  abEvaluateAt?: string | null; // when the winner gets decided; null until the test batch is out
+  variants?: VariantStats[] | null; // A/B per-variant stats; null/absent = plain campaign
 }
 
 // Subject + HTML body snapshot a campaign sends (variables still unrendered).
 export interface CampaignContentView {
   subject: string;
   htmlBody: string;
+  // A/B variant B snapshot; null on plain campaigns (null abBodyB = body shared with A).
+  abSubjectB?: string | null;
+  abBodyB?: string | null;
 }
 
 // One day of platform-wide activity for the dashboard chart (failed folds in bounced).
