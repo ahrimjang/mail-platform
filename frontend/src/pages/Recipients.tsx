@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import Portal from "../components/Portal";
 import type {
@@ -162,13 +163,15 @@ function ImportModal({ lists, onClose, onImported }: {
 
 /* --------------------------------- drawer --------------------------------- */
 
-function ContactDrawer({ contact, lists, sub, memberIds, onClose, onChanged }: {
+function ContactDrawer({ contact, lists, sub, memberIds, optOutIds, onClose, onChanged, onOptOutsChanged }: {
   contact: ContactView;
   lists: ContactListView[];
   sub: SubscriptionView | undefined;
   memberIds: number[];
+  optOutIds: number[];
   onClose: () => void;
   onChanged: (sub: SubscriptionView | null, listIds: number[] | null) => void;
+  onOptOutsChanged: (ids: number[]) => void;
 }) {
   const [checked, setChecked] = useState<Set<number>>(new Set(memberIds));
   const [savingLists, setSavingLists] = useState(false);
@@ -202,6 +205,18 @@ function ContactDrawer({ contact, lists, sub, memberIds, onClose, onChanged }: {
       setError("요청 중 오류가 발생했습니다.");
     } finally {
       setTogglingSub(false);
+    }
+  }
+
+  /** Drop the recipient's own opt-out of a list — an explicit operator action. */
+  async function resubscribe(listId: number) {
+    setError(null);
+    try {
+      const res = await api(`/api/contacts/${contact.id}/list-unsubscribes/${listId}`, { method: "DELETE" });
+      if (res.ok) onOptOutsChanged(await res.json());
+      else setError("해지 취소에 실패했습니다.");
+    } catch {
+      setError("요청 중 오류가 발생했습니다.");
     }
   }
 
@@ -270,6 +285,19 @@ function ContactDrawer({ contact, lists, sub, memberIds, onClose, onChanged }: {
               <label key={l.id} className="op-checkrow">
                 <input type="checkbox" checked={checked.has(l.id)} onChange={() => toggle(l.id)} />
                 <span>{l.name}</span>
+                {optOutIds.includes(l.id) && (
+                  <>
+                    <span className="op-minibadge gray" title="수신자가 메일에서 이 리스트를 해지했습니다 — 발송 시 제외됩니다">해지</span>
+                    <button
+                      type="button"
+                      className="op-linkbtn"
+                      style={{ fontSize: 12 }}
+                      onClick={(e) => { e.preventDefault(); resubscribe(l.id); }}
+                    >
+                      해지 취소
+                    </button>
+                  </>
+                )}
                 <span className="cnt">{l.memberCount}명</span>
               </label>
             ))}
@@ -292,14 +320,21 @@ function ContactDrawer({ contact, lists, sub, memberIds, onClose, onChanged }: {
 /* ---------------------------------- page ----------------------------------- */
 
 export default function Recipients() {
+  const nav = useNavigate();
   const [contacts, setContacts] = useState<ContactView[]>([]);
   const [lists, setLists] = useState<ContactListView[]>([]);
   const [subs, setSubs] = useState<Record<number, SubscriptionView>>({});
   const [memberships, setMemberships] = useState<Record<number, number[]>>({});
+  // Lists each contact opted out of via the unsubscribe page (membership stays).
+  const [optOuts, setOptOuts] = useState<Record<number, number[]>>({});
   const [loaded, setLoaded] = useState(false);
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  // Table filters: free-text search, list membership, subscription state.
+  const [query, setQuery] = useState("");
+  const [listFilter, setListFilter] = useState<string>("all"); // "all" | "none" | list id
+  const [subFilter, setSubFilter] = useState<"all" | "active" | "suppressed">("all");
 
   const refresh = useCallback(async () => {
     try {
@@ -312,27 +347,32 @@ export default function Recipients() {
       // One parallel pass for per-contact subscription + memberships (POC scale).
       const details = await Promise.all(nextContacts.map(async (c) => {
         try {
-          const [sRes, mRes] = await Promise.all([
+          const [sRes, mRes, uRes] = await Promise.all([
             api(`/api/contacts/${c.id}/subscription`),
             api(`/api/contacts/${c.id}/lists`),
+            api(`/api/contacts/${c.id}/list-unsubscribes`),
           ]);
           return {
             id: c.id,
             sub: sRes.ok ? ((await sRes.json()) as SubscriptionView) : null,
             listIds: mRes.ok ? ((await mRes.json()) as number[]) : null,
+            optOutIds: uRes.ok ? ((await uRes.json()) as number[]) : null,
           };
         } catch {
-          return { id: c.id, sub: null, listIds: null };
+          return { id: c.id, sub: null, listIds: null, optOutIds: null };
         }
       }));
       const nextSubs: Record<number, SubscriptionView> = {};
       const nextMemberships: Record<number, number[]> = {};
+      const nextOptOuts: Record<number, number[]> = {};
       for (const d of details) {
         if (d.sub) nextSubs[d.id] = d.sub;
         if (d.listIds) nextMemberships[d.id] = d.listIds;
+        if (d.optOutIds) nextOptOuts[d.id] = d.optOutIds;
       }
       setSubs(nextSubs);
       setMemberships(nextMemberships);
+      setOptOuts(nextOptOuts);
     } catch {
       /* transient / unauthorized handled by api() */
     } finally {
@@ -344,6 +384,27 @@ export default function Recipients() {
 
   const listName = (id: number) => lists.find((l) => l.id === id)?.name ?? `#${id}`;
   const selected = contacts.find((c) => c.id === selectedId) ?? null;
+
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return contacts.filter((c) => {
+      if (q) {
+        const name = [c.lastName, c.firstName].filter(Boolean).join("");
+        if (!c.email.toLowerCase().includes(q) && !name.toLowerCase().includes(q)) return false;
+      }
+      if (listFilter !== "all") {
+        const ids = memberships[c.id] ?? [];
+        if (listFilter === "none" ? ids.length > 0 : !ids.includes(Number(listFilter))) return false;
+      }
+      if (subFilter !== "all") {
+        const sub = subs[c.id];
+        if (!sub) return false;
+        if (subFilter === "suppressed" ? !sub.suppressed : sub.suppressed) return false;
+      }
+      return true;
+    });
+  }, [contacts, query, listFilter, subFilter, memberships, subs]);
+  const filtering = query.trim() !== "" || listFilter !== "all" || subFilter !== "all";
 
   return (
     <div className="op-container op-fade">
@@ -360,6 +421,32 @@ export default function Recipients() {
         </div>
       </div>
 
+      <div className="op-toolbar" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <input
+          className="op-input"
+          style={{ maxWidth: 260 }}
+          placeholder="이메일·이름 검색"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <select className="op-input" style={{ maxWidth: 210 }} value={listFilter} onChange={(e) => setListFilter(e.target.value)}>
+          <option value="all">모든 리스트</option>
+          <option value="none">리스트 없음</option>
+          {lists.map((l) => <option key={l.id} value={l.id}>{l.name} ({l.memberCount}명)</option>)}
+        </select>
+        <select className="op-input" style={{ maxWidth: 150 }} value={subFilter} onChange={(e) => setSubFilter(e.target.value as typeof subFilter)}>
+          <option value="all">구독 전체</option>
+          <option value="active">활성</option>
+          <option value="suppressed">수신거부</option>
+        </select>
+        {filtering && (
+          <span className="faint" style={{ fontSize: 13 }}>
+            {visible.length}명 표시 · <button className="op-linkbtn" style={{ fontSize: 13 }}
+              onClick={() => { setQuery(""); setListFilter("all"); setSubFilter("all"); }}>필터 초기화</button>
+          </span>
+        )}
+      </div>
+
       <div className="op-card">
         <div className="op-thead" style={{ gridTemplateColumns: COLS }}>
           <span>이메일</span>
@@ -367,7 +454,7 @@ export default function Recipients() {
           <span>구독 상태</span>
           <span>생성일</span>
         </div>
-        {contacts.map((c) => (
+        {visible.map((c) => (
           <div
             key={c.id}
             className="op-trow clickable"
@@ -376,9 +463,21 @@ export default function Recipients() {
           >
             <span className="strong" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.email}</span>
             <span className="op-cell-chips">
-              {(memberships[c.id] ?? []).map((id) => (
-                <span key={id} className="op-minibadge blue">{listName(id)}</span>
-              ))}
+              {(memberships[c.id] ?? []).map((id) => {
+                // Chip doubles as a shortcut to the list's row on the 리스트 page;
+                // an opted-out list stays a member (operator grouping) but greys out.
+                const opted = (optOuts[c.id] ?? []).includes(id);
+                return (
+                  <span
+                    key={id}
+                    className={`op-minibadge ${opted ? "gray" : "blue"} link`}
+                    title={opted ? `'${listName(id)}' — 수신자가 이 리스트를 해지했습니다` : `'${listName(id)}' 리스트 보기`}
+                    onClick={(e) => { e.stopPropagation(); nav(`/lists?focus=${id}`); }}
+                  >
+                    {listName(id)}{opted ? " (해지)" : ""}
+                  </span>
+                );
+              })}
               {(memberships[c.id] ?? []).length === 0 && <span className="faint">-</span>}
             </span>
             <span><SubBadge sub={subs[c.id]} /></span>
@@ -388,6 +487,11 @@ export default function Recipients() {
         {loaded && contacts.length === 0 && (
           <div className="op-list-row">
             <span className="meta">아직 수신자가 없어요. 오른쪽 위 버튼으로 추가하거나 CSV를 가져와 보세요.</span>
+          </div>
+        )}
+        {loaded && contacts.length > 0 && visible.length === 0 && (
+          <div className="op-list-row">
+            <span className="meta">조건에 맞는 수신자가 없습니다.</span>
           </div>
         )}
       </div>
@@ -401,7 +505,9 @@ export default function Recipients() {
           lists={lists}
           sub={subs[selected.id]}
           memberIds={memberships[selected.id] ?? []}
+          optOutIds={optOuts[selected.id] ?? []}
           onClose={() => setSelectedId(null)}
+          onOptOutsChanged={(ids) => setOptOuts((prev) => ({ ...prev, [selected.id]: ids }))}
           onChanged={(sub, listIds) => {
             if (sub) setSubs((prev) => ({ ...prev, [selected.id]: sub }));
             if (listIds) {

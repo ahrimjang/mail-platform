@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import Portal from "../components/Portal";
 import type { ContactListView } from "../types";
@@ -119,6 +120,9 @@ export default function Lists() {
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<ContactListView | null>(null);
   const [deleting, setDeleting] = useState<ContactListView | null>(null);
+  // ?focus={id} — a shortcut from another page (recipient list chips) highlights that row.
+  const [searchParams] = useSearchParams();
+  const focusId = Number(searchParams.get("focus")) || null;
 
   const refresh = useCallback(async () => {
     try {
@@ -154,7 +158,12 @@ export default function Lists() {
           <span />
         </div>
         {lists.map((l) => (
-          <div key={l.id} className="op-trow" style={{ gridTemplateColumns: COLS }}>
+          <div
+            key={l.id}
+            className={`op-trow${l.id === focusId ? " focused" : ""}`}
+            style={{ gridTemplateColumns: COLS }}
+            ref={l.id === focusId ? (el) => el?.scrollIntoView({ block: "center" }) : undefined}
+          >
             <span className="strong">{l.name}</span>
             <span className="faint" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {l.description || "-"}
