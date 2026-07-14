@@ -78,6 +78,7 @@ export default function CampaignDetail() {
 
   useEffect(() => {
     let cancelled = false;
+    let lastStatus: string | null = null;
     async function refresh() {
       try {
         const [cRes, mRes, rRes] = await Promise.all([
@@ -90,6 +91,7 @@ export default function CampaignDetail() {
         if (cRes.ok) {
           const view: CampaignView = await cRes.json();
           setCampaign(view);
+          lastStatus = view.status; // steers the poll cadence below
           // messages feed is best-effort; the page works without it
           if (mRes.ok) setLog(await mRes.json());
           if (rRes.ok) setRecipients(await rRes.json());
@@ -111,9 +113,27 @@ export default function CampaignDetail() {
         setCampaign((prev) => prev ?? MOCK_CAMPAIGNS.find((c) => String(c.id) === id) ?? null);
       }
     }
-    refresh();
-    const timer = setInterval(refresh, 2000);
-    return () => { cancelled = true; clearInterval(timer); };
+    // Live progress needs a tight poll only while the campaign is active; a
+    // finished campaign still gets slow refreshes (opens/clicks keep arriving),
+    // and a hidden tab doesn't poll at all.
+    let timer: number;
+    async function tick() {
+      if (cancelled) return;
+      if (!document.hidden) {
+        await refresh();
+      }
+      if (cancelled) return;
+      const idle = lastStatus === "COMPLETED" || lastStatus === "CANCELED";
+      timer = window.setTimeout(tick, idle ? 30_000 : 2_000);
+    }
+    tick();
+    const onVisible = () => { if (!document.hidden) refresh(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [id]);
 
   if (!campaign) {

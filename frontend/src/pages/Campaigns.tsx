@@ -65,8 +65,11 @@ export default function Campaigns() {
       }
     }
     refresh();
-    const id = setInterval(refresh, 5000);
-    return () => { cancelled = true; clearInterval(id); };
+    // Skip background-tab polls; refresh immediately when the tab comes back.
+    const id = setInterval(() => { if (!document.hidden) refresh(); }, 5000);
+    const onVisible = () => { if (!document.hidden) refresh(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { cancelled = true; clearInterval(id); document.removeEventListener("visibilitychange", onVisible); };
   }, []);
 
   // Same demo fallback the dashboard uses, so the two screens always agree.
