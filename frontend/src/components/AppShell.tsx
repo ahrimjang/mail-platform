@@ -9,6 +9,7 @@ export default function AppShell() {
   const { pathname } = useLocation();
   const { email, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [search, setSearch] = useState("");
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -45,7 +46,31 @@ export default function AppShell() {
           </nav>
         </div>
         <div className="op-topnav-right">
-          <span className="op-help">도움말</span>
+          <div className="op-nav-search">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+              <circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" />
+            </svg>
+            <input
+              placeholder="캠페인 검색"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => {
+                // The Enter that commits a Korean IME composition also fires
+                // keydown — searching then would use half-typed text.
+                if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+                  nav(`/campaigns?q=${encodeURIComponent(search.trim())}`);
+                  setSearch("");
+                }
+              }}
+            />
+          </div>
+          <button className="op-bell" title="알림" aria-label="알림">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" /><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+            </svg>
+            <span className="dot" />
+          </button>
+          <span className="op-nav-divider" />
           <div className="op-avatar-menu" ref={menuRef}>
             <div className="op-avatar" onClick={() => setMenuOpen((o) => !o)}>{avatar}</div>
             {menuOpen && (

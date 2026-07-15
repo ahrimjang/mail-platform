@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import type { CampaignView } from "../types";
 import { badgeClass, fmt, pctOf } from "../outpace/format";
@@ -8,13 +8,14 @@ import { MOCK_CAMPAIGNS } from "../outpace/mock";
 /* Column template shared by the header and body rows. */
 const COLS = "minmax(140px, 2.4fr) 76px 56px 64px minmax(96px, 1.2fr) 60px 60px 118px";
 
-type Tab = "all" | "sending" | "scheduled" | "done";
+type Tab = "all" | "sending" | "scheduled" | "done" | "canceled";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "all", label: "전체" },
   { key: "sending", label: "발송 중" },
   { key: "scheduled", label: "예약됨" },
   { key: "done", label: "완료" },
+  { key: "canceled", label: "취소" },
 ];
 
 /* A QUEUED campaign with a future send time reads as "scheduled", not "waiting". */
@@ -47,10 +48,18 @@ function rateOf(part: number, sent: number): string {
 
 export default function Campaigns() {
   const nav = useNavigate();
+  const [params] = useSearchParams();
   const [campaigns, setCampaigns] = useState<CampaignView[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [tab, setTab] = useState<Tab>("all");
-  const [query, setQuery] = useState("");
+  // The top-nav search lands here with ?q=; afterwards the local input owns it.
+  const [query, setQuery] = useState(params.get("q") ?? "");
+  // Re-searching while already on this page only changes the URL — the
+  // component stays mounted, so mirror ?q= into the input on every change.
+  useEffect(() => {
+    const q = params.get("q");
+    if (q !== null) setQuery(q);
+  }, [params]);
 
   useEffect(() => {
     let cancelled = false;
@@ -83,6 +92,7 @@ export default function Campaigns() {
         if (tab === "sending") return c.status === "SENDING";
         if (tab === "scheduled") return isScheduled(c);
         if (tab === "done") return c.status === "COMPLETED";
+        if (tab === "canceled") return c.status === "CANCELED";
         return true;
       })
       .filter((c) =>
@@ -99,6 +109,7 @@ export default function Campaigns() {
     t === "all" ? rows.length
       : t === "sending" ? rows.filter((c) => c.status === "SENDING").length
       : t === "scheduled" ? rows.filter(isScheduled).length
+      : t === "canceled" ? rows.filter((c) => c.status === "CANCELED").length
       : rows.filter((c) => c.status === "COMPLETED").length;
 
   return (

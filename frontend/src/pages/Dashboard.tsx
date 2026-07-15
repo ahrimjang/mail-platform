@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import ActivityChart from "../components/ActivityChart";
 import { api } from "../api";
@@ -26,6 +26,39 @@ function mockDaily(): DashboardDay[] {
     });
   }
   return out;
+}
+
+/* Handoff icon placeholders, dependency-free: 16px inline SVGs. */
+const ICONS = {
+  mail: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="4" width="20" height="16" rx="2" /><path d="m22 7-10 6L2 7" />
+    </svg>
+  ),
+  check: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
+  ),
+  bars: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+      <path d="M6 20V10" /><path d="M12 20V4" /><path d="M18 20v-6" />
+    </svg>
+  ),
+};
+
+/* KPI card footer sparkline (handoff: 2px primary line + 8% area fill). */
+function Sparkline({ values }: { values: number[] }) {
+  if (values.length < 2) return null;
+  const max = Math.max(...values, 1);
+  const pts = values.map((v, i) =>
+    `${(i / (values.length - 1)) * 100},${24 - (v / max) * 20}`);
+  return (
+    <svg className="op-spark" viewBox="0 0 100 26" preserveAspectRatio="none" aria-hidden>
+      <polygon points={`0,26 ${pts.join(" ")} 100,26`} fill="rgba(37, 99, 235, 0.08)" />
+      <polyline points={pts.join(" ")} fill="none" stroke="#2563eb" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+    </svg>
+  );
 }
 
 /* -------------------------------- dashboard -------------------------------- */
@@ -66,17 +99,34 @@ export default function Dashboard() {
     () => (usingMock ? mockDaily() : stats?.daily ?? []),
     [usingMock, stats],
   );
-  const contacts = usingMock ? 3204 : stats?.contacts ?? 0;
-  const suppressed = usingMock ? 48 : stats?.suppressed ?? 0;
-
   const today = daily.length > 0 ? daily[daily.length - 1] : null;
-  const periodSent = daily.reduce((a, d) => a + d.sent, 0);
-  const periodOpened = daily.reduce((a, d) => a + d.opened, 0);
-  const periodClicked = daily.reduce((a, d) => a + d.clicked, 0);
-  const openRate = periodSent > 0 ? `${Math.round((periodOpened / periodSent) * 1000) / 10}%` : "–";
-  const clickRate = periodSent > 0 ? `${Math.round((periodClicked / periodSent) * 1000) / 10}%` : "–";
+
+  // Handoff KPI derivations: today vs yesterday, 7-day success, live queue.
+  const yesterday = daily.length > 1 ? daily[daily.length - 2] : null;
+  const delta = today && yesterday && yesterday.sent > 0
+    ? Math.round(((today.sent - yesterday.sent) / yesterday.sent) * 100)
+    : null;
+  const last7 = daily.slice(-7);
+  const sent7 = last7.reduce((a, d) => a + d.sent, 0);
+  const failed7 = last7.reduce((a, d) => a + d.failed, 0);
+  const successRate = sent7 > 0 ? Math.round(((sent7 - failed7) / sent7) * 1000) / 10 : null;
+  const sendingCount = rows.filter((c) => c.status === "SENDING").length;
+  const queued = rows.reduce((a, c) => a + c.pending, 0);
 
   const live = rows.find((c) => c.status === "SENDING") ?? null;
+  // Throughput of the live card, derived from consecutive polls: Δsent / Δt.
+  const lastLive = useRef<{ id: number; sent: number; at: number } | null>(null);
+  const [liveRate, setLiveRate] = useState<number | null>(null);
+  useEffect(() => {
+    if (!live) { lastLive.current = null; setLiveRate(null); return; }
+    const now = Date.now();
+    const prev = lastLive.current;
+    if (prev && prev.id === live.id && now > prev.at && live.sent >= prev.sent) {
+      setLiveRate((live.sent - prev.sent) / ((now - prev.at) / 1000));
+    }
+    lastLive.current = { id: live.id, sent: live.sent, at: now };
+  }, [live?.id, live?.sent]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Newest first; six cards fill the grid evenly.
   const recent = rows
     .slice()
@@ -97,27 +147,48 @@ export default function Dashboard() {
       </div>
 
       <div className="op-kpis">
-        <div className="op-kpi">
-          <div className="k">오늘 발송</div>
-          <div className="v">{fmt(today?.sent ?? 0)}</div>
-          <div className={`d${(today?.failed ?? 0) > 0 ? " red" : ""}`}>
-            실패 {fmt(today?.failed ?? 0)}건
+        <div className="op-kpi has-spark">
+          <div className="head">
+            <span className="k">오늘 발송</span>
+            <span className="op-kpi-ico blue">{ICONS.mail}</span>
           </div>
+          <div className="v">{fmt(today?.sent ?? 0)}</div>
+          <div className="d">
+            {delta != null && (
+              <span className={`op-kpi-pill ${delta >= 0 ? "up" : "down"}`}>
+                {delta >= 0 ? "▲" : "▼"} {Math.abs(delta)}%
+              </span>
+            )}
+            {delta != null ? " 어제 대비" : `실패 ${fmt(today?.failed ?? 0)}건`}
+          </div>
+          <Sparkline values={daily.map((d) => d.sent)} />
         </div>
         <div className="op-kpi">
-          <div className="k">최근 {CHART_DAYS}일 발송</div>
-          <div className="v">{fmt(periodSent)}</div>
-          <div className="d">일 평균 {fmt(Math.round(periodSent / Math.max(daily.length, 1)))}건</div>
+          <div className="head">
+            <span className="k">발송 성공률</span>
+            <span className="op-kpi-ico green">{ICONS.check}</span>
+          </div>
+          <div className="v">{successRate != null ? `${successRate}%` : "–"}</div>
+          <div className="op-gauge"><span className="op-gauge-fill" style={{ width: `${successRate ?? 0}%` }} /></div>
+          <div className="d">최근 7일 평균</div>
         </div>
         <div className="op-kpi">
-          <div className="k">오픈율</div>
-          <div className="v">{openRate}</div>
-          <div className="d blue">클릭율 {clickRate}</div>
+          <div className="head">
+            <span className="k">진행 중</span>
+            <span className="op-kpi-ico blue"><span className="op-pulse" /></span>
+          </div>
+          <div className="v">{fmt(sendingCount)}</div>
+          {sendingCount > 0
+            ? <div className="d blue">● 캠페인 발송 중</div>
+            : <div className="d">발송 중인 캠페인 없음</div>}
         </div>
         <div className="op-kpi">
-          <div className="k">수신자</div>
-          <div className="v">{fmt(contacts)}</div>
-          <div className="d">수신거부 {fmt(suppressed)}명</div>
+          <div className="head">
+            <span className="k">대기 큐</span>
+            <span className="op-kpi-ico gray">{ICONS.bars}</span>
+          </div>
+          <div className="v">{fmt(queued)}</div>
+          <div className="d">메시지 대기</div>
         </div>
       </div>
 
@@ -125,20 +196,20 @@ export default function Dashboard() {
         <div className="op-card op-card-pad op-live" onClick={() => nav(`/campaigns/${live.id}`)}>
           <div className="op-live-head">
             <div className="op-live-title">
-              <span className="op-pulse" />
-              {live.subject}
-              <span className={`op-badge ${badgeClass(live.status)}`}>발송 중</span>
+              <span className="op-live-ico"><span className="op-pulse" /></span>
+              {live.name ?? live.subject}
+              <span className={`op-badge ${badgeClass(live.status)}`}>실시간 발송 중</span>
             </div>
-            <span className="op-live-pct">{pctOf(live.sent, live.total)}%</span>
+            <span className="op-live-pct">{pctOf(live.sent, live.total)}<span className="unit">%</span></span>
           </div>
-          <div className="op-bar">
+          <div className="op-bar lg" style={{ marginBottom: 16 }}>
             <div className="op-bar-fill" style={{ width: `${pctOf(live.sent, live.total)}%` }} />
           </div>
-          <div className="op-metrics4">
-            <div><div className="k">발송</div><div className="v">{fmt(live.sent)}</div></div>
+          <div className="op-metrics4 tiles">
+            <div><div className="k">발송</div><div className="v green">{fmt(live.sent)}</div></div>
             <div><div className="k">대기</div><div className="v">{fmt(live.pending)}</div></div>
             <div><div className="k">실패</div><div className="v red">{fmt(live.failed)}</div></div>
-            <div><div className="k">오픈</div><div className="v">{fmt(live.opened)}</div></div>
+            <div><div className="k">처리량</div><div className="v">{liveRate != null ? Math.round(liveRate) : "–"}<span className="unit">/s</span></div></div>
           </div>
         </div>
       )}
