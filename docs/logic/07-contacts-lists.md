@@ -437,6 +437,80 @@ public record SubscriptionView(
     }
 ```
 
+### 3-11. 수신자 상세 — 이름 수정, 활동 타임라인, 리스트 구독 상태
+
+수신자 드로어는 단순 조회를 넘어 연락처 하나의 이력을 보는 화면입니다(Notifuse의
+Contact Details를 참고하되, 우리 연락처 모델은 이메일+이름만 관리하므로 그 범위로 축소).
+
+**이름 수정** — `PUT /api/contacts/{id}`는 이름만 받습니다. 이메일은 억제 목록과 이벤트
+스트림이 키로 삼는 식별자라 바꿀 수 없습니다(바꾸고 싶다면 새 연락처가 맞습니다).
+
+`mail-api/src/main/java/io/github/ahrimjang/mail/api/ContactController.java`
+```java
+    /** Rename a contact (email stays — it is the identity suppressions key on). */
+    @PutMapping("/{id}")
+    public ContactView update(@PathVariable Long id, @RequestBody UpdateContactRequest request) {
+        return contacts.update(id, request);
+    }
+```
+
+**활동 타임라인** — `GET /{id}/activity`. 활동 8종(가입 · 발송/바운스/억제 스킵 ·
+오픈/클릭 · 전역 해지 · 리스트 옵트아웃)의 출처가 네 테이블(mail_messages, email_events,
+suppressions, list_unsubscribes)에 흩어져 있어서, SQL 한 방 대신 **포트 4개에서 최근
+N건씩 모아 서비스에서 병합·정렬**합니다 — 각 포트는 다른 화면에서도 재사용되고,
+mail-core는 순수하게 남습니다.
+
+`mail-core/src/main/java/io/github/ahrimjang/mail/core/service/ContactActivityService.java`
+```java
+        List<Row> rows = new ArrayList<>();
+        rows.add(new Row("SIGNUP", contact.getCreatedAt(), null, null));
+
+        for (MailMessage m : messages.findRecentByContact(contactId, capped)) {
+            if (m.getStatus() == MessageStatus.SENT) {
+                rows.add(new Row("SENT", m.getUpdatedAt(), null, m.getCampaignId()));
+            } else if (m.getStatus() == MessageStatus.BOUNCED) {
+                rows.add(new Row("BOUNCED", m.getUpdatedAt(), m.getErrorMessage(), m.getCampaignId()));
+            } else if (m.getStatus() == MessageStatus.SUPPRESSED) {
+                rows.add(new Row("SUPPRESSED_SKIP", m.getUpdatedAt(), null, m.getCampaignId()));
+            }
+        }
+
+        for (EmailEventRepository.ContactEvent e : events.findRecentByContact(contactId, capped)) {
+            if (e.type() == EventType.OPEN) {
+                rows.add(new Row("OPENED", e.occurredAt(), null, e.campaignId()));
+            } else if (e.type() == EventType.CLICK) {
+                rows.add(new Row("CLICKED", e.occurredAt(), e.url(), e.campaignId()));
+            }
+        }
+
+        suppressions.findByEmail(contact.getEmail())
+                .ifPresent(s -> rows.add(new Row("UNSUBSCRIBED", s.getCreatedAt(), s.getReason(), null)));
+```
+
+이벤트는 메시지를 가리키지 연락처를 가리키지 않으므로, "이 연락처의 오픈/클릭"은
+이벤트를 메시지 행에 조인해 뽑습니다(`EmailEventJpaRepository.findRecentByContact`).
+`GET /{id}/messages`는 같은 포트로 배달 이력만 따로 보여줍니다.
+
+**리스트 구독 상태 모달** — 화면에서 리스트별로 구독중/해지/미구독을 보여주고 운영자가
+바꿀 수 있습니다. 해지는 3-8에서 정한 원칙 그대로 **멤버십 삭제가 아니라
+`list_unsubscribes` 기록**인데, 운영자 조작은 reason `"manual"`로 남겨 수신자 본인의
+수신거부 페이지 클릭(`"unsubscribe"`)과 경위를 구분합니다.
+
+`mail-core/src/main/java/io/github/ahrimjang/mail/core/service/SuppressionService.java`
+```java
+    /**
+     * Operator-side list opt-out (the console's "해지" status): recorded with the
+     * "manual" reason so it stays distinguishable from the recipient's own
+     * "unsubscribe" clicks. Idempotent — an existing opt-out keeps its record.
+     */
+    public void optOutOfList(Long contactId, Long listId) {
+        requireContact(contactId);
+        lists.findById(listId)
+                .orElseThrow(() -> new NoSuchElementException("list not found: " + listId));
+        listUnsubscribes.save(listId, contactId, MANUAL_REASON);
+    }
+```
+
 ## 4. 설계 포인트 — 왜 이렇게
 
 - **Contact에 상태가 없다.** "구독 해지"를 연락처 상태로도, 억제 리스트로도 이중 관리하면 반드시 어긋납니다.

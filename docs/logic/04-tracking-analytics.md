@@ -323,8 +323,11 @@ public interface EmailEventJpaRepository extends JpaRepository<EmailEventEntity,
         MessageCounts counts = messages.countByCampaign(campaign.getId());
         long opened = events.countDistinctMessages(campaign.getId(), EventType.OPEN);
         long clicked = events.countDistinctMessages(campaign.getId(), EventType.CLICK);
+        // ... 템플릿/리스트 이름 소프트 참조 해석 생략 ...
         return new CampaignView(
                 campaign.getId(),
+                campaign.getName(),
+                campaign.getDescription(),
                 campaign.getSubject(),
                 campaign.getStatus(),
                 counts.total(),
@@ -338,7 +341,17 @@ public interface EmailEventJpaRepository extends JpaRepository<EmailEventEntity,
                 campaign.getCreatedAt(),
                 campaign.getSenderName(),
                 campaign.getSenderEmail(),
-                campaign.getScheduledAt()
+                campaign.getScheduledAt(),
+                campaign.getEnqueuedAt(), campaign.getCompletedAt(),
+                campaign.getTemplateId(),
+                templateName,
+                campaign.getListId(),
+                listName,
+                campaign.getAbTestPercent(),
+                campaign.getAbEvalMetric(),
+                campaign.getAbWinner(),
+                campaign.getAbEvaluateAt(),
+                variantStats(campaign)
         );
     }
 ```
@@ -346,6 +359,81 @@ public interface EmailEventJpaRepository extends JpaRepository<EmailEventEntity,
 `opened`/`clicked`는 프로젝션이 이미 소비한 이벤트까지만 반영됩니다 — 발행에서 집계 반영까지
 스트림을 한 번 도는 짧은 지연이 있지만(최종 일관성), 프론트가 어차피 폴링으로 갱신하므로
 다음 폴링 주기 안에 따라잡힙니다.
+
+### 3-11. 링크별 클릭 랭킹 — 이벤트에 남긴 url을 캠페인 단위로 group by
+
+클릭 이벤트는 3-5에서 본 대로 어떤 URL이었는지(`url`)를 함께 실어 발행됩니다. 캠페인 상세의
+"링크 클릭" 테이블은 그 컬럼을 URL별로 묶기만 하면 나옵니다 — 총 클릭 수와, 재클릭에 흔들리지
+않는 "클릭한 수신자 수"(distinct 메시지)를 함께 셉니다.
+
+`infra/src/main/java/io/github/ahrimjang/mail/infra/persistence/EmailEventJpaRepository.java`
+```java
+    /** One campaign's link ranking: raw clicks + distinct clicking messages. */
+    @Query("select e.url, count(e), count(distinct e.messageId) from EmailEventEntity e "
+            + "where e.campaignId = ?1 and e.type = io.github.ahrimjang.mail.common.EventType.CLICK "
+            + "and e.url is not null group by e.url order by count(e) desc")
+    java.util.List<Object[]> linkClicksByCampaign(Long campaignId, Pageable pageable);
+```
+
+`mail-api/src/main/java/io/github/ahrimjang/mail/api/CampaignController.java`
+```java
+    /** This campaign's clicked links, best first. */
+    @GetMapping("/{id}/links")
+    public java.util.List<LinkClicksView> links(@PathVariable Long id,
+                                                @RequestParam(defaultValue = "20") int limit) {
+        return campaigns.linkClicks(id, limit);
+    }
+```
+
+프론트(캠페인 상세)는 URL·상대 비율 바·클릭 수신자·클릭율(고유 클릭 ÷ 발송 성공)·총 클릭을
+표로 렌더하고, 클릭이 하나도 없는 캠페인에서는 카드 자체를 숨깁니다.
+
+### 3-12. 캠페인 실행 구간 — completed_at은 완료 판정과 같은 UPDATE로
+
+"클릭율이 언제부터 언제까지 모인 숫자인가"에 답하려면 캠페인의 실행 구간이 필요합니다.
+시작은 이미 있던 `enqueued_at`(큐 릴리스 시각)이고, 끝을 위해 `completed_at`(V12)을
+추가했습니다. 핵심은 **별도 UPDATE를 치지 않는다**는 것 — 완료 판정 자체가
+`status='SENDING'`일 때만 성공하는 원자적 조건부 UPDATE([02](02-campaign-queue-rabbitmq.md) 참조)라서,
+같은 문장에 스탬프를 실으면 "판정은 됐는데 시각은 아직"인 창이 아예 없습니다.
+
+`infra/src/main/java/io/github/ahrimjang/mail/infra/persistence/CampaignJpaRepository.java`
+```java
+    @Query("update CampaignEntity c set c.status = io.github.ahrimjang.mail.common.CampaignStatus.COMPLETED, "
+            + "c.completedAt = :now "
+            + "where c.id = :id and c.status = io.github.ahrimjang.mail.common.CampaignStatus.SENDING")
+    int completeIfSending(@Param("id") Long id, @Param("now") Instant now);
+```
+
+포트 시그니처(`completeIfSending(Long id)`)는 그대로이고 infra 어댑터가 `Instant.now()`를
+공급합니다 — 시각 공급은 어댑터 관심사라 mail-core 테스트가 시계를 몰라도 됩니다. 이 컬럼이
+없던 시절 완료된 캠페인은 null로 남고, 상세 화면은 그 경우 완료 줄을 그냥 생략합니다.
+
+### 3-13. 분석 대시보드 — 캠페인 횡단 집계 3종 (/api/analytics/*)
+
+캠페인 상세가 "이 캠페인" 안의 지표라면, 분석 탭은 기간(7/30/90일)을 잡고 **전 캠페인을
+가로지르는** 집계입니다. 모두 같은 이벤트/억제 테이블 위의 group by이고, 저장하는 읽기 모델은
+없습니다(매번 계산 — 4장의 seam 논리 그대로).
+
+- `GET /api/analytics/links` — 기간 내 전 캠페인의 클릭 URL 랭킹(3-11의 전역판, `occurredAt >= since` 조건만 추가).
+- `GET /api/analytics/audience-health` — 억제 사유 분포(`bounce`/`unsubscribe`/`manual`)와 리스트별 옵트아웃 수. 수신자 풀이 어디서 새는지.
+- `GET /api/analytics/open-heatmap` — 요일×시각 오픈 히트맵. 시간대 변환과 요일 추출은 Postgres에 맡깁니다(네이티브 쿼리):
+
+`infra/src/main/java/io/github/ahrimjang/mail/infra/persistence/EmailEventJpaRepository.java`
+```java
+    @org.springframework.data.jpa.repository.Query(value = """
+            select cast(extract(isodow from e.occurred_at at time zone :zone) as int) as dw,
+                   cast(extract(hour from e.occurred_at at time zone :zone) as int) as hr,
+                   count(distinct e.message_id) as cnt
+            from email_events e
+            where e.type = 'OPEN' and e.occurred_at >= :since
+            group by dw, hr
+            """, nativeQuery = true)
+    java.util.List<Object[]> aggregateOpenHeatmap(
+```
+
+`isodow`(1=월..7=일)와 `at time zone`은 표준 SQL이 아니라 JPQL로는 못 쓰므로 이 쿼리만
+네이티브입니다 — 이벤트는 UTC로 쌓고, 화면의 "화요일 오전 10시"는 조회 시점에 요청한
+타임존으로 접습니다.
 
 ## 4. 설계 포인트 — 왜 이렇게
 
