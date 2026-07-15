@@ -20,4 +20,14 @@ public interface SuppressionRepository {
 
     /** Total number of suppressed addresses (dashboard audience health). */
     long count();
+
+    /** Suppressions grouped by reason ("bounce"/"unsubscribe"/"manual"), largest first. */
+    java.util.List<ReasonCount> countByReason();
+
+    /** Same breakdown, restricted to entries created since {@code since}. */
+    java.util.List<ReasonCount> countByReasonSince(java.time.Instant since);
+
+    /** One reason's suppression count. */
+    record ReasonCount(String reason, long count) {
+    }
 }

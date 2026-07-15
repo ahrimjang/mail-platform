@@ -55,4 +55,18 @@ public class JpaSuppressionRepository implements SuppressionRepository {
         s.setCreatedAt(e.getCreatedAt());
         return s;
     }
+
+    @Override
+    public java.util.List<ReasonCount> countByReason() {
+        return jpa.countByReason().stream()
+                .map(row -> new ReasonCount((String) row[0], ((Number) row[1]).longValue()))
+                .toList();
+    }
+
+    @Override
+    public java.util.List<ReasonCount> countByReasonSince(java.time.Instant since) {
+        return jpa.countByReasonSince(since).stream()
+                .map(row -> new ReasonCount((String) row[0], ((Number) row[1]).longValue()))
+                .toList();
+    }
 }

@@ -24,6 +24,7 @@ export default function AppShell() {
   const isTpl = pathname.startsWith("/templates");
   const isRcp = pathname.startsWith("/recipients");
   const isList = pathname.startsWith("/lists");
+  const isAnal = pathname.startsWith("/analytics");
   const avatar = (email?.trim()?.[0] ?? "U").toUpperCase();
 
   return (
@@ -40,7 +41,7 @@ export default function AppShell() {
             <button className={`op-navlink${isTpl ? " active" : ""}`} onClick={() => nav("/templates")}>템플릿</button>
             <button className={`op-navlink${isRcp ? " active" : ""}`} onClick={() => nav("/recipients")}>수신자</button>
             <button className={`op-navlink${isList ? " active" : ""}`} onClick={() => nav("/lists")}>리스트</button>
-            <span className="op-navlink stub">분석</span>
+            <button className={`op-navlink${isAnal ? " active" : ""}`} onClick={() => nav("/analytics")}>분석</button>
           </nav>
         </div>
         <div className="op-topnav-right">

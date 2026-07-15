@@ -20,4 +20,11 @@ public interface ListUnsubscribeRepository {
 
     /** Remove the opt-out (an explicit re-subscribe); a no-op if none exists. */
     void delete(Long listId, Long contactId);
+
+    /** Opt-out counts per list, largest first (analytics audience health). */
+    List<ListCount> countByList();
+
+    /** One list's opt-out count. */
+    record ListCount(Long listId, long count) {
+    }
 }

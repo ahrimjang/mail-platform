@@ -42,4 +42,11 @@ public class JpaListUnsubscribeRepository implements ListUnsubscribeRepository {
     public void delete(Long listId, Long contactId) {
         jpa.deleteByListIdAndContactId(listId, contactId);
     }
+
+    @Override
+    public List<ListCount> countByList() {
+        return jpa.countByList().stream()
+                .map(row -> new ListCount((Long) row[0], ((Number) row[1]).longValue()))
+                .toList();
+    }
 }

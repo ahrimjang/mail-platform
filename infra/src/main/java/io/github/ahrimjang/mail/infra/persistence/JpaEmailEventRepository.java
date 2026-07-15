@@ -43,4 +43,24 @@ public class JpaEmailEventRepository implements EmailEventRepository {
                         ((Number) row[2]).longValue()))
                 .toList();
     }
+
+    @Override
+    public java.util.List<LinkClicks> topClickedLinks(java.time.Instant since, int limit) {
+        return jpa.topClickedLinks(since, org.springframework.data.domain.PageRequest.of(0, limit)).stream()
+                .map(row -> new LinkClicks(
+                        (String) row[0],
+                        ((Number) row[1]).longValue(),
+                        ((Number) row[2]).longValue()))
+                .toList();
+    }
+
+    @Override
+    public java.util.List<HeatmapCell> aggregateOpenHeatmap(java.time.Instant since, java.time.ZoneId zone) {
+        return jpa.aggregateOpenHeatmap(since, zone.getId()).stream()
+                .map(row -> new HeatmapCell(
+                        ((Number) row[0]).intValue(),
+                        ((Number) row[1]).intValue(),
+                        ((Number) row[2]).longValue()))
+                .toList();
+    }
 }

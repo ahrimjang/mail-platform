@@ -74,6 +74,26 @@ export interface CampaignContentView {
   abBodyB?: string | null;
 }
 
+// Analytics: one ranked tracked link (clicks in the selected period).
+export interface LinkClicksView {
+  url: string;
+  clicks: number;
+  uniqueMessages: number;
+}
+
+// Analytics: one (weekday, hour) bucket of the open heatmap (dayOfWeek: 1=Mon..7=Sun).
+export interface OpenHeatmapCell {
+  dayOfWeek: number;
+  hour: number;
+  opens: number;
+}
+
+// Analytics: why addresses stop receiving mail.
+export interface AudienceHealthView {
+  suppressionReasons: { reason: string; total: number; recent: number }[];
+  listOptOuts: { listId: number; listName: string; count: number }[];
+}
+
 // One day of platform-wide activity for the dashboard chart (failed folds in bounced).
 export interface DashboardDay {
   date: string; // yyyy-MM-dd
