@@ -138,6 +138,30 @@ class SuppressionServiceTest {
     }
 
     @Test
+    void optOutOfList_recordsManualReasonForOperatorAction() {
+        when(contacts.findById(7L)).thenReturn(Optional.of(contactWithId(7L, "member@x.com")));
+        ContactList list = ContactList.of("뉴스레터", null);
+        list.setId(5L);
+        when(lists.findById(5L)).thenReturn(Optional.of(list));
+
+        service.optOutOfList(7L, 5L);
+
+        // "manual" (not "unsubscribe") — the operator did this, not the recipient.
+        verify(listUnsubscribes).save(5L, 7L, "manual");
+    }
+
+    @Test
+    void optOutOfList_unknownListThrowsNotFound() {
+        when(contacts.findById(7L)).thenReturn(Optional.of(contactWithId(7L, "member@x.com")));
+        when(lists.findById(99L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.optOutOfList(7L, 99L))
+                .isInstanceOf(NoSuchElementException.class)
+                .hasMessageContaining("99");
+        verify(listUnsubscribes, never()).save(any(), any(), any());
+    }
+
+    @Test
     void suppressByUnsubToken_knownTokenSuppressesRecipientWithUnsubscribeReason() {
         MailMessage message = MailMessage.queued(1L, "leaver@x.com");
         when(messages.findByUnsubToken("tok")).thenReturn(Optional.of(message));

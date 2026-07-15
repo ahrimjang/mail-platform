@@ -3,6 +3,7 @@ package io.github.ahrimjang.mail.core.service;
 import io.github.ahrimjang.mail.common.ContactRequest;
 import io.github.ahrimjang.mail.common.ContactView;
 import io.github.ahrimjang.mail.common.ImportResult;
+import io.github.ahrimjang.mail.common.UpdateContactRequest;
 import io.github.ahrimjang.mail.core.domain.Contact;
 import io.github.ahrimjang.mail.core.port.ContactListRepository;
 import io.github.ahrimjang.mail.core.port.ContactRepository;
@@ -10,6 +11,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.HashMap;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 
 /**
@@ -46,6 +48,15 @@ public class ContactService {
         return contacts.findAll().stream()
                 .map(this::toView)
                 .toList();
+    }
+
+    /** Rename only — the email is the contact's identity and other systems key on it. */
+    public ContactView update(Long id, UpdateContactRequest request) {
+        Contact contact = contacts.findById(id)
+                .orElseThrow(() -> new NoSuchElementException("contact not found: " + id));
+        contact.setFirstName(blankToNull(request.firstName()));
+        contact.setLastName(blankToNull(request.lastName()));
+        return toView(contacts.save(contact));
     }
 
     public void delete(Long id) {
@@ -86,6 +97,10 @@ public class ContactService {
             }
         }
         return new ImportResult(imported, skipped);
+    }
+
+    private static String blankToNull(String s) {
+        return s == null || s.isBlank() ? null : s.trim();
     }
 
     private ContactView toView(Contact contact) {

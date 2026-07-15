@@ -55,6 +55,17 @@ public class JpaEmailEventRepository implements EmailEventRepository {
     }
 
     @Override
+    public java.util.List<ContactEvent> findRecentByContact(Long contactId, int limit) {
+        return jpa.findRecentByContact(contactId, org.springframework.data.domain.PageRequest.of(0, limit)).stream()
+                .map(row -> new ContactEvent(
+                        (EventType) row[0],
+                        (String) row[1],
+                        (java.time.Instant) row[2],
+                        (Long) row[3]))
+                .toList();
+    }
+
+    @Override
     public java.util.List<HeatmapCell> aggregateOpenHeatmap(java.time.Instant since, java.time.ZoneId zone) {
         return jpa.aggregateOpenHeatmap(since, zone.getId()).stream()
                 .map(row -> new HeatmapCell(
@@ -63,4 +74,5 @@ public class JpaEmailEventRepository implements EmailEventRepository {
                         ((Number) row[2]).longValue()))
                 .toList();
     }
+
 }

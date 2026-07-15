@@ -121,6 +121,18 @@ public class SuppressionService {
         listUnsubscribes.delete(listId, contactId);
     }
 
+    /**
+     * Operator-side list opt-out (the console's "해지" status): recorded with the
+     * "manual" reason so it stays distinguishable from the recipient's own
+     * "unsubscribe" clicks. Idempotent — an existing opt-out keeps its record.
+     */
+    public void optOutOfList(Long contactId, Long listId) {
+        requireContact(contactId);
+        lists.findById(listId)
+                .orElseThrow(() -> new NoSuchElementException("list not found: " + listId));
+        listUnsubscribes.save(listId, contactId, MANUAL_REASON);
+    }
+
     /** Suppress the address behind an unsubscribe token, if the token resolves. */
     public void suppressByUnsubToken(String token) {
         messages.findByUnsubToken(token)

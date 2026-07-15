@@ -70,6 +70,9 @@ public interface MailMessageRepository {
     /** Most recently updated messages of a campaign (per-recipient drill-down), newest first. */
     List<MailMessage> findRecentByCampaign(Long campaignId, int limit);
 
+    /** This contact's deliveries, newest first. */
+    List<MailMessage> findRecentByContact(Long contactId, int limit);
+
     /**
      * Send log aggregated into fixed time buckets: one row per (bucket, status)
      * with a count, newest bucket first. The database does the grouping so the

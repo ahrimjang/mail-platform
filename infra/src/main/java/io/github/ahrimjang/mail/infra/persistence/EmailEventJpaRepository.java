@@ -56,4 +56,14 @@ public interface EmailEventJpaRepository extends JpaRepository<EmailEventEntity,
     java.util.List<Object[]> aggregateOpenHeatmap(
             @org.springframework.data.repository.query.Param("since") java.time.Instant since,
             @org.springframework.data.repository.query.Param("zone") String zone);
+
+    /**
+     * One contact's engagement events, newest first — joins events to their
+     * message rows because events carry the message, not the contact.
+     * Columns: type(EventType), url(text|null), occurredAt(Instant), campaignId(long).
+     */
+    @Query("select e.type, e.url, e.occurredAt, e.campaignId from EmailEventEntity e, MailMessageEntity m "
+            + "where e.messageId = m.id and m.contactId = ?1 order by e.occurredAt desc")
+    java.util.List<Object[]> findRecentByContact(Long contactId, Pageable pageable);
+
 }

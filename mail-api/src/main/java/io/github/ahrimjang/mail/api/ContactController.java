@@ -1,11 +1,15 @@
 package io.github.ahrimjang.mail.api;
 
+import io.github.ahrimjang.mail.common.ContactActivityView;
+import io.github.ahrimjang.mail.common.ContactMessageView;
 import io.github.ahrimjang.mail.common.ContactRequest;
 import io.github.ahrimjang.mail.common.ContactView;
 import io.github.ahrimjang.mail.common.ImportResult;
 import io.github.ahrimjang.mail.common.SubscriptionView;
 import io.github.ahrimjang.mail.common.UpdateContactListsRequest;
+import io.github.ahrimjang.mail.common.UpdateContactRequest;
 import io.github.ahrimjang.mail.common.UpdateSubscriptionRequest;
+import io.github.ahrimjang.mail.core.service.ContactActivityService;
 import io.github.ahrimjang.mail.core.service.ContactListService;
 import io.github.ahrimjang.mail.core.service.ContactService;
 import io.github.ahrimjang.mail.core.service.SuppressionService;
@@ -38,13 +42,16 @@ public class ContactController {
     private final ContactService contacts;
     private final ContactListService lists;
     private final SuppressionService suppressions;
+    private final ContactActivityService activity;
 
     public ContactController(ContactService contacts,
                              ContactListService lists,
-                             SuppressionService suppressions) {
+                             SuppressionService suppressions,
+                             ContactActivityService activity) {
         this.contacts = contacts;
         this.lists = lists;
         this.suppressions = suppressions;
+        this.activity = activity;
     }
 
     @GetMapping
@@ -58,10 +65,30 @@ public class ContactController {
         return ResponseEntity.status(HttpStatus.CREATED).body(view);
     }
 
+    /** Rename a contact (email stays — it is the identity suppressions key on). */
+    @PutMapping("/{id}")
+    public ContactView update(@PathVariable Long id, @RequestBody UpdateContactRequest request) {
+        return contacts.update(id, request);
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         contacts.delete(id);
         return ResponseEntity.noContent().build();
+    }
+
+    /** Merged activity timeline, newest first. */
+    @GetMapping("/{id}/activity")
+    public List<ContactActivityView> activity(@PathVariable Long id,
+                                              @RequestParam(defaultValue = "30") int limit) {
+        return activity.activity(id, limit);
+    }
+
+    /** Deliveries to this contact, newest first. */
+    @GetMapping("/{id}/messages")
+    public List<ContactMessageView> messages(@PathVariable Long id,
+                                             @RequestParam(defaultValue = "20") int limit) {
+        return activity.messages(id, limit);
     }
 
     /** Ids of every list this contact belongs to. */
@@ -98,6 +125,13 @@ public class ContactController {
     @DeleteMapping("/{id}/list-unsubscribes/{listId}")
     public List<Long> resubscribeToList(@PathVariable Long id, @PathVariable Long listId) {
         suppressions.resubscribeToList(id, listId);
+        return suppressions.listUnsubscribesOf(id);
+    }
+
+    /** Operator-side list opt-out ("해지" status) — recorded as "manual", memberships stay. */
+    @PostMapping("/{id}/list-unsubscribes/{listId}")
+    public List<Long> optOutOfList(@PathVariable Long id, @PathVariable Long listId) {
+        suppressions.optOutOfList(id, listId);
         return suppressions.listUnsubscribesOf(id);
     }
 

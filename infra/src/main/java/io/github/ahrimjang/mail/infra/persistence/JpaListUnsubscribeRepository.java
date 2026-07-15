@@ -44,6 +44,13 @@ public class JpaListUnsubscribeRepository implements ListUnsubscribeRepository {
     }
 
     @Override
+    public List<OptOut> findByContact(Long contactId) {
+        return jpa.findByContactIdOrderByCreatedAtDesc(contactId).stream()
+                .map(e -> new OptOut(e.getListId(), e.getReason(), e.getCreatedAt()))
+                .toList();
+    }
+
+    @Override
     public List<ListCount> countByList() {
         return jpa.countByList().stream()
                 .map(row -> new ListCount((Long) row[0], ((Number) row[1]).longValue()))

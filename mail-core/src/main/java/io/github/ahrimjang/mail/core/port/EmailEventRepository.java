@@ -47,4 +47,11 @@ public interface EmailEventRepository {
     /** One heatmap bucket: ISO weekday (1=Mon..7=Sun), hour 0..23, distinct opens. */
     record HeatmapCell(int dayOfWeek, int hour, long opens) {
     }
+
+    /** This contact's engagement events (via their messages), newest first. */
+    java.util.List<ContactEvent> findRecentByContact(Long contactId, int limit);
+
+    /** One engagement event of a contact: what, on which campaign, when. */
+    record ContactEvent(EventType type, String url, java.time.Instant occurredAt, Long campaignId) {
+    }
 }

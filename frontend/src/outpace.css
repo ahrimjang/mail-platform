@@ -451,7 +451,8 @@ textarea.op-input { height: auto; padding: 13px 15px; line-height: 1.6; resize: 
   z-index: 30; animation: pwFade 0.15s ease both;
 }
 .op-drawer {
-  position: fixed; top: 0; right: 0; bottom: 0; width: 400px; max-width: 92vw;
+  /* 560px so the recipient activity timeline fits; still capped on small screens. */
+  position: fixed; top: 0; right: 0; bottom: 0; width: 560px; max-width: 92vw;
   background: #fff; border-left: 1px solid var(--op-border);
   box-shadow: var(--op-shadow-float); z-index: 31; overflow: auto;
   animation: opSlideIn 0.18s ease both; display: flex; flex-direction: column;
@@ -482,6 +483,26 @@ textarea.op-input { height: auto; padding: 13px 15px; line-height: 1.6; resize: 
 }
 .op-checkrow input { width: 16px; height: 16px; accent-color: var(--op-primary); cursor: pointer; }
 .op-checkrow .cnt { margin-left: auto; font-size: 12px; color: var(--op-faint); }
+
+/* -------------------- recipient drawer: name edit + activity -------------------- */
+
+.op-minibadge.red { color: var(--op-red); background: var(--op-red-soft); }
+.op-acttabs { display: flex; gap: 6px; margin-bottom: 10px; }
+.op-acttab {
+  border: 1px solid var(--op-border-input); background: #fff; border-radius: 8px;
+  padding: 5px 12px; font-size: 12.5px; font-weight: 600; color: var(--op-muted);
+  cursor: pointer; font-family: inherit;
+}
+.op-acttab.on { color: var(--op-primary-hover); border-color: var(--op-primary); background: var(--op-primary-soft); }
+.op-actrow {
+  display: flex; align-items: baseline; gap: 8px; padding: 8px 0;
+  border-bottom: 1px solid var(--op-divider); font-size: 12.5px;
+}
+.op-actrow:last-child { border-bottom: none; }
+.op-actrow .what { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; overflow: hidden; }
+.op-actrow .camp { color: var(--op-ink); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.op-actrow .det { color: var(--op-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.op-actrow .when { flex: none; color: var(--op-faint); font-size: 11.5px; }
 
 /* -------------------------------- editors --------------------------------- */
 

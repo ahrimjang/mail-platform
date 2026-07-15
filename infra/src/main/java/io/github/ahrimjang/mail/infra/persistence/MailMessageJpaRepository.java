@@ -62,6 +62,11 @@ public interface MailMessageJpaRepository extends JpaRepository<MailMessageEntit
     java.util.List<MailMessageEntity> findByCampaignIdOrderByUpdatedAtDescIdDesc(
             Long campaignId, org.springframework.data.domain.Pageable pageable);
 
+    /** One contact's deliveries, newest state change first (the recipient activity view). */
+    @Query("select m from MailMessageEntity m where m.contactId = :contactId order by m.updatedAt desc")
+    java.util.List<MailMessageEntity> findRecentByContact(@Param("contactId") Long contactId,
+                                                          org.springframework.data.domain.Pageable pageable);
+
     /**
      * Grouped send log: collapse state changes into fixed time buckets per status,
      * newest bucket first. Aggregation happens in the database so the result stays

@@ -87,6 +87,14 @@ public class JpaMailMessageRepository implements MailMessageRepository {
     }
 
     @Override
+    public List<MailMessage> findRecentByContact(Long contactId, int limit) {
+        return jpa.findRecentByContact(contactId, org.springframework.data.domain.PageRequest.of(0, limit))
+                .stream()
+                .map(this::toDomain)
+                .toList();
+    }
+
+    @Override
     public List<SendLogBucket> aggregateLogByCampaign(Long campaignId, int bucketSeconds, int limit) {
         return jpa.aggregateLogByCampaign(campaignId, bucketSeconds, limit).stream()
                 .map(row -> new SendLogBucket(

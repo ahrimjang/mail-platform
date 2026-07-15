@@ -161,3 +161,37 @@ export interface UpdateContactListsRequest {
 export interface UpdateSubscriptionRequest {
   suppressed: boolean;
 }
+
+// Rename a contact; the email is its identity and cannot change.
+export interface UpdateContactRequest {
+  firstName: string | null;
+  lastName: string | null;
+}
+
+// One row of a contact's activity timeline, newest first.
+export type ContactActivityType =
+  | "SIGNUP"
+  | "SENT"
+  | "BOUNCED"
+  | "SUPPRESSED_SKIP"
+  | "OPENED"
+  | "CLICKED"
+  | "UNSUBSCRIBED"
+  | "LIST_OPTOUT";
+
+export interface ContactActivityView {
+  type: ContactActivityType;
+  occurredAt: string;
+  detail: string | null; // clicked URL / bounce reason / suppression reason / list name
+  campaignId: number | null;
+  campaignName: string | null;
+}
+
+// One delivery to a contact: which campaign, how it ended, when.
+export interface ContactMessageView {
+  messageId: number;
+  campaignId: number;
+  campaignName: string | null;
+  status: MessageStatus;
+  updatedAt: string;
+}

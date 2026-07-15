@@ -3,11 +3,16 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import Portal from "../components/Portal";
 import type {
+  ContactActivityType,
+  ContactActivityView,
   ContactListView,
+  ContactMessageView,
   ContactView,
   ImportResult,
+  MessageStatus,
   SubscriptionView,
   UpdateContactListsRequest,
+  UpdateContactRequest,
   UpdateSubscriptionRequest,
 } from "../types";
 
@@ -17,6 +22,29 @@ const COLS = "minmax(0, 2.2fr) minmax(0, 2fr) 110px 110px";
 function dateOf(iso: string | null): string {
   return iso ? new Date(iso).toLocaleDateString("ko-KR") : "-";
 }
+
+/* Badge tone + Korean label per activity timeline row type. */
+const ACTIVITY_META: Record<ContactActivityType, { tone: string; label: string }> = {
+  SIGNUP: { tone: "blue", label: "등록" },
+  SENT: { tone: "green", label: "발송" },
+  BOUNCED: { tone: "red", label: "바운스" },
+  SUPPRESSED_SKIP: { tone: "gray", label: "발송 제외" },
+  OPENED: { tone: "amber", label: "오픈" },
+  CLICKED: { tone: "blue", label: "클릭" },
+  UNSUBSCRIBED: { tone: "red", label: "수신거부" },
+  LIST_OPTOUT: { tone: "gray", label: "리스트 해지" },
+};
+
+/* Badge tone + Korean label per delivery outcome (drawer's 메시지 tab). */
+const MESSAGE_META: Record<MessageStatus, { tone: string; label: string }> = {
+  SENT: { tone: "green", label: "발송 완료" },
+  FAILED: { tone: "red", label: "발송 실패" },
+  BOUNCED: { tone: "red", label: "바운스" },
+  SUPPRESSED: { tone: "gray", label: "발송 제외" },
+  SENDING: { tone: "blue", label: "발송 중" },
+  PENDING: { tone: "blue", label: "대기 중" },
+  CANCELED: { tone: "gray", label: "발송 취소" },
+};
 
 function SubBadge({ sub }: { sub: SubscriptionView | undefined }) {
   if (!sub) return <span className="faint">확인 중…</span>;
@@ -163,7 +191,7 @@ function ImportModal({ lists, onClose, onImported }: {
 
 /* --------------------------------- drawer --------------------------------- */
 
-function ContactDrawer({ contact, lists, sub, memberIds, optOutIds, onClose, onChanged, onOptOutsChanged }: {
+function ContactDrawer({ contact, lists, sub, memberIds, optOutIds, onClose, onChanged, onOptOutsChanged, onContactChanged }: {
   contact: ContactView;
   lists: ContactListView[];
   sub: SubscriptionView | undefined;
@@ -172,21 +200,66 @@ function ContactDrawer({ contact, lists, sub, memberIds, optOutIds, onClose, onC
   onClose: () => void;
   onChanged: (sub: SubscriptionView | null, listIds: number[] | null) => void;
   onOptOutsChanged: (ids: number[]) => void;
+  onContactChanged: (updated: ContactView) => void;
 }) {
-  const [checked, setChecked] = useState<Set<number>>(new Set(memberIds));
-  const [savingLists, setSavingLists] = useState(false);
+  // Per-list subscription status; the status modal applies changes immediately.
+  const [members, setMembers] = useState<Set<number>>(new Set(memberIds));
+  const [statusTarget, setStatusTarget] = useState<ContactListView | null>(null);
+  const [statusChoice, setStatusChoice] = useState<"active" | "opted" | "none">("active");
+  const [applyingStatus, setApplyingStatus] = useState(false);
   const [togglingSub, setTogglingSub] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Editable name fields (the email is the contact's identity and stays read-only).
+  const [firstName, setFirstName] = useState(contact.firstName ?? "");
+  const [lastName, setLastName] = useState(contact.lastName ?? "");
+  const [savingName, setSavingName] = useState(false);
+  // Activity view: timeline + per-delivery list, fetched lazily per tab.
+  const [actTab, setActTab] = useState<"timeline" | "messages">("timeline");
+  const [activity, setActivity] = useState<ContactActivityView[] | null>(null);
+  const [deliveries, setDeliveries] = useState<ContactMessageView[] | null>(null);
 
-  const fullName = [contact.lastName, contact.firstName].filter(Boolean).join("") || "-";
-  const dirty = checked.size !== memberIds.length || memberIds.some((id) => !checked.has(id));
+  const nameDirty = firstName !== (contact.firstName ?? "") || lastName !== (contact.lastName ?? "");
 
-  function toggle(id: number) {
-    setChecked((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
+  useEffect(() => {
+    let alive = true;
+    api(`/api/contacts/${contact.id}/activity`)
+      .then(async (res) => { if (alive) setActivity(res.ok ? await res.json() : []); })
+      .catch(() => { if (alive) setActivity([]); });
+    return () => { alive = false; };
+  }, [contact.id]);
+
+  useEffect(() => {
+    if (actTab !== "messages" || deliveries !== null) return;
+    let alive = true;
+    api(`/api/contacts/${contact.id}/messages`)
+      .then(async (res) => { if (alive) setDeliveries(res.ok ? await res.json() : []); })
+      .catch(() => { if (alive) setDeliveries([]); });
+    return () => { alive = false; };
+  }, [actTab, deliveries, contact.id]);
+
+  async function saveName() {
+    setSavingName(true);
+    setError(null);
+    try {
+      const body: UpdateContactRequest = {
+        firstName: firstName.trim() || null,
+        lastName: lastName.trim() || null,
+      };
+      const res = await api(`/api/contacts/${contact.id}`, {
+        method: "PUT",
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        const updated: ContactView = await res.json();
+        onContactChanged(updated);
+        setFirstName(updated.firstName ?? "");
+        setLastName(updated.lastName ?? "");
+      } else setError("이름 저장에 실패했습니다.");
+    } catch {
+      setError("요청 중 오류가 발생했습니다.");
+    } finally {
+      setSavingName(false);
+    }
   }
 
   async function toggleSubscription() {
@@ -208,33 +281,45 @@ function ContactDrawer({ contact, lists, sub, memberIds, optOutIds, onClose, onC
     }
   }
 
-  /** Drop the recipient's own opt-out of a list — an explicit operator action. */
-  async function resubscribe(listId: number) {
-    setError(null);
-    try {
-      const res = await api(`/api/contacts/${contact.id}/list-unsubscribes/${listId}`, { method: "DELETE" });
-      if (res.ok) onOptOutsChanged(await res.json());
-      else setError("해지 취소에 실패했습니다.");
-    } catch {
-      setError("요청 중 오류가 발생했습니다.");
-    }
+  /** Current per-list status: an opt-out wins the display, then membership. */
+  function statusOf(listId: number): "active" | "opted" | "none" {
+    if (optOutIds.includes(listId)) return "opted";
+    return members.has(listId) ? "active" : "none";
   }
 
-  async function saveLists() {
-    setSavingLists(true);
+  /** Apply the status modal's choice — membership PUT plus opt-out POST/DELETE as needed. */
+  async function applyStatus() {
+    if (!statusTarget) return;
+    const listId = statusTarget.id;
+    setApplyingStatus(true);
     setError(null);
     try {
-      const body: UpdateContactListsRequest = { listIds: [...checked] };
-      const res = await api(`/api/contacts/${contact.id}/lists`, {
-        method: "PUT",
-        body: JSON.stringify(body),
-      });
-      if (res.ok) onChanged(null, await res.json());
-      else setError("리스트 저장에 실패했습니다.");
+      const wantMember = statusChoice !== "none";
+      if (wantMember !== members.has(listId)) {
+        const body: UpdateContactListsRequest = {
+          listIds: wantMember ? [...members, listId] : [...members].filter((id) => id !== listId),
+        };
+        const res = await api(`/api/contacts/${contact.id}/lists`, { method: "PUT", body: JSON.stringify(body) });
+        if (!res.ok) { setError("리스트 변경에 실패했습니다."); return; }
+        const saved: number[] = await res.json();
+        setMembers(new Set(saved));
+        onChanged(null, saved);
+      }
+      const isOpted = optOutIds.includes(listId);
+      if (statusChoice === "opted" && !isOpted) {
+        const res = await api(`/api/contacts/${contact.id}/list-unsubscribes/${listId}`, { method: "POST" });
+        if (!res.ok) { setError("해지 처리에 실패했습니다."); return; }
+        onOptOutsChanged(await res.json());
+      } else if (statusChoice === "active" && isOpted) {
+        const res = await api(`/api/contacts/${contact.id}/list-unsubscribes/${listId}`, { method: "DELETE" });
+        if (!res.ok) { setError("해지 취소에 실패했습니다."); return; }
+        onOptOutsChanged(await res.json());
+      }
+      setStatusTarget(null);
     } catch {
       setError("요청 중 오류가 발생했습니다.");
     } finally {
-      setSavingLists(false);
+      setApplyingStatus(false);
     }
   }
 
@@ -252,8 +337,24 @@ function ContactDrawer({ contact, lists, sub, memberIds, optOutIds, onClose, onC
         <div className="op-drawer-body">
           <div className="op-drawer-section">
             <div className="st">기본 정보</div>
-            <div className="op-drawer-kv"><span className="k">이름</span><span className="v">{fullName}</span></div>
+            <div className="op-drawer-kv"><span className="k">이메일</span><span className="v">{contact.email}</span></div>
+            <p className="op-sub-note" style={{ marginTop: 0, marginBottom: 10 }}>이메일은 변경할 수 없어요.</p>
+            <div className="op-grid2">
+              <label className="op-field">
+                <span className="op-flabel">이름</span>
+                <input className="op-input" placeholder="길동" value={firstName} onChange={(e) => setFirstName(e.target.value)} />
+              </label>
+              <label className="op-field">
+                <span className="op-flabel">성</span>
+                <input className="op-input" placeholder="홍" value={lastName} onChange={(e) => setLastName(e.target.value)} />
+              </label>
+            </div>
             <div className="op-drawer-kv"><span className="k">등록일</span><span className="v">{dateOf(contact.createdAt)}</span></div>
+            <div className="op-modal-foot" style={{ marginTop: 8 }}>
+              <button className="op-btn op-btn-sm" disabled={!nameDirty || savingName} onClick={saveName}>
+                {savingName ? "저장 중…" : "저장"}
+              </button>
+            </div>
           </div>
 
           <div className="op-drawer-section">
@@ -279,40 +380,108 @@ function ContactDrawer({ contact, lists, sub, memberIds, optOutIds, onClose, onC
           </div>
 
           <div className="op-drawer-section">
-            <div className="st">리스트</div>
+            <div className="st">리스트 구독</div>
             {lists.length === 0 && <p className="op-sub-note">아직 만든 리스트가 없어요.</p>}
-            {lists.map((l) => (
-              <label key={l.id} className="op-checkrow">
-                <input type="checkbox" checked={checked.has(l.id)} onChange={() => toggle(l.id)} />
-                <span>{l.name}</span>
-                {optOutIds.includes(l.id) && (
-                  <>
-                    <span className="op-minibadge gray" title="수신자가 메일에서 이 리스트를 해지했습니다 — 발송 시 제외됩니다">해지</span>
-                    <button
-                      type="button"
-                      className="op-linkbtn"
-                      style={{ fontSize: 12 }}
-                      onClick={(e) => { e.preventDefault(); resubscribe(l.id); }}
-                    >
-                      해지 취소
-                    </button>
-                  </>
-                )}
-                <span className="cnt">{l.memberCount}명</span>
-              </label>
-            ))}
-            {lists.length > 0 && (
-              <div className="op-modal-foot" style={{ marginTop: 14 }}>
-                <button className="op-btn op-btn-sm" disabled={!dirty || savingLists} onClick={saveLists}>
-                  {savingLists ? "저장 중…" : "리스트 저장"}
-                </button>
-              </div>
+            {lists.map((l) => {
+              const st = statusOf(l.id);
+              return (
+                <div key={l.id} className="op-checkrow" style={{ cursor: "default" }}>
+                  <span>{l.name}</span>
+                  {st === "active" && <span className="op-minibadge green">구독중</span>}
+                  {st === "opted" && (
+                    <span className="op-minibadge gray" title="발송에서 제외됩니다 — 멤버십은 유지">해지</span>
+                  )}
+                  {st === "none" && <span className="faint" style={{ fontSize: 12 }}>미구독</span>}
+                  <button
+                    type="button"
+                    className="op-linkbtn"
+                    style={{ fontSize: 12.5, marginLeft: "auto" }}
+                    onClick={() => { setStatusTarget(l); setStatusChoice(st); setError(null); }}
+                  >
+                    상태 변경
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="op-drawer-section">
+            <div className="st">활동</div>
+            <div className="op-acttabs">
+              <button className={`op-acttab${actTab === "timeline" ? " on" : ""}`} onClick={() => setActTab("timeline")}>타임라인</button>
+              <button className={`op-acttab${actTab === "messages" ? " on" : ""}`} onClick={() => setActTab("messages")}>메시지</button>
+            </div>
+            {actTab === "timeline" && (
+              activity === null ? <p className="op-sub-note">활동을 불러오는 중…</p>
+              : activity.length === 0 ? <p className="op-sub-note">아직 활동 기록이 없어요.</p>
+              : activity.map((a, i) => (
+                <div key={i} className="op-actrow">
+                  <span className={`op-minibadge ${ACTIVITY_META[a.type].tone}`}>{ACTIVITY_META[a.type].label}</span>
+                  <span className="what">
+                    {(a.campaignName || a.campaignId != null) && (
+                      <span className="camp">{a.campaignName ?? `캠페인 #${a.campaignId}`}</span>
+                    )}
+                    {a.detail && <span className="det" title={a.detail}>{a.detail}</span>}
+                  </span>
+                  <span className="when">{new Date(a.occurredAt).toLocaleString("ko-KR")}</span>
+                </div>
+              ))
+            )}
+            {actTab === "messages" && (
+              deliveries === null ? <p className="op-sub-note">메시지를 불러오는 중…</p>
+              : deliveries.length === 0 ? <p className="op-sub-note">아직 발송된 메일이 없어요.</p>
+              : deliveries.map((m) => (
+                <div key={m.messageId} className="op-actrow">
+                  <span className="what">
+                    <span className="camp">{m.campaignName ?? `캠페인 #${m.campaignId}`}</span>
+                  </span>
+                  <span className={`op-minibadge ${MESSAGE_META[m.status].tone}`}>{MESSAGE_META[m.status].label}</span>
+                  <span className="when">{new Date(m.updatedAt).toLocaleString("ko-KR")}</span>
+                </div>
+              ))
             )}
           </div>
 
           {error && <div className="op-modal-error">{error}</div>}
         </div>
       </aside>
+
+      {statusTarget && (
+        <div
+          className="op-modal-backdrop"
+          style={{ zIndex: 60 }}
+          onMouseDown={(e) => { if (e.target === e.currentTarget) setStatusTarget(null); }}
+        >
+          <div className="op-modal">
+            <h3>‘{statusTarget.name}’ 구독 상태 변경</h3>
+            <p className="op-modal-sub">{contact.email} 수신자의 이 리스트 구독 상태를 바꿉니다.</p>
+            <label className="op-field">
+              <span className="op-flabel">구독 상태</span>
+              <select
+                className="op-input"
+                value={statusChoice}
+                onChange={(e) => setStatusChoice(e.target.value as typeof statusChoice)}
+              >
+                <option value="active">구독중 — 발송 대상에 포함</option>
+                <option value="opted">해지 — 리스트엔 남지만 발송 제외</option>
+                <option value="none">미구독 — 리스트에서 제거</option>
+              </select>
+            </label>
+            <p className="op-sub-note">
+              {statusChoice === "active" && "이 리스트의 캠페인을 다시 받습니다. 해지 기록이 있다면 삭제됩니다."}
+              {statusChoice === "opted" && "수신자가 직접 해지한 것과 같은 효과이며 사유가 manual로 남습니다. CSV 재가져오기로도 되돌아가지 않습니다."}
+              {statusChoice === "none" && "리스트에서 제거합니다. 해지 기록이 있다면 그대로 남아, 나중에 다시 추가돼도 발송은 제외됩니다."}
+            </p>
+            {error && <div className="op-modal-error">{error}</div>}
+            <div className="op-modal-foot">
+              <button className="op-btn op-btn-sm op-btn-ghost" onClick={() => setStatusTarget(null)}>취소</button>
+              <button className="op-btn op-btn-sm" disabled={applyingStatus} onClick={applyStatus}>
+                {applyingStatus ? "적용 중…" : "적용"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </Portal>
   );
 }
@@ -508,6 +677,7 @@ export default function Recipients() {
           optOutIds={optOuts[selected.id] ?? []}
           onClose={() => setSelectedId(null)}
           onOptOutsChanged={(ids) => setOptOuts((prev) => ({ ...prev, [selected.id]: ids }))}
+          onContactChanged={(updated) => setContacts((prev) => prev.map((c) => (c.id === updated.id ? updated : c)))}
           onChanged={(sub, listIds) => {
             if (sub) setSubs((prev) => ({ ...prev, [selected.id]: sub }));
             if (listIds) {

@@ -3,6 +3,7 @@ package io.github.ahrimjang.mail.core.service;
 import io.github.ahrimjang.mail.common.ContactRequest;
 import io.github.ahrimjang.mail.common.ContactView;
 import io.github.ahrimjang.mail.common.ImportResult;
+import io.github.ahrimjang.mail.common.UpdateContactRequest;
 import io.github.ahrimjang.mail.core.domain.Contact;
 import io.github.ahrimjang.mail.core.port.ContactListRepository;
 import io.github.ahrimjang.mail.core.port.ContactRepository;
@@ -14,6 +15,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -81,6 +83,43 @@ class ContactServiceTest {
 
         assertThatThrownBy(() -> service.create(new ContactRequest("dup@b.com", null, null, null)))
                 .isInstanceOf(IllegalStateException.class);
+        verify(contacts, never()).save(any());
+    }
+
+    @Test
+    void update_renamesButKeepsTheEmail() {
+        Contact existing = Contact.of("a@b.com", "Old", "Name", Map.of());
+        existing.setId(7L);
+        when(contacts.findById(7L)).thenReturn(Optional.of(existing));
+        when(contacts.save(any(Contact.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ContactView view = service.update(7L, new UpdateContactRequest("아림", "장"));
+
+        assertThat(view.email()).isEqualTo("a@b.com");
+        assertThat(view.firstName()).isEqualTo("아림");
+        assertThat(view.lastName()).isEqualTo("장");
+        verify(contacts).save(existing);
+    }
+
+    @Test
+    void update_blankNamesBecomeNull() {
+        Contact existing = Contact.of("a@b.com", "Old", "Name", Map.of());
+        existing.setId(7L);
+        when(contacts.findById(7L)).thenReturn(Optional.of(existing));
+        when(contacts.save(any(Contact.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ContactView view = service.update(7L, new UpdateContactRequest("  ", null));
+
+        assertThat(view.firstName()).isNull();
+        assertThat(view.lastName()).isNull();
+    }
+
+    @Test
+    void update_unknownContactThrows() {
+        when(contacts.findById(99L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.update(99L, new UpdateContactRequest("a", "b")))
+                .isInstanceOf(NoSuchElementException.class);
         verify(contacts, never()).save(any());
     }
 

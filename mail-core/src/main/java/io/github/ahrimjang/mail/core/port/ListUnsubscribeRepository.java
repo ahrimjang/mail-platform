@@ -27,4 +27,11 @@ public interface ListUnsubscribeRepository {
     /** One list's opt-out count. */
     record ListCount(Long listId, long count) {
     }
+
+    /** This contact's opt-outs with their reason and time (activity timeline). */
+    List<OptOut> findByContact(Long contactId);
+
+    /** One recorded opt-out. */
+    record OptOut(Long listId, String reason, java.time.Instant createdAt) {
+    }
 }
