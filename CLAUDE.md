@@ -9,7 +9,7 @@
 
 ## 이 프로젝트는
 
-대용량 이메일 발송 플랫폼 POC(Notifuse 축소판). 핵심: **API는 큐에 적재 후 즉시 반환, 워커가 비동기로 드레인**. JWT 인증, RabbitMQ 발송 큐(DLQ), Kafka 참여 이벤트 스트림(`mail.events`), SMTP 발송(개발은 MailHog), 예약 발송·취소, 억제/수신거부, 오픈/클릭 추적, 대시보드 집계, 바운스 웹훅, `{{변수}}` 템플릿(블록/텍스트/HTML 에디터 + DB 시딩 기본 템플릿), 트랜잭셔널 발송, 연락처/리스트(CSV). 로드맵: [docs/ROADMAP-scale.md](docs/ROADMAP-scale.md) · [docs/TODO-ses-sns.md](docs/TODO-ses-sns.md).
+대용량 이메일 발송 플랫폼 POC(Notifuse 축소판). 핵심: **API는 큐에 적재 후 즉시 반환, 워커가 비동기로 드레인**. JWT 인증, RabbitMQ 발송 큐(DLQ), Kafka 참여 이벤트 스트림(`mail.events`), SMTP 발송(개발은 MailHog), 예약 발송·취소, A/B 테스트(해시 분배 + 승자 자동발송), 억제/수신거부(전역 + 리스트 단위 옵트아웃), 오픈/클릭 추적, 대시보드 집계, 바운스 웹훅, `{{변수}}` 템플릿(블록/텍스트/HTML 에디터 + DB 시딩 기본 템플릿), 트랜잭셔널 발송, 연락처/리스트(CSV). 로드맵: [docs/ROADMAP-scale.md](docs/ROADMAP-scale.md) · [docs/TODO-ses-sns.md](docs/TODO-ses-sns.md).
 
 ## 커맨드
 
@@ -22,7 +22,7 @@ docker compose up -d              # Postgres(5432) + RabbitMQ(5672/UI 15672) + K
 ./gradlew :mail-admin:bootRun     # 어드민 스켈레톤 :8081
 cd frontend && npm run dev        # Vite :5173, /api -> :8080 프록시
 
-./gradlew :mail-core:test         # 단위 테스트 (15클래스/110개, 순수 JUnit+Mockito — Spring 컨텍스트 없음)
+./gradlew :mail-core:test         # 단위 테스트 (18클래스/148개, 순수 JUnit+Mockito — Spring 컨텍스트 없음)
 cd frontend && npx tsc -b         # 프론트 타입체크
 ```
 
@@ -37,7 +37,7 @@ mail-common   공유 DTO/enum (API·프론트 계약)
 mail-core     domain + port + service (유스케이스 전부 여기)
 infra         어댑터: JPA(persistence/), RabbitMQ·Kafka(messaging/), SMTP(mail/), JWT/BCrypt(security/), 파일(storage/)
 mail-api      REST 컨트롤러 :8080 (+ SecurityConfig/JwtAuthFilter, BuiltinTemplateSeeder)
-mail-worker   MailSendListener·CampaignFanoutListener(@RabbitListener) · EmailEventProjectionListener(@KafkaListener) · ScheduledCampaignReleaser(10초)
+mail-worker   MailSendListener·CampaignFanoutListener(@RabbitListener) · EmailEventProjectionListener(@KafkaListener) · ScheduledCampaignReleaser(10초) · AbWinnerScheduler(30초)
 frontend      React18+Vite+TS, 의존성 없는 콘솔(op- 클래스, src/outpace.css) — 대시보드/캠페인/템플릿/수신자/리스트 + 전체화면 에디터 3종
 ```
 
@@ -46,8 +46,9 @@ frontend      React18+Vite+TS, 의존성 없는 콘솔(op- 클래스, src/outpac
 ## 반드시 알아야 할 불변식·함정
 
 - **스키마는 Flyway 소유**(`infra/.../db/migration/V*.sql`) + `ddl-auto: validate` — 엔티티 변경엔 새 `V<n>__*.sql` 필수. **enum 값 추가 시 V1의 CHECK 제약 재생성도 필요**(V4가 선례). 장문 컬럼은 `text`(`@Lob` 금지 — Postgres에서 OID 참조가 됨).
-- **동시성은 전부 원자적 조건부 UPDATE claim**으로 푼다: 발송 claim(PENDING→SENDING + stale 재클레임), 팬아웃 claim(`QUEUED→EXPANDING` — 중복 팬아웃 잡 멱등), 예약 릴리스(`enqueued_at IS NULL AND status='QUEUED'`), 예약 취소(같은 조건 — 릴리스와 상호배제). 완료 판정도 `SENDING`에서만(`completeIfSending`) — 팬아웃 중 조기완료 방지. 새 동시성 문제도 같은 패턴을 따를 것.
+- **동시성은 전부 원자적 조건부 UPDATE claim**으로 푼다: 발송 claim(PENDING→SENDING + stale 재클레임), 팬아웃 claim(`QUEUED→EXPANDING` — 중복 팬아웃 잡 멱등), 예약 릴리스(`enqueued_at IS NULL AND status='QUEUED'`), 예약 취소(같은 조건 — 릴리스와 상호배제). A/B 승자 판정(`ab_winner IS NULL` — 스케줄러 다중 기동에도 1회 결정), 완료 판정도 `SENDING`에서만(`completeIfSending`) — 팬아웃 중 조기완료 방지. 새 동시성 문제도 같은 패턴을 따를 것.
 - **공개 경로는 `SecurityConfig` permitAll에 명시**: `/api/auth/**`, `/api/health`, `/api/unsubscribe/**`, `/api/track/**`, `/api/webhooks/**`, `/uploads/**`. 나머지는 Bearer 필수, 실패는 401(403이면 프론트 재로그인이 안 뜸).
+- **수신자의 구독 결정은 별도 기록으로 보존** — 전역은 `suppressions`, 리스트 단위는 `list_unsubscribes`(팬아웃이 발송 시점 제외). 멤버십(`list_memberships`)은 운영자의 분류일 뿐 구독 의사가 아니므로 **해지를 멤버십 삭제로 구현하지 말 것**(CSV 재가져오기가 뒤집는다).
 - **공유 DTO는 `mail-common`에 정의하고 `frontend/src/types.ts`에 미러링** — 한쪽만 고치면 안 된다.
 - **설정은 전부 `${ENV_VAR:개발기본값}`** — 로컬은 무설정 동작. 실제 `.env` 커밋 금지. 카탈로그: [.env.example](.env.example).
 - **에디터 상태는 htmlBody 안의 `<!--opblocks/optext:...-->` 마커**로 영속화(발송은 주석 무시, 템플릿 카드는 마커로 에디터 라우팅) — 모델·직렬화기는 `frontend/src/outpace/blocks.ts`. 기본 템플릿 원본은 `mail-core`의 `BuiltinTemplates`(블록 문서 — 디자인 변경 시 프론트 직렬화기로 재생성). 빌트인은 삭제 불가, `POST /api/templates/{id}/reset`으로 복원.

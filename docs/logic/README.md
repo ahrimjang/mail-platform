@@ -22,6 +22,7 @@
 | [06-templates-personalization.md](06-templates-personalization.md) | 템플릿 CRUD와 `{{변수}}` 렌더러 — 캠페인 스냅샷/트랜잭셔널 즉시 렌더, **에디터 3종의 마커 영속화와 이미지 업로드** |
 | [07-contacts-lists.md](07-contacts-lists.md) | 연락처(속성 JSON)·리스트·CSV 임포트 — 리스트 팬아웃 개인화 + **구독 상태 관리와 리스트 라벨(멤버십 교체)** |
 | [08-unit-tests.md](08-unit-tests.md) | 단위 테스트 가이드 — mail-core 전 테스트를 메소드별로 해설 (무엇을, 어떻게 검증하는가) |
+| [09-ab-testing.md](09-ab-testing.md) | A/B 테스트 — 해시 기반 결정적 분배, 홀드아웃(미발행 PENDING), **승자 자동발송**(원자적 claim)과 변형별 지표 |
 
 읽는 순서는 번호 순서가 곧 기능이 쌓인 순서입니다.
 
