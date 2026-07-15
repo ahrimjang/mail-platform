@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import Portal from "../components/Portal";
-import type { ContactListView } from "../types";
+import type { CampaignView, ContactListView } from "../types";
+import { badgeClass, fmt, pctOf } from "../outpace/format";
 
 /* Column template shared by the header and body rows. */
 const COLS = "minmax(0, 1.6fr) minmax(0, 2fr) 90px 100px 110px";
@@ -10,6 +11,27 @@ const COLS = "minmax(0, 1.6fr) minmax(0, 2fr) 90px 100px 110px";
 function dateOf(iso: string): string {
   return new Date(iso).toLocaleDateString("ko-KR");
 }
+
+/* Korean status label of a campaign row inside the expanded panel. */
+function statusLabelOf(c: CampaignView): string {
+  if (c.status === "QUEUED" && c.scheduledAt && new Date(c.scheduledAt).getTime() > Date.now()) return "예약됨";
+  switch (c.status) {
+    case "QUEUED": return "대기 중";
+    case "EXPANDING":
+    case "SENDING": return "발송 중";
+    case "COMPLETED": return "완료";
+    case "CANCELED": return "취소됨";
+    default: return c.status;
+  }
+}
+
+/* Engagement rate over delivered mail; "-" until anything was sent. */
+function rateOf(part: number, sent: number): string {
+  return sent > 0 ? `${Math.round((part / sent) * 1000) / 10}%` : "–";
+}
+
+/* Grid of the expanded per-list campaign rows. */
+const SUB_COLS = "minmax(140px, 2fr) 72px minmax(90px, 1.1fr) 56px 56px 84px 18px";
 
 /* --------------------------- create / edit modal --------------------------- */
 
@@ -115,19 +137,24 @@ function DeleteModal({ target, onClose, onDeleted }: {
 /* ---------------------------------- page ----------------------------------- */
 
 export default function Lists() {
+  const nav = useNavigate();
   const [lists, setLists] = useState<ContactListView[]>([]);
+  const [campaigns, setCampaigns] = useState<CampaignView[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<ContactListView | null>(null);
   const [deleting, setDeleting] = useState<ContactListView | null>(null);
+  // Row expanded to show the campaigns that targeted that list.
+  const [expandedId, setExpandedId] = useState<number | null>(null);
   // ?focus={id} — a shortcut from another page (recipient list chips) highlights that row.
   const [searchParams] = useSearchParams();
   const focusId = Number(searchParams.get("focus")) || null;
 
   const refresh = useCallback(async () => {
     try {
-      const res = await api("/api/lists");
-      if (res.ok) setLists(await res.json());
+      const [lRes, cRes] = await Promise.all([api("/api/lists"), api("/api/campaigns")]);
+      if (lRes.ok) setLists(await lRes.json());
+      if (cRes.ok) setCampaigns(await cRes.json());
     } catch {
       /* transient / unauthorized handled by api() */
     } finally {
@@ -136,6 +163,13 @@ export default function Lists() {
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
+  // Arriving via a focus shortcut opens that list's campaign panel right away.
+  useEffect(() => { if (focusId) setExpandedId(focusId); }, [focusId]);
+
+  const campaignsOf = (listId: number) =>
+    campaigns
+      .filter((c) => c.listId === listId)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   return (
     <div className="op-container op-fade">
@@ -157,25 +191,76 @@ export default function Lists() {
           <span>생성일</span>
           <span />
         </div>
-        {lists.map((l) => (
-          <div
-            key={l.id}
-            className={`op-trow${l.id === focusId ? " focused" : ""}`}
-            style={{ gridTemplateColumns: COLS }}
-            ref={l.id === focusId ? (el) => el?.scrollIntoView({ block: "center" }) : undefined}
-          >
-            <span className="strong">{l.name}</span>
-            <span className="faint" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {l.description || "-"}
-            </span>
-            <span>{l.memberCount.toLocaleString()}명</span>
-            <span className="faint">{dateOf(l.createdAt)}</span>
-            <span className="op-row-actions">
-              <button className="op-linkbtn" style={{ fontSize: 13 }} onClick={() => setEditing(l)}>수정</button>
-              <button className="op-linkbtn" style={{ fontSize: 13, color: "var(--op-red)" }} onClick={() => setDeleting(l)}>삭제</button>
-            </span>
-          </div>
-        ))}
+        {lists.map((l) => {
+          const expanded = expandedId === l.id;
+          const listCampaigns = expanded ? campaignsOf(l.id) : [];
+          return (
+            <div key={l.id}>
+              <div
+                className={`op-trow clickable${l.id === focusId ? " focused" : ""}`}
+                style={{ gridTemplateColumns: COLS }}
+                ref={l.id === focusId ? (el) => el?.scrollIntoView({ block: "center" }) : undefined}
+                onClick={() => setExpandedId(expanded ? null : l.id)}
+              >
+                <span className="strong">
+                  <span className={`op-rowcaret${expanded ? " open" : ""}`}>▸</span>
+                  {l.name}
+                </span>
+                <span className="faint" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {l.description || "-"}
+                </span>
+                <span>{l.memberCount.toLocaleString()}명</span>
+                <span className="faint">{dateOf(l.createdAt)}</span>
+                <span className="op-row-actions">
+                  <button className="op-linkbtn" style={{ fontSize: 13 }} onClick={(e) => { e.stopPropagation(); setEditing(l); }}>수정</button>
+                  <button className="op-linkbtn" style={{ fontSize: 13, color: "var(--op-red)" }} onClick={(e) => { e.stopPropagation(); setDeleting(l); }}>삭제</button>
+                </span>
+              </div>
+              {/* Expanded: campaigns that fanned out to this list, newest first. */}
+              {expanded && (
+                <div className="op-sublist">
+                  {listCampaigns.length === 0 ? (
+                    <div className="op-sublist-empty">이 리스트로 발송한 캠페인이 아직 없어요.</div>
+                  ) : (
+                    <>
+                      <div className="op-sublist-head" style={{ gridTemplateColumns: SUB_COLS }}>
+                        <span>캠페인 ({listCampaigns.length})</span>
+                        <span>상태</span>
+                        <span>발송 진행</span>
+                        <span>오픈율</span>
+                        <span>클릭율</span>
+                        <span>일시</span>
+                        <span />
+                      </div>
+                      {listCampaigns.map((c) => {
+                        const pct = pctOf(c.sent, c.total);
+                        return (
+                          <div
+                            key={c.id}
+                            className="op-sublist-row"
+                            style={{ gridTemplateColumns: SUB_COLS }}
+                            onClick={(e) => { e.stopPropagation(); nav(`/campaigns/${c.id}`); }}
+                          >
+                            <span className="strong op-ell">{c.name ?? c.subject}</span>
+                            <span><span className={`op-badge ${badgeClass(c.status)}`}>{statusLabelOf(c)}</span></span>
+                            <span className="op-minibar">
+                              <span className="op-bar sm"><span className="op-bar-fill" style={{ width: `${pct}%` }} /></span>
+                              <span className="pct">{fmt(c.sent)}/{fmt(c.total)}</span>
+                            </span>
+                            <span>{rateOf(c.opened, c.sent)}</span>
+                            <span>{rateOf(c.clicked, c.sent)}</span>
+                            <span className="faint">{new Date(c.createdAt).toLocaleDateString("ko-KR")}</span>
+                            <span className="go">›</span>
+                          </div>
+                        );
+                      })}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
         {loaded && lists.length === 0 && (
           <div className="op-list-row">
             <span className="meta">아직 리스트가 없어요. 오른쪽 위 버튼으로 첫 리스트를 만들어 보세요.</span>
