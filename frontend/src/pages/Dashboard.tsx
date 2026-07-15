@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import ActivityChart from "../components/ActivityChart";
 import { api } from "../api";
 import type { CampaignView, DashboardDay, DashboardView } from "../types";
 import { useAuth } from "../outpace/auth";
@@ -25,81 +26,6 @@ function mockDaily(): DashboardDay[] {
     });
   }
   return out;
-}
-
-/* --------------------------------- chart ---------------------------------- */
-
-/* Dependency-free daily activity chart: sent as bars, opens/clicks as lines. */
-function ActivityChart({ daily }: { daily: DashboardDay[] }) {
-  const W = 720;
-  const H = 190;
-  const PAD_L = 44;   // room for y labels
-  const PAD_B = 22;   // room for x labels
-  const PAD_T = 10;
-
-  const n = daily.length;
-  const innerW = W - PAD_L - 8;
-  const innerH = H - PAD_T - PAD_B;
-  const slot = innerW / Math.max(n, 1);
-
-  const rawMax = Math.max(1, ...daily.map((d) => d.sent));
-  // Snap the axis top to a round number so gridline labels stay readable.
-  const mag = Math.pow(10, Math.floor(Math.log10(rawMax)));
-  const yMax = Math.ceil(rawMax / mag) * mag;
-
-  const x = (i: number) => PAD_L + i * slot + slot / 2;
-  const y = (v: number) => PAD_T + innerH * (1 - v / yMax);
-
-  const line = (pick: (d: DashboardDay) => number) =>
-    daily.map((d, i) => `${x(i)},${y(pick(d))}`).join(" ");
-
-  const labelEvery = Math.max(1, Math.ceil(n / 7));
-  const dayLabel = (iso: string) => {
-    const d = new Date(`${iso}T00:00:00`);
-    return `${d.getMonth() + 1}/${d.getDate()}`;
-  };
-
-  return (
-    <svg className="op-chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="최근 발송 추이">
-      {/* horizontal gridlines: 0 / 50% / 100% */}
-      {[0, 0.5, 1].map((f) => (
-        <g key={f}>
-          <line x1={PAD_L} x2={W - 8} y1={y(yMax * f)} y2={y(yMax * f)} className="grid" />
-          <text x={PAD_L - 8} y={y(yMax * f) + 4} className="ylabel">{fmt(Math.round(yMax * f))}</text>
-        </g>
-      ))}
-
-      {daily.map((d, i) => {
-        const bw = Math.min(26, slot * 0.5);
-        return (
-          <g key={d.date}>
-            <rect
-              className="bar"
-              x={x(i) - bw / 2}
-              y={y(d.sent)}
-              width={bw}
-              height={Math.max(0, PAD_T + innerH - y(d.sent))}
-              rx={3}
-            >
-              <title>{`${d.date} · 발송 ${fmt(d.sent)} · 오픈 ${fmt(d.opened)} · 클릭 ${fmt(d.clicked)}${d.failed > 0 ? ` · 실패 ${fmt(d.failed)}` : ""}`}</title>
-            </rect>
-            {i % labelEvery === 0 && (
-              <text x={x(i)} y={H - 6} className="xlabel">{dayLabel(d.date)}</text>
-            )}
-          </g>
-        );
-      })}
-
-      <polyline className="line open" points={line((d) => d.opened)} />
-      <polyline className="line click" points={line((d) => d.clicked)} />
-      {daily.map((d, i) => (
-        <g key={`dots-${d.date}`}>
-          <circle className="dot open" cx={x(i)} cy={y(d.opened)} r={2.6} />
-          <circle className="dot click" cx={x(i)} cy={y(d.clicked)} r={2.6} />
-        </g>
-      ))}
-    </svg>
-  );
 }
 
 /* -------------------------------- dashboard -------------------------------- */
@@ -151,10 +77,11 @@ export default function Dashboard() {
   const clickRate = periodSent > 0 ? `${Math.round((periodClicked / periodSent) * 1000) / 10}%` : "–";
 
   const live = rows.find((c) => c.status === "SENDING") ?? null;
+  // Newest first; six cards fill the grid evenly.
   const recent = rows
     .slice()
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    .slice(0, 5);
+    .slice(0, 6);
   const name = (email?.split("@")[0] || "회원");
 
   return (
@@ -240,19 +167,34 @@ export default function Dashboard() {
         {recent.length === 0 ? (
           <div className="op-list-row"><span className="meta">아직 캠페인이 없습니다. ‘새 캠페인’으로 첫 발송을 시작하세요.</span></div>
         ) : (
-          recent.map((c) => (
-            <div key={c.id} className="op-list-row clickable" onClick={() => nav(`/campaigns/${c.id}`)}>
-              <div>
-                <div className="name">{c.subject}</div>
-                <div className="meta">
-                  {fmt(c.total)}명 · {c.status === "QUEUED" ? "대기 중" : `${fmt(c.sent)}건 발송`}
-                  {c.failed > 0 ? ` · ${fmt(c.failed)}건 실패` : ""}
-                  {c.sent > 0 ? ` · 오픈 ${pctOf(c.opened, c.sent)}%` : ""}
+          <div className="op-recent-grid">
+            {recent.map((c) => {
+              const pct = pctOf(c.sent, c.total);
+              return (
+                <div key={c.id} className="op-camp-card" onClick={() => nav(`/campaigns/${c.id}`)}>
+                  <div className="head">
+                    <div className="name">{c.name ?? c.subject}</div>
+                    <span className={`op-badge ${badgeClass(c.status)}`}>
+                      {c.status === "CANCELED" ? "취소됨" : c.status}
+                    </span>
+                  </div>
+                  <div className="meta">
+                    {new Date(c.createdAt).toLocaleDateString("ko-KR")} · 수신자 {fmt(c.total)}명
+                    {c.variants && c.variants.length > 0 ? " · A/B" : ""}
+                  </div>
+                  <div className="op-bar">
+                    <div className="op-bar-fill" style={{ width: `${pct}%` }} />
+                  </div>
+                  <div className="stats">
+                    <span>발송 <b>{fmt(c.sent)}</b></span>
+                    <span>오픈 <b>{c.sent > 0 ? `${pctOf(c.opened, c.sent)}%` : "–"}</b></span>
+                    <span>클릭 <b>{c.sent > 0 ? `${pctOf(c.clicked, c.sent)}%` : "–"}</b></span>
+                    {c.failed > 0 && <span style={{ color: "var(--op-red)" }}>실패 <b>{fmt(c.failed)}</b></span>}
+                  </div>
                 </div>
-              </div>
-              <span className={`op-badge ${badgeClass(c.status)}`}>{c.status}</span>
-            </div>
-          ))
+              );
+            })}
+          </div>
         )}
       </div>
     </div>

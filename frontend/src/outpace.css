@@ -242,6 +242,25 @@ textarea.op-input { height: auto; padding: 13px 15px; line-height: 1.6; resize: 
 .op-seg-opt { flex: 1; text-align: center; padding: 11px 0; font-size: 13.5px; font-weight: 600; color: var(--op-muted); cursor: pointer; border-radius: 9px; }
 .op-seg-opt.active { background: #fff; color: var(--op-ink); font-weight: 700; box-shadow: 0 1px 2px rgba(24, 24, 27, 0.08); }
 
+/* ------- dashboard: recent campaigns as cards ------- */
+.op-recent-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 14px; padding: 16px 20px 20px;
+}
+.op-camp-card {
+  border: 1px solid var(--op-border); border-radius: 12px; padding: 16px;
+  cursor: pointer; background: #fff; transition: border-color 0.12s, box-shadow 0.12s;
+}
+.op-camp-card:hover { border-color: var(--op-primary); box-shadow: var(--op-shadow-card); }
+.op-camp-card .head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+.op-camp-card .name {
+  font-weight: 700; font-size: 14px; color: var(--op-ink); line-height: 1.4; min-width: 0;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.op-camp-card .meta { font-size: 12px; color: var(--op-faint); margin-bottom: 10px; }
+.op-camp-card .stats { display: flex; gap: 12px; margin-top: 10px; font-size: 12.5px; color: var(--op-ink-3); }
+.op-camp-card .stats b { color: var(--op-ink); font-weight: 700; }
+
 /* ------- A/B winner callout (campaign detail) ------- */
 .op-ab-note {
   margin-top: 14px; padding: 12px 16px; border-radius: 11px;
