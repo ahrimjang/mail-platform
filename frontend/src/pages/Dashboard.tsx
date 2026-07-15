@@ -114,6 +114,18 @@ export default function Dashboard() {
   const queued = rows.reduce((a, c) => a + c.pending, 0);
 
   const live = rows.find((c) => c.status === "SENDING") ?? null;
+  // Campaigns whose engagement is still moving: sending/expanding now, or
+  // drained within the last 24h (opens/clicks keep arriving after COMPLETED).
+  // The 5s poll makes their rates effectively live.
+  const engaging = rows
+    .filter((c) => {
+      if (c.id === live?.id) return false; // already featured in the live card
+      if (c.status === "SENDING" || c.status === "EXPANDING") return true;
+      if (c.status !== "COMPLETED" || !c.completedAt) return false;
+      return Date.now() - new Date(c.completedAt).getTime() < 24 * 3600_000;
+    })
+    .sort((a, b) => new Date(b.completedAt ?? b.createdAt).getTime() - new Date(a.completedAt ?? a.createdAt).getTime())
+    .slice(0, 3);
   // Throughput of the live card, derived from consecutive polls: Δsent / Δt.
   const lastLive = useRef<{ id: number; sent: number; at: number } | null>(null);
   const [liveRate, setLiveRate] = useState<number | null>(null);
@@ -211,6 +223,45 @@ export default function Dashboard() {
             <div><div className="k">실패</div><div className="v red">{fmt(live.failed)}</div></div>
             <div><div className="k">처리량</div><div className="v">{liveRate != null ? Math.round(liveRate) : "–"}<span className="unit">/s</span></div></div>
           </div>
+        </div>
+      )}
+
+      {engaging.length > 0 && (
+        <div className="op-card op-engage">
+          <div className="op-engage-head">
+            <span className="op-live-title" style={{ fontSize: 15 }}>
+              <span className="op-pulse" />진행 중인 캠페인
+            </span>
+            <span className="faint" style={{ fontSize: 12 }}>오픈 · 클릭 실시간 집계</span>
+          </div>
+          {engaging.map((c) => {
+            const openPct = c.sent > 0 ? pctOf(c.opened, c.sent) : 0;
+            const clickPct = c.sent > 0 ? pctOf(c.clicked, c.sent) : 0;
+            const done = new Date(c.completedAt ?? c.createdAt);
+            return (
+              <div key={c.id} className="op-engage-row" onClick={() => nav(`/campaigns/${c.id}`)}>
+                <div className="who">
+                  <div className="name">{c.name ?? c.subject}</div>
+                  <div className="sub">
+                    {c.status === "COMPLETED"
+                      ? `발송 완료 ${done.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })} · ${fmt(c.sent)}건`
+                      : `발송 중 · ${fmt(c.sent)}/${fmt(c.total)}건`}
+                  </div>
+                </div>
+                <div className="rate">
+                  <span className="k">오픈율</span>
+                  <span className="op-bar sm"><span className="op-bar-fill" style={{ width: `${Math.min(openPct, 100)}%` }} /></span>
+                  <span className="v">{c.sent > 0 ? `${openPct}%` : "–"}</span>
+                </div>
+                <div className="rate">
+                  <span className="k">클릭율</span>
+                  <span className="op-bar sm green"><span className="op-bar-fill" style={{ width: `${Math.min(clickPct, 100)}%` }} /></span>
+                  <span className="v">{c.sent > 0 ? `${clickPct}%` : "–"}</span>
+                </div>
+                <span className="go">›</span>
+              </div>
+            );
+          })}
         </div>
       )}
 

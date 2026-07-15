@@ -283,6 +283,29 @@ textarea.op-input { height: auto; padding: 13px 15px; line-height: 1.6; resize: 
 }
 .op-metrics4 .v.green { color: var(--op-green); }
 
+/* live engagement card: recently drained campaigns whose opens/clicks are
+   still accruing — the polling loop keeps the rate bars moving. */
+.op-engage { margin-bottom: 18px; }
+.op-engage-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 15px 20px; border-bottom: 1px solid var(--op-divider);
+}
+.op-engage-row {
+  display: grid; grid-template-columns: minmax(160px, 1.4fr) 1fr 1fr 20px;
+  align-items: center; gap: 18px; padding: 13px 20px;
+  border-bottom: 1px solid #fafafa; cursor: pointer; transition: background 0.1s;
+}
+.op-engage-row:last-child { border-bottom: none; }
+.op-engage-row:hover { background: #f8faff; }
+.op-engage-row .name { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.op-engage-row .sub { font-size: 12px; color: var(--op-faint); margin-top: 2px; }
+.op-engage-row .rate { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.op-engage-row .rate .k { font-size: 11.5px; color: var(--op-muted); flex: none; }
+.op-engage-row .rate .v { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; flex: none; width: 42px; text-align: right; }
+.op-engage-row .go { color: var(--op-faint); font-size: 18px; text-align: right; }
+.op-bar.sm { height: 6px; margin-bottom: 0; flex: 1; min-width: 40px; }
+.op-bar.sm.green .op-bar-fill { background: linear-gradient(90deg, #4ade80, #16a34a); box-shadow: 0 0 6px rgba(22, 163, 74, 0.3); }
+
 /* progress bar */
 .op-bar { height: 10px; border-radius: 999px; background: #f1f1f4; overflow: hidden; margin-bottom: 16px; }
 .op-bar-fill { height: 100%; background: var(--op-grad-bar); border-radius: 999px; transition: width 0.5s ease; box-shadow: 0 0 6px rgba(37, 99, 235, 0.35); }
