@@ -6,7 +6,7 @@ import { badgeClass, fmt, pctOf } from "../outpace/format";
 import { MOCK_CAMPAIGNS } from "../outpace/mock";
 
 /* Column template shared by the header and body rows. */
-const COLS = "minmax(140px, 2.4fr) 76px 56px 64px minmax(96px, 1.2fr) 60px 60px 118px";
+const COLS = "minmax(140px, 2fr) minmax(90px, 1.1fr) 76px 56px 64px minmax(90px, 1.1fr) 60px 60px 118px";
 
 type Tab = "all" | "sending" | "scheduled" | "done" | "canceled";
 
@@ -149,6 +149,7 @@ export default function Campaigns() {
       <div className="op-card">
         <div className="op-thead" style={{ gridTemplateColumns: COLS }}>
           <span>캠페인</span>
+          <span>대상</span>
           <span>상태</span>
           <span>A/B</span>
           <span>수신자</span>
@@ -183,6 +184,30 @@ export default function Campaigns() {
                       : `캠페인 #${c.id}`}
                   </div>
                 </div>
+                {/* Audience: the target list (chip links to it) or ad-hoc addresses. */}
+                <span style={{ minWidth: 0 }}>
+                  {c.listId != null ? (
+                    c.listName ? (
+                      <span
+                        className="op-minibadge blue link op-ell"
+                        style={{ display: "inline-block", maxWidth: "100%" }}
+                        title={`'${c.listName}' 리스트 보기${c.segMinOpenPercent != null || c.segMinClickPercent != null
+                          ? ` · 참여도 조건: ${[
+                              c.segMinOpenPercent != null ? `오픈율 ${c.segMinOpenPercent}%+` : null,
+                              c.segMinClickPercent != null ? `클릭율 ${c.segMinClickPercent}%+` : null,
+                            ].filter(Boolean).join(" · ")}`
+                          : ""}`}
+                        onClick={(e) => { e.stopPropagation(); nav(`/lists?focus=${c.listId}`); }}
+                      >
+                        {c.listName}{(c.segMinOpenPercent != null || c.segMinClickPercent != null) ? " ⚡" : ""}
+                      </span>
+                    ) : (
+                      <span className="op-minibadge gray">#{c.listId} (삭제됨)</span>
+                    )
+                  ) : (
+                    <span className="faint">직접 입력</span>
+                  )}
+                </span>
                 <span><span className={`op-badge ${badgeClass(c.status)}`}>{statusLabel(c)}</span></span>
                 {/* A/B campaigns get a chip; once the winner flow decides, it shows who won */}
                 <span>
