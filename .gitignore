@@ -44,5 +44,6 @@ bin/
 /uploads/
 frontend/node_modules/
 frontend/dist/
+frontend/*.tsbuildinfo
 # 실제 환경변수 값 (배포용 — .env.example 참고)
 .env
