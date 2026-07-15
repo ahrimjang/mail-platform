@@ -95,6 +95,13 @@ public class JpaMailMessageRepository implements MailMessageRepository {
     }
 
     @Override
+    public List<ContactSentCount> countSentByContact() {
+        return jpa.countSentByContact().stream()
+                .map(row -> new ContactSentCount((Long) row[0], ((Number) row[1]).longValue()))
+                .toList();
+    }
+
+    @Override
     public List<SendLogBucket> aggregateLogByCampaign(Long campaignId, int bucketSeconds, int limit) {
         return jpa.aggregateLogByCampaign(campaignId, bucketSeconds, limit).stream()
                 .map(row -> new SendLogBucket(

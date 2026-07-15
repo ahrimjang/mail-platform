@@ -106,7 +106,7 @@ class CampaignServiceTest {
 
         CampaignView view = service.create(new CreateCampaignRequest(
                 "Hello", "<p>Hi there</p>", List.of("a@example.com", "b@example.com"), null, null, null, null, null,
-                null, null, null, null, null, null, null, null, null));
+                null, null, null, null, null, null, null, null, null, null, null));
 
         ArgumentCaptor<Campaign> campaignCaptor = ArgumentCaptor.forClass(Campaign.class);
         verify(campaigns).save(campaignCaptor.capture());
@@ -140,7 +140,7 @@ class CampaignServiceTest {
 
         service.create(new CreateCampaignRequest(
                 "Hello", "<p>Hi</p>", List.of("a@example.com", "b@example.com"), null, null, null, null, null,
-                null, null, null, null, null, null, null, null, null));
+                null, null, null, null, null, null, null, null, null, null, null));
 
         verify(mailQueue).enqueue(100L);
         verify(mailQueue).enqueue(101L);
@@ -158,7 +158,7 @@ class CampaignServiceTest {
         // Direct subject/body must be ignored when templateId is present.
         service.create(new CreateCampaignRequest(
                 "ignored subject", "ignored body", List.of("a@example.com"), 7L, null, null, null, null,
-                null, null, null, null, null, null, null, null, null));
+                null, null, null, null, null, null, null, null, null, null, null));
 
         ArgumentCaptor<Campaign> captor = ArgumentCaptor.forClass(Campaign.class);
         verify(campaigns).save(captor.capture());
@@ -171,7 +171,7 @@ class CampaignServiceTest {
         when(templates.findById(99L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.create(new CreateCampaignRequest(
-                null, null, List.of("a@example.com"), 99L, null, null, null, null, null, null, null, null, null, null, null, null, null)))
+                null, null, List.of("a@example.com"), 99L, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null)))
                 .isInstanceOf(NoSuchElementException.class)
                 .hasMessageContaining("99");
 
@@ -187,7 +187,7 @@ class CampaignServiceTest {
         stubViewCounts(0, 0);
 
         service.create(new CreateCampaignRequest(
-                "Subject", "<p>Body</p>", null, null, 5L, null, null, null, null, null, null, null, null, null, null, null, null));
+                "Subject", "<p>Body</p>", null, null, 5L, null, null, null, null, null, null, null, null, null, null, null, null, null, null));
 
         verify(mailQueue).enqueueFanout(CAMPAIGN_ID);
         verifyNoMoreInteractions(mailQueue);
@@ -200,7 +200,7 @@ class CampaignServiceTest {
         when(contacts.countByListId(5L)).thenReturn(0L);
 
         assertThatThrownBy(() -> service.create(new CreateCampaignRequest(
-                "Subject", "<p>Body</p>", null, null, 5L, null, null, null, null, null, null, null, null, null, null, null, null)))
+                "Subject", "<p>Body</p>", null, null, 5L, null, null, null, null, null, null, null, null, null, null, null, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("5");
 
@@ -211,11 +211,11 @@ class CampaignServiceTest {
     @Test
     void create_withBlankSubjectOrBodyAndNoTemplate_throwsIllegalArgument() {
         assertThatThrownBy(() -> service.create(new CreateCampaignRequest(
-                "  ", "<p>Body</p>", List.of("a@example.com"), null, null, null, null, null, null, null, null, null, null, null, null, null, null)))
+                "  ", "<p>Body</p>", List.of("a@example.com"), null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class);
 
         assertThatThrownBy(() -> service.create(new CreateCampaignRequest(
-                "Subject", null, List.of("a@example.com"), null, null, null, null, null, null, null, null, null, null, null, null, null, null)))
+                "Subject", null, List.of("a@example.com"), null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class);
 
         // Validation happens before any persistence or queueing.
@@ -292,7 +292,7 @@ class CampaignServiceTest {
 
         CampaignView view = service.create(new CreateCampaignRequest(
                 "Hello", "<p>Hi</p>", List.of("a@example.com"), null, null,
-                "Acme 팀", "hello@acme.io", null, null, null, null, null, null, null, null, null, null));
+                "Acme 팀", "hello@acme.io", null, null, null, null, null, null, null, null, null, null, null, null));
 
         ArgumentCaptor<Campaign> captor = ArgumentCaptor.forClass(Campaign.class);
         verify(campaigns).save(captor.capture());
@@ -311,7 +311,7 @@ class CampaignServiceTest {
 
         CampaignView view = service.create(new CreateCampaignRequest(
                 "Hello", "<p>Hi</p>", List.of("a@example.com", "b@example.com"), null, null,
-                null, null, later, null, null, null, null, null, null, null, null, null));
+                null, null, later, null, null, null, null, null, null, null, null, null, null, null));
 
         // Messages are persisted as PENDING for the scheduler to release later...
         assertThat(capturedSavedMessages()).hasSize(2);
@@ -332,7 +332,7 @@ class CampaignServiceTest {
 
         service.create(new CreateCampaignRequest(
                 "Hello", "<p>Hi</p>", List.of("a@example.com"), null, null,
-                null, null, Instant.now().minus(1, ChronoUnit.MINUTES), null, null, null, null, null, null, null, null, null));
+                null, null, Instant.now().minus(1, ChronoUnit.MINUTES), null, null, null, null, null, null, null, null, null, null, null));
 
         ArgumentCaptor<Campaign> captor = ArgumentCaptor.forClass(Campaign.class);
         verify(campaigns).save(captor.capture());
@@ -353,7 +353,7 @@ class CampaignServiceTest {
         stubViewCounts(0, 0);
 
         CampaignView view = service.create(new CreateCampaignRequest(
-                null, null, null, 7L, 5L, null, null, null, null, null, null, null, null, null, null, null, null));
+                null, null, null, 7L, 5L, null, null, null, null, null, null, null, null, null, null, null, null, null, null));
 
         ArgumentCaptor<Campaign> captor = ArgumentCaptor.forClass(Campaign.class);
         verify(campaigns).save(captor.capture());
@@ -461,7 +461,7 @@ class CampaignServiceTest {
 
         service.create(new CreateCampaignRequest(
                 "Hello", "<p>A body</p>", List.of(recipientA, recipientB), null, null, null, null, null,
-                "Hello B", "<p>B body</p>", null, null, null, null, null, null, null));
+                "Hello B", "<p>B body</p>", null, null, null, null, null, null, null, null, null));
 
         ArgumentCaptor<Campaign> campaignCaptor = ArgumentCaptor.forClass(Campaign.class);
         verify(campaigns).save(campaignCaptor.capture());
@@ -479,13 +479,13 @@ class CampaignServiceTest {
     void create_abTest_withSplitPercentOutOfRange_throwsIllegalArgument() {
         assertThatThrownBy(() -> service.create(new CreateCampaignRequest(
                 "Hello", "<p>Hi</p>", List.of("a@example.com"), null, null, null, null, null,
-                "Hello B", null, null, 0, null, null, null, null, null)))
+                "Hello B", null, null, 0, null, null, null, null, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("abSplitPercent");
 
         assertThatThrownBy(() -> service.create(new CreateCampaignRequest(
                 "Hello", "<p>Hi</p>", List.of("a@example.com"), null, null, null, null, null,
-                "Hello B", null, null, 100, null, null, null, null, null)))
+                "Hello B", null, null, 100, null, null, null, null, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("abSplitPercent");
 
@@ -504,7 +504,7 @@ class CampaignServiceTest {
         // A/B mirror of how templateId overrides the main subject/body.
         service.create(new CreateCampaignRequest(
                 "Hello", "<p>A body</p>", List.of("a@example.com"), null, null, null, null, null,
-                "ignored B subject", "ignored B body", 8L, null, null, null, null, null, null));
+                "ignored B subject", "ignored B body", 8L, null, null, null, null, null, null, null, null));
 
         ArgumentCaptor<Campaign> captor = ArgumentCaptor.forClass(Campaign.class);
         verify(campaigns).save(captor.capture());
@@ -563,7 +563,7 @@ class CampaignServiceTest {
 
         service.create(new CreateCampaignRequest(
                 "Hello", "<p>A body</p>", List.of(tested, held), null, null, null, null, null,
-                "Hello B", "<p>B body</p>", null, null, 20, "OPEN", 30, null, null));
+                "Hello B", "<p>B body</p>", null, null, 20, "OPEN", 30, null, null, null, null));
 
         ArgumentCaptor<Campaign> campaignCaptor = ArgumentCaptor.forClass(Campaign.class);
         verify(campaigns).save(campaignCaptor.capture());
@@ -594,7 +594,7 @@ class CampaignServiceTest {
 
         service.create(new CreateCampaignRequest(
                 "Hello", "<p>A body</p>", List.of("a@example.com"), null, null, null, null, null,
-                "Hello B", null, null, null, 20, null, null, null, null));
+                "Hello B", null, null, null, 20, null, null, null, null, null, null));
 
         ArgumentCaptor<Campaign> captor = ArgumentCaptor.forClass(Campaign.class);
         verify(campaigns).save(captor.capture());
@@ -606,7 +606,7 @@ class CampaignServiceTest {
     void create_withAbTestPercentButNoBContent_throwsIllegalArgument() {
         assertThatThrownBy(() -> service.create(new CreateCampaignRequest(
                 "Hello", "<p>Hi</p>", List.of("a@example.com"), null, null, null, null, null,
-                null, null, null, null, 20, null, null, null, null)))
+                null, null, null, null, 20, null, null, null, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("A/B content");
 
@@ -617,13 +617,13 @@ class CampaignServiceTest {
     void create_withAbTestPercentOutOfRange_throwsIllegalArgument() {
         assertThatThrownBy(() -> service.create(new CreateCampaignRequest(
                 "Hello", "<p>Hi</p>", List.of("a@example.com"), null, null, null, null, null,
-                "Hello B", null, null, null, 4, null, null, null, null)))
+                "Hello B", null, null, null, 4, null, null, null, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("abTestPercent");
 
         assertThatThrownBy(() -> service.create(new CreateCampaignRequest(
                 "Hello", "<p>Hi</p>", List.of("a@example.com"), null, null, null, null, null,
-                "Hello B", null, null, null, 91, null, null, null, null)))
+                "Hello B", null, null, null, 91, null, null, null, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("abTestPercent");
 
@@ -634,7 +634,7 @@ class CampaignServiceTest {
     void create_withBadEvalMetric_throwsIllegalArgument() {
         assertThatThrownBy(() -> service.create(new CreateCampaignRequest(
                 "Hello", "<p>Hi</p>", List.of("a@example.com"), null, null, null, null, null,
-                "Hello B", null, null, null, 20, "BOUNCE", null, null, null)))
+                "Hello B", null, null, null, 20, "BOUNCE", null, null, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("abEvalMetric");
 
@@ -668,11 +668,11 @@ class CampaignServiceTest {
         stubCampaignSaveAssigningId();
 
         assertThatThrownBy(() -> service.create(new CreateCampaignRequest(
-                "Subject", "<p>Body</p>", List.of(), null, null, null, null, null, null, null, null, null, null, null, null, null, null)))
+                "Subject", "<p>Body</p>", List.of(), null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class);
 
         assertThatThrownBy(() -> service.create(new CreateCampaignRequest(
-                "Subject", "<p>Body</p>", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null)))
+                "Subject", "<p>Body</p>", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class);
 
         verify(messages, never()).saveAll(anyList());

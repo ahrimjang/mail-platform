@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../api";
 import Portal from "../components/Portal";
-import type { CampaignContentView, CampaignView, LinkClicksView, MessageStatus, MessageView, SendLogEntry } from "../types";
+import type { CampaignContentView, CampaignView, ContactListView, LinkClicksView, MessageStatus, MessageView, SendLogEntry } from "../types";
 import { badgeClass, fmt, pctOf } from "../outpace/format";
 import { MOCK_CAMPAIGNS } from "../outpace/mock";
 
@@ -38,6 +38,8 @@ export default function CampaignDetail() {
   const [log, setLog] = useState<SendLogEntry[]>([]);
   const [content, setContent] = useState<CampaignContentView | null>(null);
   const [links, setLinks] = useState<LinkClicksView[] | null>(null);
+  // Current state of the campaign's target list (member count, shortcut).
+  const [targetList, setTargetList] = useState<ContactListView | null>(null);
   const [recipients, setRecipients] = useState<MessageView[] | null>(null);
   // Throughput is derived from consecutive polls: Δsent / Δt.
   const [rate, setRate] = useState<number | null>(null);
@@ -79,6 +81,20 @@ export default function CampaignDetail() {
       .catch(() => { /* link table is best-effort */ });
     return () => { cancelled = true; };
   }, [id]);
+
+  const listId = campaign?.listId ?? null;
+  useEffect(() => {
+    if (listId == null) return;
+    let cancelled = false;
+    api("/api/lists")
+      .then(async (res) => {
+        if (!res.ok || cancelled) return;
+        const all: ContactListView[] = await res.json();
+        setTargetList(all.find((l) => l.id === listId) ?? null);
+      })
+      .catch(() => { /* the audience card falls back to the snapshot name */ });
+    return () => { cancelled = true; };
+  }, [listId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -159,9 +175,6 @@ export default function CampaignDetail() {
   if (campaign.templateId) {
     meta.push(`템플릿: ${campaign.templateName ?? `#${campaign.templateId} (삭제됨)`}`);
   }
-  if (campaign.listId) {
-    meta.push(`리스트: ${campaign.listName ?? `#${campaign.listId} (삭제됨)`}`);
-  }
   meta.push(`생성: ${new Date(campaign.createdAt).toLocaleString("ko-KR")}`);
   if (campaign.scheduledAt) {
     meta.push(`예약: ${new Date(campaign.scheduledAt).toLocaleString("ko-KR")}`);
@@ -198,6 +211,43 @@ export default function CampaignDetail() {
           </button>
         )}
       </div>
+
+      {/* 발송 대상 — 어떤 리스트에, 어떤 조건으로 나갔는지 (애드혹 캠페인은 생략) */}
+      {campaign.listId != null && (
+        <div className="op-card" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <span className="op-log-title" style={{ marginBottom: 0 }}>발송 대상</span>
+          {campaign.listName ? (
+            <span
+              className="op-minibadge blue link"
+              title={`'${campaign.listName}' 리스트 보기`}
+              onClick={() => nav(`/lists?focus=${campaign.listId}`)}
+            >
+              {campaign.listName}
+            </span>
+          ) : (
+            <span className="op-minibadge gray">#{campaign.listId} (삭제됨)</span>
+          )}
+          {targetList && (
+            <span className="meta" style={{ fontSize: 12.5 }}>현재 구독자 {fmt(targetList.memberCount)}명</span>
+          )}
+          <span className="meta" style={{ fontSize: 12.5 }}>이번 발송 대상 {fmt(campaign.total)}명</span>
+          {(campaign.segMinOpenPercent != null || campaign.segMinClickPercent != null) && (
+            <>
+              {campaign.segMinOpenPercent != null && (
+                <span className="op-minibadge amber" title="발송(팬아웃) 시점의 오픈율 기준으로 대상을 좁혔습니다">
+                  오픈율 {campaign.segMinOpenPercent}%+
+                </span>
+              )}
+              {campaign.segMinClickPercent != null && (
+                <span className="op-minibadge amber" title="발송(팬아웃) 시점의 클릭율 기준으로 대상을 좁혔습니다">
+                  클릭율 {campaign.segMinClickPercent}%+
+                </span>
+              )}
+              <span className="faint" style={{ fontSize: 12 }}>참여도 조건은 발송 시점에 평가</span>
+            </>
+          )}
+        </div>
+      )}
 
       {cancelOpen && (
         <Portal>

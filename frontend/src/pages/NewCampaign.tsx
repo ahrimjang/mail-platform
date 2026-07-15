@@ -70,6 +70,24 @@ export default function NewCampaign() {
   const [audienceSource, setAudienceSource] = useState<AudienceSource>("direct");
   const [listId, setListId] = useState<string>("");
   const [lists, setLists] = useState<ContactListView[]>([]);
+  // Engagement segment: narrow the list to members above these rate floors.
+  // Evaluated at fan-out (send) time; the preview below shows today's match.
+  const [segEnabled, setSegEnabled] = useState(false);
+  const [segOpenPct, setSegOpenPct] = useState(25);
+  const [segClickPct, setSegClickPct] = useState(0);
+  const [segPreview, setSegPreview] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!segEnabled || !listId) { setSegPreview(null); return; }
+    let cancelled = false;
+    // Small debounce so slider drags don't fire a request per tick.
+    const timer = window.setTimeout(() => {
+      api(`/api/contacts/engagement?listId=${listId}&minOpenPercent=${segOpenPct}&minClickPercent=${segClickPct}`)
+        .then(async (res) => { if (res.ok && !cancelled) setSegPreview((await res.json()).length); })
+        .catch(() => { /* preview is best-effort */ });
+    }, 300);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [segEnabled, listId, segOpenPct, segClickPct]);
 
   useEffect(() => {
     let cancelled = false;
@@ -156,6 +174,8 @@ export default function NewCampaign() {
           abTestPercent: abEnabled ? abTestPercent : null,
           abEvalMetric: abEnabled ? abMetric : null,
           abEvalWaitMinutes: abEnabled ? abEvalWait : null,
+          segMinOpenPercent: audienceSource === "list" && segEnabled && segOpenPct > 0 ? segOpenPct : null,
+          segMinClickPercent: audienceSource === "list" && segEnabled && segClickPct > 0 ? segClickPct : null,
         }),
       });
       if (!res.ok) {
@@ -325,16 +345,70 @@ export default function NewCampaign() {
             />
           </div>
         ) : (
-          <label className="op-field" style={{ marginBottom: 0 }}>
-            <span className="op-flabel">리스트</span>
-            <select className="op-input" value={listId} onChange={(e) => setListId(e.target.value)}>
-              <option value="">리스트를 선택하세요</option>
-              {lists.map((l) => (
-                <option key={l.id} value={l.id}>{l.name} ({fmt(l.memberCount)}명)</option>
-              ))}
-            </select>
-            {lists.length === 0 && <span className="op-hint">리스트가 없습니다. 리스트 메뉴에서 먼저 만들어 주세요.</span>}
-          </label>
+          <>
+            <label className="op-field" style={{ marginBottom: 0 }}>
+              <span className="op-flabel">리스트</span>
+              <select className="op-input" value={listId} onChange={(e) => setListId(e.target.value)}>
+                <option value="">리스트를 선택하세요</option>
+                {lists.map((l) => (
+                  <option key={l.id} value={l.id}>{l.name} ({fmt(l.memberCount)}명)</option>
+                ))}
+              </select>
+              {lists.length === 0 && <span className="op-hint">리스트가 없습니다. 리스트 메뉴에서 먼저 만들어 주세요.</span>}
+            </label>
+            {listId && (
+              <div className="op-field" style={{ marginTop: 14, marginBottom: 0 }}>
+                <label className="op-check">
+                  <input
+                    type="checkbox"
+                    checked={segEnabled}
+                    onChange={(e) => setSegEnabled(e.target.checked)}
+                  />
+                  참여도 높은 구독자에게만 발송
+                </label>
+                {segEnabled && (
+                  <>
+                    <span className="op-flabel" style={{ marginTop: 14 }}>오픈율 최소</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        step={5}
+                        value={segOpenPct}
+                        onChange={(e) => setSegOpenPct(Number(e.target.value))}
+                        style={{ flex: 1 }}
+                      />
+                      <span className="op-pill" style={{ minWidth: 72, textAlign: "center" }}>
+                        {segOpenPct === 0 ? "제한 없음" : `${segOpenPct}% 이상`}
+                      </span>
+                    </div>
+                    <span className="op-flabel" style={{ marginTop: 12 }}>클릭율 최소</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        step={5}
+                        value={segClickPct}
+                        onChange={(e) => setSegClickPct(Number(e.target.value))}
+                        style={{ flex: 1 }}
+                      />
+                      <span className="op-pill" style={{ minWidth: 72, textAlign: "center" }}>
+                        {segClickPct === 0 ? "제한 없음" : `${segClickPct}% 이상`}
+                      </span>
+                    </div>
+                    <span className="op-hint" style={{ marginTop: 10 }}>
+                      {segPreview !== null && selectedList
+                        ? `현재 기준 예상 대상자 ${fmt(segPreview)}명 / 전체 ${fmt(selectedList.memberCount)}명 — `
+                        : ""}
+                      조건은 발송 시점의 참여도로 평가되고, 발송 이력이 없는 구독자는 제외돼요.
+                    </span>
+                  </>
+                )}
+              </div>
+            )}
+          </>
         )}
       </div>
 

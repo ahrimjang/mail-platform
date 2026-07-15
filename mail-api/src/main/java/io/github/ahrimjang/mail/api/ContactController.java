@@ -1,6 +1,7 @@
 package io.github.ahrimjang.mail.api;
 
 import io.github.ahrimjang.mail.common.ContactActivityView;
+import io.github.ahrimjang.mail.common.ContactEngagementView;
 import io.github.ahrimjang.mail.common.ContactMessageView;
 import io.github.ahrimjang.mail.common.ContactRequest;
 import io.github.ahrimjang.mail.common.ContactView;
@@ -10,6 +11,7 @@ import io.github.ahrimjang.mail.common.UpdateContactListsRequest;
 import io.github.ahrimjang.mail.common.UpdateContactRequest;
 import io.github.ahrimjang.mail.common.UpdateSubscriptionRequest;
 import io.github.ahrimjang.mail.core.service.ContactActivityService;
+import io.github.ahrimjang.mail.core.service.ContactEngagementService;
 import io.github.ahrimjang.mail.core.service.ContactListService;
 import io.github.ahrimjang.mail.core.service.ContactService;
 import io.github.ahrimjang.mail.core.service.SuppressionService;
@@ -43,15 +45,18 @@ public class ContactController {
     private final ContactListService lists;
     private final SuppressionService suppressions;
     private final ContactActivityService activity;
+    private final ContactEngagementService engagement;
 
     public ContactController(ContactService contacts,
                              ContactListService lists,
                              SuppressionService suppressions,
-                             ContactActivityService activity) {
+                             ContactActivityService activity,
+                             ContactEngagementService engagement) {
         this.contacts = contacts;
         this.lists = lists;
         this.suppressions = suppressions;
         this.activity = activity;
+        this.engagement = engagement;
     }
 
     @GetMapping
@@ -75,6 +80,15 @@ public class ContactController {
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         contacts.delete(id);
         return ResponseEntity.noContent().build();
+    }
+
+    /** Engagement summary per contact (deliveries vs opens/clicks), most engaged first. */
+    @GetMapping("/engagement")
+    public List<ContactEngagementView> engagement(@RequestParam(defaultValue = "1") int minSent,
+                                                  @RequestParam(defaultValue = "0") int minOpenPercent,
+                                                  @RequestParam(defaultValue = "0") int minClickPercent,
+                                                  @RequestParam(required = false) Long listId) {
+        return engagement.engagement(minSent, minOpenPercent, minClickPercent, listId);
     }
 
     /** Merged activity timeline, newest first. */

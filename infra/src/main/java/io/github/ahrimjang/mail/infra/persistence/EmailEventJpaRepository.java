@@ -66,6 +66,17 @@ public interface EmailEventJpaRepository extends JpaRepository<EmailEventEntity,
             + "where e.messageId = m.id and m.contactId = ?1 order by e.occurredAt desc")
     java.util.List<Object[]> findRecentByContact(Long contactId, Pageable pageable);
 
+    /**
+     * Distinct engaged messages per contact and event type, joined through the
+     * message rows (events carry the message, not the contact).
+     * Columns: contactId(long), type(EventType), cnt(long).
+     */
+    @Query("select m.contactId, e.type, count(distinct e.messageId) from EmailEventEntity e, MailMessageEntity m "
+            + "where e.messageId = m.id and m.contactId is not null "
+            + "and e.type in (io.github.ahrimjang.mail.common.EventType.OPEN, io.github.ahrimjang.mail.common.EventType.CLICK) "
+            + "group by m.contactId, e.type")
+    java.util.List<Object[]> countEngagementByContact();
+
     /** One campaign's link ranking: raw clicks + distinct clicking messages. */
     @Query("select e.url, count(e), count(distinct e.messageId) from EmailEventEntity e "
             + "where e.campaignId = ?1 and e.type = io.github.ahrimjang.mail.common.EventType.CLICK "

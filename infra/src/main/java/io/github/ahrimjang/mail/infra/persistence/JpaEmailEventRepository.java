@@ -84,4 +84,18 @@ public class JpaEmailEventRepository implements EmailEventRepository {
                         ((Number) row[2]).longValue()))
                 .toList();
     }
+
+    @Override
+    public java.util.List<ContactEngagement> countEngagementByContact() {
+        // Rows come as (contactId, type, count) — fold the two event types into
+        // one record per contact.
+        java.util.Map<Long, long[]> byContact = new java.util.LinkedHashMap<>();
+        for (Object[] row : jpa.countEngagementByContact()) {
+            long[] counts = byContact.computeIfAbsent((Long) row[0], k -> new long[2]);
+            counts[row[1] == EventType.OPEN ? 0 : 1] = ((Number) row[2]).longValue();
+        }
+        return byContact.entrySet().stream()
+                .map(e -> new ContactEngagement(e.getKey(), e.getValue()[0], e.getValue()[1]))
+                .toList();
+    }
 }

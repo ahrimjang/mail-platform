@@ -57,4 +57,14 @@ public interface EmailEventRepository {
     /** One engagement event of a contact: what, on which campaign, when. */
     record ContactEvent(EventType type, String url, java.time.Instant occurredAt, Long campaignId) {
     }
+
+    /**
+     * Distinct opened/clicked message counts per contact (via the messages the
+     * events point at); contacts without any engagement are absent.
+     */
+    java.util.List<ContactEngagement> countEngagementByContact();
+
+    /** One contact's engagement counters (distinct messages per type). */
+    record ContactEngagement(Long contactId, long opened, long clicked) {
+    }
 }

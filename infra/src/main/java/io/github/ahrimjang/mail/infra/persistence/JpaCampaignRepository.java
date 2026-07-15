@@ -100,7 +100,9 @@ public class JpaCampaignRepository implements CampaignRepository {
         return new CampaignEntity(c.getId(), c.getName(), c.getDescription(),
                 c.getSubject(), c.getBody(), c.getStatus(), c.getCreatedAt(),
                 c.getSenderName(), c.getSenderEmail(), c.getScheduledAt(), c.getEnqueuedAt(), c.getCompletedAt(),
-                c.getTemplateId(), c.getListId(), c.getAbSubjectB(), c.getAbBodyB(), c.getAbSplitPercent(),
+                c.getTemplateId(), c.getListId(),
+                c.getSegMinOpenPercent(), c.getSegMinClickPercent(),
+                c.getAbSubjectB(), c.getAbBodyB(), c.getAbSplitPercent(),
                 c.getAbTestPercent(), c.getAbEvalMetric(), c.getAbEvalWaitMinutes(),
                 c.getAbEvaluateAt(), c.getAbWinner());
     }
@@ -121,6 +123,8 @@ public class JpaCampaignRepository implements CampaignRepository {
         c.setCompletedAt(e.getCompletedAt());
         c.setTemplateId(e.getTemplateId());
         c.setListId(e.getListId());
+        c.setSegMinOpenPercent(e.getSegMinOpenPercent());
+        c.setSegMinClickPercent(e.getSegMinClickPercent());
         c.setAbSubjectB(e.getAbSubjectB());
         c.setAbBodyB(e.getAbBodyB());
         c.setAbSplitPercent(e.getAbSplitPercent());

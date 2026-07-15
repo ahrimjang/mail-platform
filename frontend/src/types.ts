@@ -55,6 +55,8 @@ export interface CampaignView {
   scheduledAt: string | null; // requested send time; null = immediate
   enqueuedAt?: string | null;  // when messages were released to the queue (= run start)
   completedAt?: string | null; // when the campaign finished draining; null while in flight/legacy
+  segMinOpenPercent?: number | null;  // engagement segment floor; null = whole list
+  segMinClickPercent?: number | null; // engagement segment floor; null = whole list
   templateId: number | null; // content source (null = authored directly)
   templateName: string | null; // resolved at read time; null if deleted since
   listId: number | null; // audience source (null = raw addresses)
@@ -196,4 +198,15 @@ export interface ContactMessageView {
   campaignName: string | null;
   status: MessageStatus;
   updatedAt: string;
+}
+
+// One contact's engagement summary; rates are derived (opened/sent, clicked/sent).
+export interface ContactEngagementView {
+  contactId: number;
+  email: string;
+  firstName: string | null;
+  lastName: string | null;
+  sent: number;
+  opened: number;
+  clicked: number;
 }

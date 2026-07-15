@@ -5,6 +5,7 @@ import Portal from "../components/Portal";
 import type {
   ContactActivityType,
   ContactActivityView,
+  ContactEngagementView,
   ContactListView,
   ContactMessageView,
   ContactView,
@@ -17,10 +18,32 @@ import type {
 } from "../types";
 
 /* Column template shared by the header and body rows. */
-const COLS = "minmax(0, 2.2fr) minmax(0, 2fr) 110px 110px";
+const COLS = "minmax(0, 2.2fr) minmax(0, 1.7fr) 160px 110px 110px";
 
 function dateOf(iso: string | null): string {
   return iso ? new Date(iso).toLocaleDateString("ko-KR") : "-";
+}
+
+/* Engagement filter presets: threshold percentages over delivered mail. */
+const ENG_FILTERS: Record<string, { label: string; minOpenPercent: number; minClickPercent: number }> = {
+  open25: { label: "오픈율 25% 이상", minOpenPercent: 25, minClickPercent: 0 },
+  open50: { label: "오픈율 50% 이상", minOpenPercent: 50, minClickPercent: 0 },
+  open75: { label: "오픈율 75% 이상", minOpenPercent: 75, minClickPercent: 0 },
+  click10: { label: "클릭율 10% 이상", minOpenPercent: 0, minClickPercent: 10 },
+  click25: { label: "클릭율 25% 이상", minOpenPercent: 0, minClickPercent: 25 },
+  click50: { label: "클릭율 50% 이상", minOpenPercent: 0, minClickPercent: 50 },
+};
+
+/* Rounded percentage 0..100, mirroring the server's filter math. */
+function pctOfEng(part: number, whole: number): number {
+  return whole === 0 ? 0 : Math.round((part / whole) * 100);
+}
+
+function engMatches(e: ContactEngagementView | undefined, key: string): boolean {
+  const f = ENG_FILTERS[key];
+  if (!f) return true;
+  if (!e || e.sent === 0) return false; // no deliveries — no rate to compare
+  return pctOfEng(e.opened, e.sent) >= f.minOpenPercent && pctOfEng(e.clicked, e.sent) >= f.minClickPercent;
 }
 
 /* Badge tone + Korean label per activity timeline row type. */
@@ -504,14 +527,22 @@ export default function Recipients() {
   const [query, setQuery] = useState("");
   const [listFilter, setListFilter] = useState<string>("all"); // "all" | "none" | list id
   const [subFilter, setSubFilter] = useState<"all" | "active" | "suppressed">("all");
+  const [engFilter, setEngFilter] = useState<string>("all"); // "all" | ENG_FILTERS key
+  const [engagement, setEngagement] = useState<Record<number, ContactEngagementView>>({});
 
   const refresh = useCallback(async () => {
     try {
-      const [cRes, lRes] = await Promise.all([api("/api/contacts"), api("/api/lists")]);
+      const [cRes, lRes, eRes] = await Promise.all([
+        api("/api/contacts"), api("/api/lists"), api("/api/contacts/engagement"),
+      ]);
       const nextContacts: ContactView[] = cRes.ok ? await cRes.json() : [];
       const nextLists: ContactListView[] = lRes.ok ? await lRes.json() : [];
       setContacts(nextContacts);
       setLists(nextLists);
+      if (eRes.ok) {
+        const rows: ContactEngagementView[] = await eRes.json();
+        setEngagement(Object.fromEntries(rows.map((r) => [r.contactId, r])));
+      }
 
       // One parallel pass for per-contact subscription + memberships (POC scale).
       const details = await Promise.all(nextContacts.map(async (c) => {
@@ -556,7 +587,7 @@ export default function Recipients() {
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return contacts.filter((c) => {
+    const filtered = contacts.filter((c) => {
       if (q) {
         const name = [c.lastName, c.firstName].filter(Boolean).join("");
         if (!c.email.toLowerCase().includes(q) && !name.toLowerCase().includes(q)) return false;
@@ -570,10 +601,22 @@ export default function Recipients() {
         if (!sub) return false;
         if (subFilter === "suppressed" ? !sub.suppressed : sub.suppressed) return false;
       }
+      if (engFilter !== "all" && !engMatches(engagement[c.id], engFilter)) return false;
       return true;
     });
-  }, [contacts, query, listFilter, subFilter, memberships, subs]);
-  const filtering = query.trim() !== "" || listFilter !== "all" || subFilter !== "all";
+    if (engFilter !== "all") {
+      // Most engaged first while the filter is on (same order the server ranks by).
+      filtered.sort((a, b) => {
+        const ea = engagement[a.id], eb = engagement[b.id];
+        const key = (e: ContactEngagementView | undefined) => e && e.sent > 0
+          ? [pctOfEng(e.clicked, e.sent), pctOfEng(e.opened, e.sent), e.sent] : [0, 0, 0];
+        const ka = key(ea), kb = key(eb);
+        return kb[0] - ka[0] || kb[1] - ka[1] || kb[2] - ka[2];
+      });
+    }
+    return filtered;
+  }, [contacts, query, listFilter, subFilter, engFilter, memberships, subs, engagement]);
+  const filtering = query.trim() !== "" || listFilter !== "all" || subFilter !== "all" || engFilter !== "all";
 
   return (
     <div className="op-container op-fade">
@@ -608,10 +651,14 @@ export default function Recipients() {
           <option value="active">활성</option>
           <option value="suppressed">수신거부</option>
         </select>
+        <select className="op-input" style={{ maxWidth: 170 }} value={engFilter} onChange={(e) => setEngFilter(e.target.value)}>
+          <option value="all">참여도 전체</option>
+          {Object.entries(ENG_FILTERS).map(([k, f]) => <option key={k} value={k}>{f.label}</option>)}
+        </select>
         {filtering && (
           <span className="faint" style={{ fontSize: 13 }}>
             {visible.length}명 표시 · <button className="op-linkbtn" style={{ fontSize: 13 }}
-              onClick={() => { setQuery(""); setListFilter("all"); setSubFilter("all"); }}>필터 초기화</button>
+              onClick={() => { setQuery(""); setListFilter("all"); setSubFilter("all"); setEngFilter("all"); }}>필터 초기화</button>
           </span>
         )}
       </div>
@@ -620,6 +667,7 @@ export default function Recipients() {
         <div className="op-thead" style={{ gridTemplateColumns: COLS }}>
           <span>이메일</span>
           <span>리스트</span>
+          <span>참여도</span>
           <span>구독 상태</span>
           <span>생성일</span>
         </div>
@@ -649,6 +697,16 @@ export default function Recipients() {
               })}
               {(memberships[c.id] ?? []).length === 0 && <span className="faint">-</span>}
             </span>
+            {(() => {
+              const e = engagement[c.id];
+              return e && e.sent > 0 ? (
+                <span style={{ fontSize: 12.5 }} title={`발송 ${e.sent} · 오픈 ${e.opened} · 클릭 ${e.clicked}`}>
+                  오픈 {pctOfEng(e.opened, e.sent)}% · 클릭 {pctOfEng(e.clicked, e.sent)}%
+                </span>
+              ) : (
+                <span className="faint" title="아직 발송된 메일이 없어요">-</span>
+              );
+            })()}
             <span><SubBadge sub={subs[c.id]} /></span>
             <span className="faint">{dateOf(c.createdAt)}</span>
           </div>

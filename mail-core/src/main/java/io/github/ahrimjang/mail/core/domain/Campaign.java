@@ -31,6 +31,11 @@ public class Campaign {
     // kept for display even if the template or list is deleted later.
     private Long templateId;
     private Long listId;
+    // Engagement segment (list campaigns only): fan-out keeps a member only if
+    // their open/click rate over delivered mail clears these floors, evaluated
+    // at fan-out time. Null = no condition.
+    private Integer segMinOpenPercent;
+    private Integer segMinClickPercent;
     // A/B split test: variant B content and the share of recipients getting it.
     // Either B field non-null makes the campaign an A/B test.
     private String abSubjectB;
@@ -168,6 +173,27 @@ public class Campaign {
 
     public void setListId(Long listId) {
         this.listId = listId;
+    }
+
+    /** True when fan-out should filter the list by engagement rates. */
+    public boolean hasEngagementSegment() {
+        return segMinOpenPercent != null || segMinClickPercent != null;
+    }
+
+    public Integer getSegMinOpenPercent() {
+        return segMinOpenPercent;
+    }
+
+    public void setSegMinOpenPercent(Integer segMinOpenPercent) {
+        this.segMinOpenPercent = segMinOpenPercent;
+    }
+
+    public Integer getSegMinClickPercent() {
+        return segMinClickPercent;
+    }
+
+    public void setSegMinClickPercent(Integer segMinClickPercent) {
+        this.segMinClickPercent = segMinClickPercent;
     }
 
     /** True when the campaign carries any variant B content (subject and/or body). */

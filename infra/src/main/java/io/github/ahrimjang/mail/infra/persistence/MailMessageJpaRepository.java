@@ -67,6 +67,12 @@ public interface MailMessageJpaRepository extends JpaRepository<MailMessageEntit
     java.util.List<MailMessageEntity> findRecentByContact(@Param("contactId") Long contactId,
                                                           org.springframework.data.domain.Pageable pageable);
 
+    /** Delivered-mail count per contact (only list-campaign sends carry a contactId). */
+    @Query("select m.contactId, count(m) from MailMessageEntity m "
+            + "where m.contactId is not null and m.status = io.github.ahrimjang.mail.common.MessageStatus.SENT "
+            + "group by m.contactId")
+    java.util.List<Object[]> countSentByContact();
+
     /**
      * Grouped send log: collapse state changes into fixed time buckets per status,
      * newest bucket first. Aggregation happens in the database so the result stays

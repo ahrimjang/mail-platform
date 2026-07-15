@@ -47,6 +47,8 @@ public record CampaignView(
         String templateName,
         Long listId,
         String listName,
+        Integer segMinOpenPercent,
+        Integer segMinClickPercent,
         Integer abTestPercent,
         String abEvalMetric,
         String abWinner,

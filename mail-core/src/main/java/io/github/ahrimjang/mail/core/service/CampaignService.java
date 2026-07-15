@@ -90,6 +90,16 @@ public class CampaignService {
         campaign.setEnqueuedAt(deferred ? null : now);
         campaign.setTemplateId(request.templateId());
         campaign.setListId(request.listId());
+        // Engagement segment: narrow the list to members whose open/click rate
+        // clears the floors. Evaluated at fan-out time, so scheduled campaigns
+        // use engagement as of the release, not as of authoring.
+        if (request.segMinOpenPercent() != null || request.segMinClickPercent() != null) {
+            if (request.listId() == null) {
+                throw new IllegalArgumentException("engagement segment requires a listId");
+            }
+            campaign.setSegMinOpenPercent(requirePercent(request.segMinOpenPercent(), "segMinOpenPercent"));
+            campaign.setSegMinClickPercent(requirePercent(request.segMinClickPercent(), "segMinClickPercent"));
+        }
         // A/B split test: any non-blank B content makes this an A/B campaign.
         // Variant B mirrors the main content sourcing — direct subject/body or a
         // template snapshotted at create time.
@@ -176,6 +186,17 @@ public class CampaignService {
         }
 
         return toView(saved);
+    }
+
+    /** Null passes through (no floor on that metric); otherwise must be 1..100. */
+    private static Integer requirePercent(Integer percent, String field) {
+        if (percent == null) {
+            return null;
+        }
+        if (percent < 1 || percent > 100) {
+            throw new IllegalArgumentException(field + " must be between 1 and 100");
+        }
+        return percent;
     }
 
     private static String blankToNull(String s) {
@@ -290,6 +311,8 @@ public class CampaignService {
                 templateName,
                 campaign.getListId(),
                 listName,
+                campaign.getSegMinOpenPercent(),
+                campaign.getSegMinClickPercent(),
                 campaign.getAbTestPercent(),
                 campaign.getAbEvalMetric(),
                 campaign.getAbWinner(),

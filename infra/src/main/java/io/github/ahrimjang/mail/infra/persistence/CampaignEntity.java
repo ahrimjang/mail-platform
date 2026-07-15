@@ -61,6 +61,14 @@ public class CampaignEntity {
     /** Contact list the recipients were fanned out from; null = raw addresses. */
     private Long listId;
 
+    /** Engagement segment floor: minimum open rate percent; null = no condition. */
+    @Column(name = "seg_min_open_percent")
+    private Integer segMinOpenPercent;
+
+    /** Engagement segment floor: minimum click rate percent; null = no condition. */
+    @Column(name = "seg_min_click_percent")
+    private Integer segMinClickPercent;
+
     // Explicit column names: the default naming strategy maps the trailing
     // capital (abBodyB -> ab_bodyb) and would miss the migration's ab_body_b.
     /** A/B variant B subject; null = no subject test. */
@@ -101,7 +109,9 @@ public class CampaignEntity {
     public CampaignEntity(Long id, String name, String description, String subject, String body,
                           CampaignStatus status, Instant createdAt,
                           String senderName, String senderEmail, Instant scheduledAt, Instant enqueuedAt,
-                          Instant completedAt, Long templateId, Long listId, String abSubjectB, String abBodyB, Integer abSplitPercent,
+                          Instant completedAt, Long templateId, Long listId,
+                          Integer segMinOpenPercent, Integer segMinClickPercent,
+                          String abSubjectB, String abBodyB, Integer abSplitPercent,
                           Integer abTestPercent, String abEvalMetric, Integer abEvalWaitMinutes,
                           Instant abEvaluateAt, String abWinner) {
         this.id = id;
@@ -118,6 +128,8 @@ public class CampaignEntity {
         this.completedAt = completedAt;
         this.templateId = templateId;
         this.listId = listId;
+        this.segMinOpenPercent = segMinOpenPercent;
+        this.segMinClickPercent = segMinClickPercent;
         this.abSubjectB = abSubjectB;
         this.abBodyB = abBodyB;
         this.abSplitPercent = abSplitPercent;
@@ -186,6 +198,14 @@ public class CampaignEntity {
 
     public Long getListId() {
         return listId;
+    }
+
+    public Integer getSegMinOpenPercent() {
+        return segMinOpenPercent;
+    }
+
+    public Integer getSegMinClickPercent() {
+        return segMinClickPercent;
     }
 
     public String getAbSubjectB() {

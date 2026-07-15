@@ -37,6 +37,10 @@ import java.util.List;
  * @param name        optional display name shown in the console — null falls
  *                    back to the subject
  * @param description optional free-form description of the campaign's purpose
+ * @param segMinOpenPercent  optional engagement floor (list campaigns only): fan-out
+ *                    keeps a member only if their open rate is at least this percent
+ * @param segMinClickPercent optional engagement floor (list campaigns only): same
+ *                    for the click rate
  */
 public record CreateCampaignRequest(
         String subject,
@@ -55,6 +59,8 @@ public record CreateCampaignRequest(
         String abEvalMetric,
         Integer abEvalWaitMinutes,
         String name,
-        String description
+        String description,
+        Integer segMinOpenPercent,
+        Integer segMinClickPercent
 ) {
 }

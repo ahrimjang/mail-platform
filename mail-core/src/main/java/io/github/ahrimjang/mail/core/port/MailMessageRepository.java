@@ -73,6 +73,13 @@ public interface MailMessageRepository {
     /** This contact's deliveries, newest first. */
     List<MailMessage> findRecentByContact(Long contactId, int limit);
 
+    /** Delivered (SENT) mail count per contact; contacts with none are absent. */
+    List<ContactSentCount> countSentByContact();
+
+    /** One contact's delivered-mail count. */
+    record ContactSentCount(Long contactId, long sent) {
+    }
+
     /**
      * Send log aggregated into fixed time buckets: one row per (bucket, status)
      * with a count, newest bucket first. The database does the grouping so the

@@ -5,6 +5,7 @@ import io.github.ahrimjang.mail.core.domain.Contact;
 import io.github.ahrimjang.mail.core.domain.MailMessage;
 import io.github.ahrimjang.mail.core.port.CampaignRepository;
 import io.github.ahrimjang.mail.core.port.ContactRepository;
+import io.github.ahrimjang.mail.core.port.EmailEventRepository;
 import io.github.ahrimjang.mail.core.port.MailMessageRepository;
 import io.github.ahrimjang.mail.core.port.MailQueue;
 import org.slf4j.Logger;
@@ -14,6 +15,9 @@ import org.springframework.stereotype.Service;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * Expands a list campaign's recipients into the send queue, asynchronously and in
@@ -40,13 +44,15 @@ public class CampaignFanoutService {
     private final CampaignRepository campaigns;
     private final MailMessageRepository messages;
     private final ContactRepository contacts;
+    private final EmailEventRepository events;
     private final MailQueue mailQueue;
 
     public CampaignFanoutService(CampaignRepository campaigns, MailMessageRepository messages,
-                                 ContactRepository contacts, MailQueue mailQueue) {
+                                 ContactRepository contacts, EmailEventRepository events, MailQueue mailQueue) {
         this.campaigns = campaigns;
         this.messages = messages;
         this.contacts = contacts;
+        this.events = events;
         this.mailQueue = mailQueue;
     }
 
@@ -64,6 +70,9 @@ public class CampaignFanoutService {
             return;
         }
         Long listId = campaign.getListId();
+        // Engagement segment: evaluated here (not at authoring) so a scheduled
+        // campaign filters on rates as of the release. Loaded once per fan-out.
+        EngagementFilter segment = EngagementFilter.of(campaign, messages, events);
 
         long afterId = 0L;
         long total = 0;
@@ -73,6 +82,7 @@ public class CampaignFanoutService {
                 break;
             }
             List<MailMessage> batch = page.stream()
+                    .filter(segment::test)
                     .map(c -> {
                         MailMessage m = MailMessage.queued(campaignId, c.getEmail(), c.getId());
                         if (campaign.isAbTest()) {
@@ -84,7 +94,7 @@ public class CampaignFanoutService {
                         return m;
                     })
                     .toList();
-            List<MailMessage> saved = messages.saveAll(batch);
+            List<MailMessage> saved = batch.isEmpty() ? List.of() : messages.saveAll(batch);
             // Winner flow only enqueues the test batch: held rows (variant null)
             // stay PENDING until the winner is decided.
             saved.stream()
@@ -110,5 +120,52 @@ public class CampaignFanoutService {
             campaigns.completeIfSending(campaignId);
         }
         log.info("fanned out campaign {} into {} messages", campaignId, total);
+    }
+
+    /**
+     * Per-contact engagement predicate of one fan-out run. Rates are distinct
+     * opened/clicked messages over SENT deliveries; contacts with no delivery
+     * history have no rate and are excluded when a floor is set (an engagement
+     * segment means "proven readers", which a fresh member cannot be yet).
+     */
+    private record EngagementFilter(Integer minOpenPercent, Integer minClickPercent,
+                                    Map<Long, Long> sentByContact,
+                                    Map<Long, EmailEventRepository.ContactEngagement> engagedByContact) {
+
+        static EngagementFilter of(Campaign campaign, MailMessageRepository messages, EmailEventRepository events) {
+            if (!campaign.hasEngagementSegment()) {
+                return new EngagementFilter(null, null, Map.of(), Map.of());
+            }
+            return new EngagementFilter(
+                    campaign.getSegMinOpenPercent(),
+                    campaign.getSegMinClickPercent(),
+                    messages.countSentByContact().stream()
+                            .collect(Collectors.toMap(
+                                    MailMessageRepository.ContactSentCount::contactId,
+                                    MailMessageRepository.ContactSentCount::sent)),
+                    events.countEngagementByContact().stream()
+                            .collect(Collectors.toMap(
+                                    EmailEventRepository.ContactEngagement::contactId,
+                                    Function.identity())));
+        }
+
+        boolean test(Contact contact) {
+            if (minOpenPercent == null && minClickPercent == null) {
+                return true;
+            }
+            long sent = sentByContact.getOrDefault(contact.getId(), 0L);
+            if (sent == 0) {
+                return false;
+            }
+            EmailEventRepository.ContactEngagement engaged = engagedByContact.get(contact.getId());
+            long opened = engaged == null ? 0 : engaged.opened();
+            long clicked = engaged == null ? 0 : engaged.clicked();
+            return (minOpenPercent == null || percentOf(opened, sent) >= minOpenPercent)
+                    && (minClickPercent == null || percentOf(clicked, sent) >= minClickPercent);
+        }
+
+        private static int percentOf(long part, long whole) {
+            return whole == 0 ? 0 : (int) Math.round(part * 100.0 / whole);
+        }
     }
 }

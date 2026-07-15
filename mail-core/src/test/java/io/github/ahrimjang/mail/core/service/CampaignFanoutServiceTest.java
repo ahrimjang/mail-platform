@@ -5,6 +5,7 @@ import io.github.ahrimjang.mail.core.domain.Contact;
 import io.github.ahrimjang.mail.core.domain.MailMessage;
 import io.github.ahrimjang.mail.core.port.CampaignRepository;
 import io.github.ahrimjang.mail.core.port.ContactRepository;
+import io.github.ahrimjang.mail.core.port.EmailEventRepository;
 import io.github.ahrimjang.mail.core.port.MailMessageRepository;
 import io.github.ahrimjang.mail.core.port.MailQueue;
 import org.junit.jupiter.api.Test;
@@ -42,6 +43,8 @@ class CampaignFanoutServiceTest {
     private MailMessageRepository messages;
     @Mock
     private ContactRepository contacts;
+    @Mock
+    private EmailEventRepository events;
     @Mock
     private MailQueue mailQueue;
 
@@ -173,5 +176,45 @@ class CampaignFanoutServiceTest {
         verifyNoInteractions(mailQueue);
         verify(campaigns).markExpanded(CAMPAIGN_ID);
         verify(campaigns).completeIfSending(CAMPAIGN_ID);
+    }
+
+    @Test
+    void expand_engagementSegment_skipsMembersBelowTheFloorsAndNeverDeliveredOnes() {
+        Campaign seg = listCampaign();
+        seg.setSegMinOpenPercent(50);
+        when(campaigns.claimForFanout(CAMPAIGN_ID)).thenReturn(true);
+        when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(seg));
+        // Contact 1: 2/2 opens (100%), contact 2: 0 opens, contact 3: never delivered.
+        when(contacts.findSubscribedByListIdAfter(eq(LIST_ID), eq(0L), eq(PAGE)))
+                .thenReturn(contactPage(1L, 3));
+        when(messages.countSentByContact()).thenReturn(List.of(
+                new MailMessageRepository.ContactSentCount(1L, 2),
+                new MailMessageRepository.ContactSentCount(2L, 2)));
+        when(events.countEngagementByContact()).thenReturn(List.of(
+                new EmailEventRepository.ContactEngagement(1L, 2, 0)));
+        stubSaveAllAssigningIds();
+        when(messages.hasPendingOrSending(CAMPAIGN_ID)).thenReturn(true);
+
+        service.expand(CAMPAIGN_ID);
+
+        ArgumentCaptor<List<MailMessage>> captor = ArgumentCaptor.forClass(List.class);
+        verify(messages).saveAll(captor.capture());
+        assertThat(captor.getValue()).extracting(MailMessage::getContactId).containsExactly(1L);
+        verify(mailQueue, times(1)).enqueue(anyLong());
+    }
+
+    @Test
+    void expand_withoutSegment_neverLoadsEngagementAggregates() {
+        when(campaigns.claimForFanout(CAMPAIGN_ID)).thenReturn(true);
+        when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(listCampaign()));
+        when(contacts.findSubscribedByListIdAfter(eq(LIST_ID), eq(0L), eq(PAGE)))
+                .thenReturn(contactPage(1L, 2));
+        stubSaveAllAssigningIds();
+        when(messages.hasPendingOrSending(CAMPAIGN_ID)).thenReturn(true);
+
+        service.expand(CAMPAIGN_ID);
+
+        verifyNoInteractions(events);
+        verify(messages, never()).countSentByContact();
     }
 }
