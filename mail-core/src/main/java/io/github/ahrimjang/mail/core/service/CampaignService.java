@@ -5,6 +5,7 @@ import io.github.ahrimjang.mail.common.CampaignStatus;
 import io.github.ahrimjang.mail.common.CampaignView;
 import io.github.ahrimjang.mail.common.CreateCampaignRequest;
 import io.github.ahrimjang.mail.common.EventType;
+import io.github.ahrimjang.mail.common.LinkClicksView;
 import io.github.ahrimjang.mail.common.MessageView;
 import io.github.ahrimjang.mail.common.SendLogEntry;
 import io.github.ahrimjang.mail.core.domain.Campaign;
@@ -212,6 +213,16 @@ public class CampaignService {
         return get(id);
     }
 
+    /** This campaign's clicked links, best first (tracked click URLs from the event stream). */
+    public List<LinkClicksView> linkClicks(Long id, int limit) {
+        campaigns.findById(id)
+                .orElseThrow(() -> new NoSuchElementException("campaign not found: " + id));
+        int capped = Math.max(1, Math.min(50, limit));
+        return events.linkClicksByCampaign(id, capped).stream()
+                .map(l -> new LinkClicksView(l.url(), l.clicks(), l.uniqueMessages()))
+                .toList();
+    }
+
     /** The mail this campaign sends (subject + raw HTML body snapshot, A/B variant B included). */
     public CampaignContentView content(Long id) {
         Campaign campaign = campaigns.findById(id)
@@ -274,6 +285,7 @@ public class CampaignService {
                 campaign.getSenderName(),
                 campaign.getSenderEmail(),
                 campaign.getScheduledAt(),
+                campaign.getEnqueuedAt(), campaign.getCompletedAt(),
                 campaign.getTemplateId(),
                 templateName,
                 campaign.getListId(),

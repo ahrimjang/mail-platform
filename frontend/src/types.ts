@@ -53,6 +53,8 @@ export interface CampaignView {
   senderName: string | null; // From display name (null = SMTP default)
   senderEmail: string | null; // From address (null = SMTP default)
   scheduledAt: string | null; // requested send time; null = immediate
+  enqueuedAt?: string | null;  // when messages were released to the queue (= run start)
+  completedAt?: string | null; // when the campaign finished draining; null while in flight/legacy
   templateId: number | null; // content source (null = authored directly)
   templateName: string | null; // resolved at read time; null if deleted since
   listId: number | null; // audience source (null = raw addresses)

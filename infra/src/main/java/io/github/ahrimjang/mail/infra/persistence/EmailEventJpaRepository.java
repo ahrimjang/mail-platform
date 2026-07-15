@@ -66,4 +66,9 @@ public interface EmailEventJpaRepository extends JpaRepository<EmailEventEntity,
             + "where e.messageId = m.id and m.contactId = ?1 order by e.occurredAt desc")
     java.util.List<Object[]> findRecentByContact(Long contactId, Pageable pageable);
 
+    /** One campaign's link ranking: raw clicks + distinct clicking messages. */
+    @Query("select e.url, count(e), count(distinct e.messageId) from EmailEventEntity e "
+            + "where e.campaignId = ?1 and e.type = io.github.ahrimjang.mail.common.EventType.CLICK "
+            + "and e.url is not null group by e.url order by count(e) desc")
+    java.util.List<Object[]> linkClicksByCampaign(Long campaignId, Pageable pageable);
 }

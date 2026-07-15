@@ -1,6 +1,7 @@
 package io.github.ahrimjang.mail.api;
 
 import io.github.ahrimjang.mail.common.CampaignView;
+import io.github.ahrimjang.mail.common.LinkClicksView;
 import io.github.ahrimjang.mail.common.CreateCampaignRequest;
 import io.github.ahrimjang.mail.common.MessageView;
 import io.github.ahrimjang.mail.common.SendLogEntry;
@@ -61,6 +62,13 @@ public class CampaignController {
     }
 
     /** The mail this campaign sends: subject + HTML body snapshot (heavy — not part of the polled view). */
+    /** This campaign's clicked links, best first. */
+    @GetMapping("/{id}/links")
+    public java.util.List<LinkClicksView> links(@PathVariable Long id,
+                                                @RequestParam(defaultValue = "20") int limit) {
+        return campaigns.linkClicks(id, limit);
+    }
+
     @GetMapping("/{id}/content")
     public io.github.ahrimjang.mail.common.CampaignContentView content(@PathVariable Long id) {
         return campaigns.content(id);

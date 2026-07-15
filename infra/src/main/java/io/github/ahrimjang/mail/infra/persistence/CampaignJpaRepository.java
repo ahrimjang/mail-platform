@@ -61,9 +61,10 @@ public interface CampaignJpaRepository extends JpaRepository<CampaignEntity, Lon
 
     @Modifying
     @Transactional
-    @Query("update CampaignEntity c set c.status = io.github.ahrimjang.mail.common.CampaignStatus.COMPLETED "
+    @Query("update CampaignEntity c set c.status = io.github.ahrimjang.mail.common.CampaignStatus.COMPLETED, "
+            + "c.completedAt = :now "
             + "where c.id = :id and c.status = io.github.ahrimjang.mail.common.CampaignStatus.SENDING")
-    int completeIfSending(@Param("id") Long id);
+    int completeIfSending(@Param("id") Long id, @Param("now") Instant now);
 
     /** Winner-flow campaigns due for evaluation: no winner yet, evaluate time passed. */
     @Query("select c from CampaignEntity c where c.abWinner is null and c.abEvaluateAt is not null "

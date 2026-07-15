@@ -52,6 +52,9 @@ public class CampaignEntity {
     /** When messages were released to the queue; null = awaiting the scheduler. */
     private Instant enqueuedAt;
 
+    /** When the campaign finished draining; null while in flight (or legacy rows). */
+    private Instant completedAt;
+
     /** Template the content was snapshotted from; null = authored directly. */
     private Long templateId;
 
@@ -98,7 +101,7 @@ public class CampaignEntity {
     public CampaignEntity(Long id, String name, String description, String subject, String body,
                           CampaignStatus status, Instant createdAt,
                           String senderName, String senderEmail, Instant scheduledAt, Instant enqueuedAt,
-                          Long templateId, Long listId, String abSubjectB, String abBodyB, Integer abSplitPercent,
+                          Instant completedAt, Long templateId, Long listId, String abSubjectB, String abBodyB, Integer abSplitPercent,
                           Integer abTestPercent, String abEvalMetric, Integer abEvalWaitMinutes,
                           Instant abEvaluateAt, String abWinner) {
         this.id = id;
@@ -112,6 +115,7 @@ public class CampaignEntity {
         this.senderEmail = senderEmail;
         this.scheduledAt = scheduledAt;
         this.enqueuedAt = enqueuedAt;
+        this.completedAt = completedAt;
         this.templateId = templateId;
         this.listId = listId;
         this.abSubjectB = abSubjectB;
@@ -170,6 +174,10 @@ public class CampaignEntity {
 
     public Instant getEnqueuedAt() {
         return enqueuedAt;
+    }
+
+    public Instant getCompletedAt() {
+        return completedAt;
     }
 
     public Long getTemplateId() {

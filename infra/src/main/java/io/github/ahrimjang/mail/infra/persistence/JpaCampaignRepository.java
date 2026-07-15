@@ -78,7 +78,7 @@ public class JpaCampaignRepository implements CampaignRepository {
 
     @Override
     public void completeIfSending(Long id) {
-        jpa.completeIfSending(id);
+        jpa.completeIfSending(id, Instant.now());
     }
 
     @Override
@@ -99,7 +99,7 @@ public class JpaCampaignRepository implements CampaignRepository {
     private CampaignEntity toEntity(Campaign c) {
         return new CampaignEntity(c.getId(), c.getName(), c.getDescription(),
                 c.getSubject(), c.getBody(), c.getStatus(), c.getCreatedAt(),
-                c.getSenderName(), c.getSenderEmail(), c.getScheduledAt(), c.getEnqueuedAt(),
+                c.getSenderName(), c.getSenderEmail(), c.getScheduledAt(), c.getEnqueuedAt(), c.getCompletedAt(),
                 c.getTemplateId(), c.getListId(), c.getAbSubjectB(), c.getAbBodyB(), c.getAbSplitPercent(),
                 c.getAbTestPercent(), c.getAbEvalMetric(), c.getAbEvalWaitMinutes(),
                 c.getAbEvaluateAt(), c.getAbWinner());
@@ -118,6 +118,7 @@ public class JpaCampaignRepository implements CampaignRepository {
         c.setSenderEmail(e.getSenderEmail());
         c.setScheduledAt(e.getScheduledAt());
         c.setEnqueuedAt(e.getEnqueuedAt());
+        c.setCompletedAt(e.getCompletedAt());
         c.setTemplateId(e.getTemplateId());
         c.setListId(e.getListId());
         c.setAbSubjectB(e.getAbSubjectB());

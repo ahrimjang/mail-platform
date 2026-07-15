@@ -41,6 +41,8 @@ public record CampaignView(
         String senderName,
         String senderEmail,
         Instant scheduledAt,
+        Instant enqueuedAt,
+        Instant completedAt,
         Long templateId,
         String templateName,
         Long listId,

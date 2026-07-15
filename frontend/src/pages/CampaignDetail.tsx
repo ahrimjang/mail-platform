@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../api";
 import Portal from "../components/Portal";
-import type { CampaignContentView, CampaignView, MessageStatus, MessageView, SendLogEntry } from "../types";
+import type { CampaignContentView, CampaignView, LinkClicksView, MessageStatus, MessageView, SendLogEntry } from "../types";
 import { badgeClass, fmt, pctOf } from "../outpace/format";
 import { MOCK_CAMPAIGNS } from "../outpace/mock";
 
@@ -37,6 +37,7 @@ export default function CampaignDetail() {
   const [campaign, setCampaign] = useState<CampaignView | null>(null);
   const [log, setLog] = useState<SendLogEntry[]>([]);
   const [content, setContent] = useState<CampaignContentView | null>(null);
+  const [links, setLinks] = useState<LinkClicksView[] | null>(null);
   const [recipients, setRecipients] = useState<MessageView[] | null>(null);
   // Throughput is derived from consecutive polls: Δsent / Δt.
   const [rate, setRate] = useState<number | null>(null);
@@ -73,6 +74,9 @@ export default function CampaignDetail() {
     api(`/api/campaigns/${id}/content`)
       .then(async (res) => { if (res.ok && !cancelled) setContent(await res.json()); })
       .catch(() => { /* mock campaigns have no content endpoint */ });
+    api(`/api/campaigns/${id}/links`)
+      .then(async (res) => { if (res.ok && !cancelled) setLinks(await res.json()); })
+      .catch(() => { /* link table is best-effort */ });
     return () => { cancelled = true; };
   }, [id]);
 
@@ -161,6 +165,14 @@ export default function CampaignDetail() {
   meta.push(`생성: ${new Date(campaign.createdAt).toLocaleString("ko-KR")}`);
   if (campaign.scheduledAt) {
     meta.push(`예약: ${new Date(campaign.scheduledAt).toLocaleString("ko-KR")}`);
+  }
+  // Run window (the stats' collection period starts here): release -> drained.
+  if (campaign.enqueuedAt) {
+    meta.push(`시작: ${new Date(campaign.enqueuedAt).toLocaleString("ko-KR")}`);
+  }
+  if (campaign.completedAt) {
+    const mins = Math.round((new Date(campaign.completedAt).getTime() - new Date(campaign.enqueuedAt ?? campaign.createdAt).getTime()) / 60000);
+    meta.push(`완료: ${new Date(campaign.completedAt).toLocaleString("ko-KR")}${mins >= 1 ? ` (${mins}분 소요)` : ""}`);
   }
 
   return (
@@ -354,6 +366,38 @@ export default function CampaignDetail() {
                 </div>
               )
             )}
+          </div>
+        );
+      })()}
+
+      {/* 링크별 클릭 분석 — 추적된 클릭 URL 랭킹 (클릭이 있을 때만) */}
+      {links && links.length > 0 && (() => {
+        const maxClicks = Math.max(...links.map((l) => l.clicks), 1);
+        const LINK_COLS = "minmax(200px, 3fr) minmax(120px, 1.4fr) 90px 80px 80px";
+        return (
+          <div className="op-card">
+            <div className="op-log-title">링크 클릭</div>
+            <div className="op-thead" style={{ gridTemplateColumns: LINK_COLS }}>
+              <span>URL</span>
+              <span />
+              <span>클릭 수신자</span>
+              <span>클릭율</span>
+              <span>총 클릭</span>
+            </div>
+            {links.map((l) => (
+              <div key={l.url} className="op-trow" style={{ gridTemplateColumns: LINK_COLS }}>
+                <span className="op-ell" title={l.url} style={{ fontSize: 13 }}>{l.url}</span>
+                <span className="op-bar" style={{ alignSelf: "center" }}>
+                  <span className="op-bar-fill" style={{ width: `${(l.clicks / maxClicks) * 100}%` }} />
+                </span>
+                <span className="strong">{fmt(l.uniqueMessages)}</span>
+                <span>{campaign.sent > 0 ? `${Math.round((l.uniqueMessages / campaign.sent) * 1000) / 10}%` : "–"}</span>
+                <span>{fmt(l.clicks)}</span>
+              </div>
+            ))}
+            <div className="op-list-row">
+              <span className="meta" style={{ fontSize: 12 }}>클릭율 = 클릭 수신자 / 발송 성공({fmt(campaign.sent)}건)</span>
+            </div>
           </div>
         );
       })()}

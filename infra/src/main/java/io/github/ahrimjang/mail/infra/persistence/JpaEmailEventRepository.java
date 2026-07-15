@@ -75,4 +75,13 @@ public class JpaEmailEventRepository implements EmailEventRepository {
                 .toList();
     }
 
+    @Override
+    public java.util.List<LinkClicks> linkClicksByCampaign(Long campaignId, int limit) {
+        return jpa.linkClicksByCampaign(campaignId, org.springframework.data.domain.PageRequest.of(0, limit)).stream()
+                .map(row -> new LinkClicks(
+                        (String) row[0],
+                        ((Number) row[1]).longValue(),
+                        ((Number) row[2]).longValue()))
+                .toList();
+    }
 }

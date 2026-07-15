@@ -38,6 +38,9 @@ public interface EmailEventRepository {
     record LinkClicks(String url, long clicks, long uniqueMessages) {
     }
 
+    /** One campaign's clicked links, best first — the detail page's link table. */
+    java.util.List<LinkClicks> linkClicksByCampaign(Long campaignId, int limit);
+
     /**
      * Opens bucketed by (ISO weekday, local hour) since {@code since} — the
      * "when do people read" heatmap. Distinct messages per bucket.
