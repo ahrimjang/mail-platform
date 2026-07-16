@@ -18,7 +18,7 @@
 | [02-campaign-queue-rabbitmq.md](02-campaign-queue-rabbitmq.md) | 캠페인 생성 → Postgres 저장 → RabbitMQ 발행 → worker 소비 — 비동기 파이프라인의 뼈대 + **예약 발송**(원자적 릴리스), 집계 발송 로그, **참여도 세그먼트**(팬아웃 시점 평가) |
 | [03-dispatch-suppression.md](03-dispatch-suppression.md) | dispatchOne 한 건의 일생 — 원자적 클레임(이중발송 방지), 억제 체크, HTML 조립, **발신자(From) 오버라이드**, SENT/BOUNCED, 수신거부 |
 | [04-tracking-analytics.md](04-tracking-analytics.md) | 오픈/클릭 추적 — 1x1 픽셀, 클릭 리다이렉트, **Kafka `mail.events` 스트림 → worker 프로젝션** → distinct 집계 기반 캠페인 지표 + **링크별 클릭 랭킹, 실행 구간(completed_at), 분석 대시보드**(퍼널/건강도/히트맵) |
-| [05-bounce-webhook.md](05-bounce-webhook.md) | 바운스 웹훅 — `POST /api/webhooks/generic` 수신 → 억제 반영 + `X-Mail-Message-Id` correlation, BOUNCE 이벤트도 Kafka로 |
+| [05-bounce-webhook.md](05-bounce-webhook.md) | 바운스 웹훅 — `POST /api/webhooks/generic` 수신 → 억제 반영 + `X-Mail-Message-Id` correlation, BOUNCE 이벤트도 Kafka로 + **운영 경로 SES/SNS 어댑터**(아마존 서명검증·구독 핸드셰이크·SES 파서) |
 | [06-templates-personalization.md](06-templates-personalization.md) | 템플릿 CRUD와 `{{변수}}` 렌더러 — 캠페인 스냅샷/트랜잭셔널 즉시 렌더, **에디터 3종의 마커 영속화와 이미지 업로드** |
 | [07-contacts-lists.md](07-contacts-lists.md) | 연락처(속성 JSON)·리스트·CSV 임포트 — 리스트 팬아웃 개인화 + **구독 상태 관리(전역/리스트 단위)·수신자 상세·동의 기록·페이지드 테이블**(배치 병합) |
 | [08-unit-tests.md](08-unit-tests.md) | 단위 테스트 가이드 — mail-core 전 테스트를 메소드별로 해설 (무엇을, 어떻게 검증하는가) |
