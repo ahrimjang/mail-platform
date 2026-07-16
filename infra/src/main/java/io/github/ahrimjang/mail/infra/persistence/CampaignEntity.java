@@ -55,6 +55,13 @@ public class CampaignEntity {
     /** When the campaign finished draining; null while in flight (or legacy rows). */
     private Instant completedAt;
 
+    /** Period end: engagement after this instant is not recorded; null = open-ended. */
+    private Instant endsAt;
+
+    /** DRAFT only: ad-hoc recipients typed so far, newline-separated. */
+    @Column(columnDefinition = "text")
+    private String draftRecipients;
+
     /** Template the content was snapshotted from; null = authored directly. */
     private Long templateId;
 
@@ -109,7 +116,7 @@ public class CampaignEntity {
     public CampaignEntity(Long id, String name, String description, String subject, String body,
                           CampaignStatus status, Instant createdAt,
                           String senderName, String senderEmail, Instant scheduledAt, Instant enqueuedAt,
-                          Instant completedAt, Long templateId, Long listId,
+                          Instant completedAt, Instant endsAt, String draftRecipients, Long templateId, Long listId,
                           Integer segMinOpenPercent, Integer segMinClickPercent,
                           String abSubjectB, String abBodyB, Integer abSplitPercent,
                           Integer abTestPercent, String abEvalMetric, Integer abEvalWaitMinutes,
@@ -126,6 +133,8 @@ public class CampaignEntity {
         this.scheduledAt = scheduledAt;
         this.enqueuedAt = enqueuedAt;
         this.completedAt = completedAt;
+        this.endsAt = endsAt;
+        this.draftRecipients = draftRecipients;
         this.templateId = templateId;
         this.listId = listId;
         this.segMinOpenPercent = segMinOpenPercent;
@@ -143,6 +152,7 @@ public class CampaignEntity {
     public Long getId() {
         return id;
     }
+
 
     public String getName() {
         return name;
@@ -190,6 +200,14 @@ public class CampaignEntity {
 
     public Instant getCompletedAt() {
         return completedAt;
+    }
+
+    public Instant getEndsAt() {
+        return endsAt;
+    }
+
+    public String getDraftRecipients() {
+        return draftRecipients;
     }
 
     public Long getTemplateId() {

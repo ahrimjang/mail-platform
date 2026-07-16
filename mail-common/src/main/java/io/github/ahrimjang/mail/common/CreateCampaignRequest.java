@@ -41,6 +41,8 @@ import java.util.List;
  *                    keeps a member only if their open rate is at least this percent
  * @param segMinClickPercent optional engagement floor (list campaigns only): same
  *                    for the click rate
+ * @param endsAt      optional campaign period end — opens/clicks observed after
+ *                    this instant are not recorded, freezing the campaign's rates
  */
 public record CreateCampaignRequest(
         String subject,
@@ -61,6 +63,7 @@ public record CreateCampaignRequest(
         String name,
         String description,
         Integer segMinOpenPercent,
-        Integer segMinClickPercent
+        Integer segMinClickPercent,
+        Instant endsAt
 ) {
 }

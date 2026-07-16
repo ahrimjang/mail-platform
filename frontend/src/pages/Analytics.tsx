@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import ActivityChart from "../components/ActivityChart";
 import { api } from "../api";
 import type { AudienceHealthView, CampaignView, DashboardView, LinkClicksView, OpenHeatmapCell } from "../types";
-import { badgeClass, fmt, pctOf } from "../outpace/format";
+import { badgeClass, fmt, pctOf, statusLabel } from "../outpace/format";
 
 type Period = 7 | 30 | 90;
 type SortKey = "openRate" | "clickRate" | "sent" | "createdAt";
@@ -286,7 +286,7 @@ export default function Analytics() {
             onClick={() => nav(`/campaigns/${c.id}`)}
           >
             <span className="strong op-ell">{c.name ?? c.subject}</span>
-            <span><span className={`op-badge ${badgeClass(c.status)}`}>{c.status === "CANCELED" ? "취소됨" : c.status}</span></span>
+            <span><span className={`op-badge ${badgeClass(c.status)}`}>{statusLabel(c)}</span></span>
             <span>
               {c.variants && c.variants.length > 0 ? (
                 <span className="op-minibadge blue">{c.abWinner ? `${c.abWinner} 승` : "A/B"}</span>

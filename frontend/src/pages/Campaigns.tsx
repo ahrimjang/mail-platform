@@ -2,13 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import type { CampaignView } from "../types";
-import { badgeClass, fmt, pctOf } from "../outpace/format";
+import { badgeClass, fmt, pctOf, statusLabel } from "../outpace/format";
 import { MOCK_CAMPAIGNS } from "../outpace/mock";
 
 /* Column template shared by the header and body rows. */
 const COLS = "minmax(140px, 2fr) minmax(90px, 1.1fr) 76px 56px 64px minmax(90px, 1.1fr) 60px 60px 118px";
 
-type Tab = "all" | "sending" | "scheduled" | "done" | "canceled";
+type Tab = "all" | "sending" | "scheduled" | "done" | "canceled" | "drafts";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "all", label: "전체" },
@@ -16,22 +16,12 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "scheduled", label: "예약됨" },
   { key: "done", label: "완료" },
   { key: "canceled", label: "취소" },
+  { key: "drafts", label: "임시" },
 ];
 
 /* A QUEUED campaign with a future send time reads as "scheduled", not "waiting". */
 function isScheduled(c: CampaignView): boolean {
   return c.status === "QUEUED" && !!c.scheduledAt && new Date(c.scheduledAt).getTime() > Date.now();
-}
-
-function statusLabel(c: CampaignView): string {
-  if (isScheduled(c)) return "예약됨";
-  switch (c.status) {
-    case "QUEUED": return "대기 중";
-    case "SENDING": return "발송 중";
-    case "COMPLETED": return "완료";
-    case "CANCELED": return "취소됨";
-    default: return "초안";
-  }
 }
 
 function whenOf(c: CampaignView): string {
@@ -51,7 +41,7 @@ export default function Campaigns() {
   const [params] = useSearchParams();
   const [campaigns, setCampaigns] = useState<CampaignView[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const [tab, setTab] = useState<Tab>("all");
+  const [tab, setTab] = useState<Tab>(params.get("tab") === "drafts" ? "drafts" : "all");
   // The top-nav search lands here with ?q=; afterwards the local input owns it.
   const [query, setQuery] = useState(params.get("q") ?? "");
   // Re-searching while already on this page only changes the URL — the
@@ -89,6 +79,8 @@ export default function Campaigns() {
     const q = query.trim().toLowerCase();
     return rows
       .filter((c) => {
+        if (tab === "drafts") return c.status === "DRAFT";
+        if (c.status === "DRAFT") return false; // drafts live only in their own tab
         if (tab === "sending") return c.status === "SENDING";
         if (tab === "scheduled") return isScheduled(c);
         if (tab === "done") return c.status === "COMPLETED";
@@ -106,11 +98,19 @@ export default function Campaigns() {
   }, [rows, tab, query]);
 
   const countOf = (t: Tab) =>
-    t === "all" ? rows.length
+    t === "all" ? rows.filter((c) => c.status !== "DRAFT").length
       : t === "sending" ? rows.filter((c) => c.status === "SENDING").length
       : t === "scheduled" ? rows.filter(isScheduled).length
       : t === "canceled" ? rows.filter((c) => c.status === "CANCELED").length
+      : t === "drafts" ? rows.filter((c) => c.status === "DRAFT").length
       : rows.filter((c) => c.status === "COMPLETED").length;
+
+  async function discardDraft(id: number) {
+    try {
+      const res = await api(`/api/campaigns/drafts/${id}`, { method: "DELETE" });
+      if (res.ok) setCampaigns((prev) => prev.filter((c) => c.id !== id));
+    } catch { /* transient */ }
+  }
 
   return (
     <div className="op-container op-fade">
@@ -161,9 +161,11 @@ export default function Campaigns() {
         {visible.length === 0 ? (
           <div className="op-trow" style={{ gridTemplateColumns: "1fr" }}>
             <span className="faint">
-              {query || tab !== "all"
-                ? "조건에 맞는 캠페인이 없습니다."
-                : "아직 캠페인이 없습니다. ‘새 캠페인’으로 첫 발송을 시작하세요."}
+              {tab === "drafts"
+                ? "임시저장된 캠페인이 없습니다. 새 캠페인 작성 중 ‘임시저장’을 누르면 여기에 보관돼요."
+                : query || tab !== "all"
+                  ? "조건에 맞는 캠페인이 없습니다."
+                  : "아직 캠페인이 없습니다. ‘새 캠페인’으로 첫 발송을 시작하세요."}
             </span>
           </div>
         ) : (
@@ -174,7 +176,7 @@ export default function Campaigns() {
                 key={c.id}
                 className="op-trow clickable"
                 style={{ gridTemplateColumns: COLS }}
-                onClick={() => nav(`/campaigns/${c.id}`)}
+                onClick={() => nav(c.status === "DRAFT" ? `/campaigns/new?draftId=${c.id}` : `/campaigns/${c.id}`)}
               >
                 <div style={{ minWidth: 0 }}>
                   <div className="strong op-ell">{c.name ?? c.subject}</div>
@@ -226,7 +228,18 @@ export default function Campaigns() {
                 </span>
                 <span>{rateOf(c.opened, c.sent)}</span>
                 <span>{rateOf(c.clicked, c.sent)}</span>
-                <span className="faint">{whenOf(c)}</span>
+                <span className="faint">
+                  {whenOf(c)}
+                  {c.status === "DRAFT" && (
+                    <button
+                      className="op-linkbtn"
+                      style={{ fontSize: 12, color: "var(--op-red)", marginLeft: 8 }}
+                      onClick={(e) => { e.stopPropagation(); discardDraft(c.id); }}
+                    >
+                      삭제
+                    </button>
+                  )}
+                </span>
               </div>
             );
           })

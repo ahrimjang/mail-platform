@@ -9,9 +9,11 @@ import io.github.ahrimjang.mail.core.service.CampaignService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -44,6 +46,31 @@ public class CampaignController {
     @GetMapping
     public List<CampaignView> list() {
         return campaigns.list();
+    }
+
+    /** Save the compose form as a draft — nothing is queued yet. */
+    @PostMapping("/drafts")
+    public ResponseEntity<CampaignView> saveDraft(@RequestBody CreateCampaignRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(campaigns.saveDraft(request));
+    }
+
+    /** Overwrite a draft with the form's current state. */
+    @PutMapping("/drafts/{id}")
+    public CampaignView updateDraft(@PathVariable Long id, @RequestBody CreateCampaignRequest request) {
+        return campaigns.updateDraft(id, request);
+    }
+
+    /** Editable fields of a draft, for the compose form to resume from. */
+    @GetMapping("/drafts/{id}")
+    public io.github.ahrimjang.mail.common.CampaignDraftView draft(@PathVariable Long id) {
+        return campaigns.draft(id);
+    }
+
+    /** Discard a draft (also called after launching it for real). */
+    @DeleteMapping("/drafts/{id}")
+    public ResponseEntity<Void> deleteDraft(@PathVariable Long id) {
+        campaigns.deleteDraft(id);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/{id}")

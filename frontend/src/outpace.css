@@ -306,6 +306,61 @@ textarea.op-input { height: auto; padding: 13px 15px; line-height: 1.6; resize: 
 .op-bar.sm { height: 6px; margin-bottom: 0; flex: 1; min-width: 40px; }
 .op-bar.sm.green .op-bar-fill { background: linear-gradient(90deg, #4ade80, #16a34a); box-shadow: 0 0 6px rgba(22, 163, 74, 0.3); }
 
+/* personalization variable picker (shared by editors and the compose form) */
+.op-varmenu { position: relative; display: inline-flex; }
+.op-varmenu-pop {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 40; min-width: 230px;
+  background: #fff; border: 1px solid var(--op-border); border-radius: 11px;
+  box-shadow: var(--op-shadow-float); padding: 5px;
+}
+.op-varmenu-pop button {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px;
+  border: none; background: none; border-radius: 7px; font: inherit; font-size: 13px;
+  cursor: pointer; text-align: left;
+}
+.op-varmenu-pop button:hover { background: var(--op-primary-soft); }
+.op-varmenu-pop button code {
+  font-size: 12px; color: var(--op-primary-hover); background: var(--op-primary-soft);
+  border-radius: 5px; padding: 1px 6px; font-family: ui-monospace, monospace;
+}
+.op-varmenu-pop button span { color: var(--op-ink-2); }
+.op-varmenu-pop .note { font-size: 11.5px; color: var(--op-faint); line-height: 1.5; padding: 7px 10px 5px; border-top: 1px solid var(--op-divider); margin-top: 4px; }
+.op-varbtn-code { font-size: 12px; font-weight: 600; color: #93c5fd; cursor: pointer; }
+.op-varbtn-code:hover { color: #bfdbfe; }
+.op-varbtn-rich { font-size: 12px; font-weight: 600; color: var(--op-primary); cursor: pointer; padding: 0 6px; white-space: nowrap; }
+.op-varbtn-form { font-size: 12.5px; font-weight: 600; color: var(--op-primary); cursor: pointer; }
+.op-varbtn-form:hover { text-decoration: underline; }
+
+/* new campaign: import-from-campaign picker (list + preview panes) */
+.op-import2 { display: grid; grid-template-columns: 300px 1fr; gap: 14px; margin-bottom: 4px; }
+.op-import2-left { min-width: 0; }
+.op-import-list { max-height: 380px; overflow-y: auto; border: 1px solid var(--op-border); border-radius: 11px; padding: 4px; }
+.op-import-empty { padding: 18px 12px; font-size: 13px; color: var(--op-faint); text-align: center; line-height: 1.6; }
+.op-import-row {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  width: 100%; padding: 9px 12px; border: none; background: none; border-radius: 8px;
+  font: inherit; font-size: 13.5px; cursor: pointer; text-align: left; transition: background 0.1s;
+}
+.op-import-row:hover { background: var(--op-panel); }
+.op-import-row.sel { background: var(--op-primary-soft); box-shadow: inset 0 0 0 1px var(--op-primary); }
+.op-import-row .nm { font-weight: 600; color: var(--op-ink); min-width: 0; max-width: 100%; }
+.op-import-row .sub { font-size: 11.5px; color: var(--op-faint); max-width: 100%; }
+.op-import-row .stats { font-size: 11.5px; color: var(--op-primary-hover); font-weight: 600; }
+.op-import2-right { min-width: 0; display: flex; flex-direction: column; border: 1px solid var(--op-border); border-radius: 11px; background: #fafafa; overflow: hidden; }
+.op-import2-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 10px 14px; border-bottom: 1px solid var(--op-border); background: #fff;
+}
+.op-import2-head .subj { font-size: 13px; font-weight: 700; min-width: 0; }
+.op-import2-frame { flex: 1; width: 100%; min-height: 340px; border: none; background: #fff; }
+
+/* campaign detail: info card (period, timestamps, provenance) */
+.op-infogrid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 28px; padding: 8px 20px 12px; }
+.op-inforow { display: flex; align-items: baseline; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--op-divider); font-size: 13px; }
+.op-inforow:nth-last-child(-n+2) { border-bottom: none; }
+.op-inforow .k { flex: 0 0 84px; color: var(--op-muted); font-size: 12.5px; }
+.op-inforow .v { color: var(--op-ink); font-weight: 600; }
+
 /* lists page: expandable row -> campaigns that targeted the list */
 .op-rowcaret { display: inline-block; margin-right: 7px; color: var(--op-faint); font-size: 11px; transition: transform 0.15s; }
 .op-rowcaret.open { transform: rotate(90deg); color: var(--op-primary); }

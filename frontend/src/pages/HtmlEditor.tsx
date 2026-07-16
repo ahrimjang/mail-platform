@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api";
+import VariableMenu from "../components/VariableMenu";
 import type { TemplateView } from "../types";
 import { STARTERS, renderPreview } from "../outpace/starters";
 
@@ -15,6 +16,7 @@ export default function HtmlEditor() {
   const [name, setName] = useState("");
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
+  const codeRef = useRef<HTMLTextAreaElement>(null);
   const [loading, setLoading] = useState(!!id);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
@@ -51,6 +53,18 @@ export default function HtmlEditor() {
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  function insertVariable(token: string) {
+    const area = codeRef.current;
+    if (!area) { setBody((b) => b + token); return; }
+    const start = area.selectionStart ?? body.length;
+    const end = area.selectionEnd ?? body.length;
+    setBody(body.slice(0, start) + token + body.slice(end));
+    requestAnimationFrame(() => {
+      area.focus();
+      area.setSelectionRange(start + token.length, start + token.length);
+    });
+  }
 
   async function save(): Promise<number | null> {
     if (!name.trim() || !subject.trim() || !body.trim()) {
@@ -140,10 +154,16 @@ export default function HtmlEditor() {
       <div className="op-workspace">
         {/* code pane */}
         <div className="op-code-pane">
-          <div className="op-code-tab"><span className="cdot" /><span className="fname">email.html</span></div>
+          <div className="op-code-tab">
+            <span className="cdot" /><span className="fname">email.html</span>
+            <span style={{ marginLeft: "auto" }}>
+              <VariableMenu buttonClass="op-varbtn-code" onInsert={insertVariable} />
+            </span>
+          </div>
           <div className="op-code-body">
             <pre className="op-gutter">{gutter}</pre>
             <textarea
+              ref={codeRef}
               className="op-code-input"
               value={body}
               onChange={(e) => setBody(e.target.value)}

@@ -1,8 +1,10 @@
 package io.github.ahrimjang.mail.core.service;
 
 import io.github.ahrimjang.mail.common.EventType;
+import io.github.ahrimjang.mail.core.domain.Campaign;
 import io.github.ahrimjang.mail.core.domain.EmailEvent;
 import io.github.ahrimjang.mail.core.domain.MailMessage;
+import io.github.ahrimjang.mail.core.port.CampaignRepository;
 import io.github.ahrimjang.mail.core.port.EmailEventPublisher;
 import io.github.ahrimjang.mail.core.port.MailMessageRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -12,6 +14,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.Instant;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -27,19 +30,31 @@ class TrackingServiceTest {
     private MailMessageRepository messages;
 
     @Mock
+    private CampaignRepository campaigns;
+
+    @Mock
     private EmailEventPublisher events;
 
     private TrackingService service;
 
     @BeforeEach
     void setUp() {
-        service = new TrackingService(messages, events);
+        service = new TrackingService(messages, campaigns, events);
+        // Default: the campaign has no period end, so events are collected.
+        org.mockito.Mockito.lenient().when(campaigns.findById(org.mockito.ArgumentMatchers.anyLong()))
+                .thenReturn(Optional.empty());
     }
 
     private MailMessage messageWithIds(Long messageId, Long campaignId) {
         MailMessage m = MailMessage.queued(campaignId, "to@x.com");
         m.setId(messageId);
         return m;
+    }
+
+    private Campaign campaignEndingAt(Instant endsAt) {
+        Campaign c = Campaign.draft("s", "b");
+        c.setEndsAt(endsAt);
+        return c;
     }
 
     @Test
@@ -88,5 +103,25 @@ class TrackingServiceTest {
         service.recordClick("nope", "https://example.com");
 
         verify(events, never()).publish(any());
+    }
+
+    @Test
+    void recordOpen_afterThePeriodEnd_recordsNothing() {
+        when(messages.findByTrackingToken("tok")).thenReturn(Optional.of(messageWithIds(11L, 5L)));
+        when(campaigns.findById(5L)).thenReturn(Optional.of(campaignEndingAt(Instant.now().minusSeconds(60))));
+
+        service.recordOpen("tok");
+
+        verify(events, never()).publish(any());
+    }
+
+    @Test
+    void recordClick_beforeThePeriodEnd_stillRecords() {
+        when(messages.findByTrackingToken("tok")).thenReturn(Optional.of(messageWithIds(11L, 5L)));
+        when(campaigns.findById(5L)).thenReturn(Optional.of(campaignEndingAt(Instant.now().plusSeconds(3600))));
+
+        service.recordClick("tok", "https://x.com");
+
+        verify(events).publish(any());
     }
 }

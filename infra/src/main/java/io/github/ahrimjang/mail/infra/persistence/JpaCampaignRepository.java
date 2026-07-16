@@ -96,15 +96,21 @@ public class JpaCampaignRepository implements CampaignRepository {
         return jpa.claimAbWinner(id, winner) == 1;
     }
 
+    @Override
+    public void deleteById(Long id) {
+        jpa.deleteById(id);
+    }
+
     private CampaignEntity toEntity(Campaign c) {
-        return new CampaignEntity(c.getId(), c.getName(), c.getDescription(),
+        CampaignEntity entity = new CampaignEntity(c.getId(), c.getName(), c.getDescription(),
                 c.getSubject(), c.getBody(), c.getStatus(), c.getCreatedAt(),
                 c.getSenderName(), c.getSenderEmail(), c.getScheduledAt(), c.getEnqueuedAt(), c.getCompletedAt(),
-                c.getTemplateId(), c.getListId(),
+                c.getEndsAt(), c.getDraftRecipients(), c.getTemplateId(), c.getListId(),
                 c.getSegMinOpenPercent(), c.getSegMinClickPercent(),
                 c.getAbSubjectB(), c.getAbBodyB(), c.getAbSplitPercent(),
                 c.getAbTestPercent(), c.getAbEvalMetric(), c.getAbEvalWaitMinutes(),
                 c.getAbEvaluateAt(), c.getAbWinner());
+        return entity;
     }
 
     private Campaign toDomain(CampaignEntity e) {
@@ -121,6 +127,8 @@ public class JpaCampaignRepository implements CampaignRepository {
         c.setScheduledAt(e.getScheduledAt());
         c.setEnqueuedAt(e.getEnqueuedAt());
         c.setCompletedAt(e.getCompletedAt());
+        c.setEndsAt(e.getEndsAt());
+        c.setDraftRecipients(e.getDraftRecipients());
         c.setTemplateId(e.getTemplateId());
         c.setListId(e.getListId());
         c.setSegMinOpenPercent(e.getSegMinOpenPercent());

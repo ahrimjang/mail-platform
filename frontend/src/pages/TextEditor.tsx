@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../api";
+import VariableMenu from "../components/VariableMenu";
 import type { TemplateView } from "../types";
 import { parseTextMarker, textToHtmlBody } from "../outpace/blocks";
 
@@ -60,9 +61,8 @@ export default function TextEditor() {
     return () => { cancelled = true; };
   }, [id]);
 
-  function insertVariable() {
+  function insertVariable(token: string) {
     const area = areaRef.current;
-    const token = "{{name}}";
     if (!area) { setText((t) => t + token); return; }
     const start = area.selectionStart ?? text.length;
     const end = area.selectionEnd ?? text.length;
@@ -151,7 +151,7 @@ export default function TextEditor() {
         <div className="op-sheet text">
           <div className="op-texttool">
             <div className="op-texttool-left">
-              <span className="op-tt wide varbtn" onClick={insertVariable}>＋ 개인화 변수</span>
+              <VariableMenu onInsert={insertVariable} />
             </div>
             <span className="op-tt-note">이미지는 추가할 수 없어요 · 빈 줄로 문단을 나눕니다</span>
           </div>

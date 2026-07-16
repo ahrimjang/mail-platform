@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import type { CampaignView, TemplateView } from "../types";
 import Portal from "../components/Portal";
-import { badgeClass, fmt } from "../outpace/format";
+import { badgeClass, fmt, statusLabel } from "../outpace/format";
 import { editorRouteFor } from "../outpace/blocks";
 import { renderPreview } from "../outpace/starters";
 
@@ -244,7 +244,7 @@ export default function Templates() {
                     <div className="strong op-ell">{c.name ?? c.subject}</div>
                     <div className="faint op-ell">수신자 {fmt(c.total)}명 · 발송 {fmt(c.sent)}</div>
                   </div>
-                  <span><span className={`op-badge ${badgeClass(c.status)}`}>{c.status === "CANCELED" ? "취소됨" : c.status}</span></span>
+                  <span><span className={`op-badge ${badgeClass(c.status)}`}>{statusLabel(c)}</span></span>
                   <span>
                     <span
                       className="op-minibadge blue link"

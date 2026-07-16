@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../api";
 import Portal from "../components/Portal";
 import type { CampaignContentView, CampaignView, ContactListView, LinkClicksView, MessageStatus, MessageView, SendLogEntry } from "../types";
-import { badgeClass, fmt, pctOf } from "../outpace/format";
+import { badgeClass, fmt, pctOf, statusLabel } from "../outpace/format";
 import { MOCK_CAMPAIGNS } from "../outpace/mock";
 
 /* Dot color + Korean label per delivery outcome. */
@@ -172,20 +172,31 @@ export default function CampaignDetail() {
     meta.push(`발신: ${campaign.senderName ?? ""}${campaign.senderEmail ? ` <${campaign.senderEmail}>` : ""}`);
   }
   meta.push(`캠페인 #${campaign.id}`);
+
+  // 캠페인 정보 card rows: timestamps and provenance, in reading order.
+  const at = (iso: string) => new Date(iso).toLocaleString("ko-KR", { dateStyle: "short", timeStyle: "short" });
+  const drainMins = campaign.completedAt
+    ? Math.round((new Date(campaign.completedAt).getTime() - new Date(campaign.enqueuedAt ?? campaign.createdAt).getTime()) / 60000)
+    : null;
+  const ended = campaign.endsAt != null && new Date(campaign.endsAt).getTime() <= Date.now();
+  const info: { k: string; v: string; badge?: { label: string; cls: string } }[] = [];
+  info.push({ k: "생성", v: at(campaign.createdAt) });
+  if (campaign.scheduledAt) info.push({ k: "예약", v: at(campaign.scheduledAt) });
+  info.push({ k: "발송 시작", v: campaign.enqueuedAt ? at(campaign.enqueuedAt) : "대기 중" });
+  info.push({
+    k: "발송 완료",
+    v: campaign.completedAt
+      ? `${at(campaign.completedAt)}${drainMins != null && drainMins >= 1 ? ` (${drainMins}분 소요)` : ""}`
+      : "-",
+  });
+  info.push(
+    campaign.endsAt
+      ? { k: "캠페인 기간", v: `${campaign.enqueuedAt ? at(campaign.enqueuedAt) : "발송 시작"} ~ ${at(campaign.endsAt)}`,
+          badge: ended ? { label: "집계 종료", cls: "gray" } : { label: "집계 중", cls: "green" } }
+      : { k: "캠페인 기간", v: "제한 없음 (오픈·클릭 계속 집계)" },
+  );
   if (campaign.templateId) {
-    meta.push(`템플릿: ${campaign.templateName ?? `#${campaign.templateId} (삭제됨)`}`);
-  }
-  meta.push(`생성: ${new Date(campaign.createdAt).toLocaleString("ko-KR")}`);
-  if (campaign.scheduledAt) {
-    meta.push(`예약: ${new Date(campaign.scheduledAt).toLocaleString("ko-KR")}`);
-  }
-  // Run window (the stats' collection period starts here): release -> drained.
-  if (campaign.enqueuedAt) {
-    meta.push(`시작: ${new Date(campaign.enqueuedAt).toLocaleString("ko-KR")}`);
-  }
-  if (campaign.completedAt) {
-    const mins = Math.round((new Date(campaign.completedAt).getTime() - new Date(campaign.enqueuedAt ?? campaign.createdAt).getTime()) / 60000);
-    meta.push(`완료: ${new Date(campaign.completedAt).toLocaleString("ko-KR")}${mins >= 1 ? ` (${mins}분 소요)` : ""}`);
+    info.push({ k: "템플릿", v: campaign.templateName ?? `#${campaign.templateId} (삭제됨)` });
   }
 
   return (
@@ -197,7 +208,7 @@ export default function CampaignDetail() {
           <div className="op-detail-title">
             <h2>{campaign.name ?? campaign.subject}</h2>
             <span className={`op-badge ${badgeClass(campaign.status)}`}>
-              {campaign.status === "CANCELED" ? "취소됨" : campaign.status}
+              {statusLabel(campaign)}
             </span>
           </div>
           <p className="op-detail-meta">{meta.join(" · ")}</p>
@@ -210,6 +221,22 @@ export default function CampaignDetail() {
             예약 취소
           </button>
         )}
+      </div>
+
+      {/* 캠페인 정보 — 기간·시각·출처를 한 곳에 (기존 메타 라인에서 승격) */}
+      <div className="op-card">
+        <div className="op-log-title">캠페인 정보</div>
+        <div className="op-infogrid">
+          {info.map((row) => (
+            <div key={row.k} className="op-inforow">
+              <span className="k">{row.k}</span>
+              <span className="v">
+                {row.v}
+                {row.badge && <span className={`op-minibadge ${row.badge.cls}`} style={{ marginLeft: 8 }}>{row.badge.label}</span>}
+              </span>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* 발송 대상 — 어떤 리스트에, 어떤 조건으로 나갔는지 (애드혹 캠페인은 생략) */}

@@ -27,6 +27,11 @@ public class Campaign {
     private Instant scheduledAt;
     private Instant enqueuedAt;
     private Instant completedAt;
+    // Optional period end: engagement observed after this instant is dropped.
+    private Instant endsAt;
+    // DRAFT only: ad-hoc recipients typed so far, newline-separated (no
+    // mail_messages rows exist yet to carry them).
+    private String draftRecipients;
     // Soft provenance references (content/audience snapshotted at create time):
     // kept for display even if the template or list is deleted later.
     private Long templateId;
@@ -66,6 +71,7 @@ public class Campaign {
     public Long getId() {
         return id;
     }
+
 
     public void setId(Long id) {
         this.id = id;
@@ -157,6 +163,22 @@ public class Campaign {
 
     public void setCompletedAt(Instant completedAt) {
         this.completedAt = completedAt;
+    }
+
+    public Instant getEndsAt() {
+        return endsAt;
+    }
+
+    public void setEndsAt(Instant endsAt) {
+        this.endsAt = endsAt;
+    }
+
+    public String getDraftRecipients() {
+        return draftRecipients;
+    }
+
+    public void setDraftRecipients(String draftRecipients) {
+        this.draftRecipients = draftRecipients;
     }
 
     public Long getTemplateId() {

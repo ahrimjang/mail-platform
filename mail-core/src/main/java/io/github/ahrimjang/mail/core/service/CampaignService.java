@@ -1,6 +1,7 @@
 package io.github.ahrimjang.mail.core.service;
 
 import io.github.ahrimjang.mail.common.CampaignContentView;
+import io.github.ahrimjang.mail.common.CampaignDraftView;
 import io.github.ahrimjang.mail.common.CampaignStatus;
 import io.github.ahrimjang.mail.common.CampaignView;
 import io.github.ahrimjang.mail.common.CreateCampaignRequest;
@@ -90,6 +91,15 @@ public class CampaignService {
         campaign.setEnqueuedAt(deferred ? null : now);
         campaign.setTemplateId(request.templateId());
         campaign.setListId(request.listId());
+        // Campaign period: engagement observed after endsAt is dropped, so the
+        // reported rates cover a bounded window. Must leave room to send first.
+        if (request.endsAt() != null) {
+            Instant sendStart = deferred ? request.scheduledAt() : now;
+            if (!request.endsAt().isAfter(sendStart)) {
+                throw new IllegalArgumentException("endsAt must be after the send time");
+            }
+            campaign.setEndsAt(request.endsAt());
+        }
         // Engagement segment: narrow the list to members whose open/click rate
         // clears the floors. Evaluated at fan-out time, so scheduled campaigns
         // use engagement as of the release, not as of authoring.
@@ -209,6 +219,88 @@ public class CampaignService {
         return toView(campaign);
     }
 
+    /**
+     * Persist the compose form as a DRAFT: nothing is queued or fanned out and
+     * only a minimal identity check applies (send-time validation happens when
+     * the draft is actually launched through {@link #create}). Ad-hoc recipients
+     * are kept newline-joined on the row — no message rows exist yet.
+     */
+    public CampaignView saveDraft(CreateCampaignRequest request) {
+        Campaign draft = Campaign.draft(orEmpty(request.subject()), orEmpty(request.body()));
+        applyDraftFields(draft, request);
+        return toView(campaigns.save(draft));
+    }
+
+    /** Overwrite a DRAFT with the form's current state. */
+    public CampaignView updateDraft(Long id, CreateCampaignRequest request) {
+        Campaign draft = requireDraft(id);
+        draft.setSubject(orEmpty(request.subject()));
+        draft.setBody(orEmpty(request.body()));
+        applyDraftFields(draft, request);
+        return toView(campaigns.save(draft));
+    }
+
+    /** The editable fields of a DRAFT, for the compose form to resume from. */
+    public CampaignDraftView draft(Long id) {
+        Campaign d = requireDraft(id);
+        return new CampaignDraftView(
+                d.getId(), d.getName(), d.getDescription(),
+                blankToNull(d.getSubject()), blankToNull(d.getBody()),
+                d.getTemplateId(),
+                d.getDraftRecipients() == null ? List.of() : List.of(d.getDraftRecipients().split("\n")),
+                d.getListId(), d.getSenderName(), d.getSenderEmail(),
+                d.getScheduledAt(), d.getEndsAt(),
+                d.getAbSubjectB(), d.getAbBodyB(),
+                d.getAbTestPercent(), d.getAbEvalMetric(), d.getAbEvalWaitMinutes(),
+                d.getSegMinOpenPercent(), d.getSegMinClickPercent());
+    }
+
+    /** Discard a DRAFT (also called after launching it as a real campaign). */
+    public void deleteDraft(Long id) {
+        requireDraft(id);
+        campaigns.deleteById(id);
+    }
+
+    private void applyDraftFields(Campaign draft, CreateCampaignRequest request) {
+        boolean anyIdentity = blankToNull(request.name()) != null
+                || blankToNull(request.subject()) != null
+                || request.templateId() != null;
+        if (!anyIdentity) {
+            throw new IllegalArgumentException("draft needs at least a name, subject, or template");
+        }
+        draft.setName(blankToNull(request.name()));
+        draft.setDescription(blankToNull(request.description()));
+        draft.setSenderName(blankToNull(request.senderName()));
+        draft.setSenderEmail(blankToNull(request.senderEmail()));
+        draft.setScheduledAt(request.scheduledAt());
+        draft.setEndsAt(request.endsAt());
+        draft.setTemplateId(request.templateId());
+        draft.setListId(request.listId());
+        draft.setSegMinOpenPercent(request.segMinOpenPercent());
+        draft.setSegMinClickPercent(request.segMinClickPercent());
+        draft.setAbSubjectB(blankToNull(request.abSubjectB()));
+        draft.setAbBodyB(blankToNull(request.abBodyB()));
+        draft.setAbTestPercent(request.abTestPercent());
+        draft.setAbEvalMetric(request.abEvalMetric());
+        draft.setAbEvalWaitMinutes(request.abEvalWaitMinutes());
+        draft.setDraftRecipients(request.recipients() == null || request.recipients().isEmpty()
+                ? null
+                : String.join("\n", request.recipients()));
+    }
+
+    private Campaign requireDraft(Long id) {
+        Campaign campaign = campaigns.findById(id)
+                .orElseThrow(() -> new NoSuchElementException("campaign not found: " + id));
+        if (campaign.getStatus() != CampaignStatus.DRAFT) {
+            throw new IllegalStateException("campaign is not a draft: " + id);
+        }
+        return campaign;
+    }
+
+    private static String orEmpty(String s) {
+        return s == null ? "" : s;
+    }
+
     public List<CampaignView> list() {
         return campaigns.findAll().stream()
                 .map(this::toView)
@@ -307,6 +399,7 @@ public class CampaignService {
                 campaign.getSenderEmail(),
                 campaign.getScheduledAt(),
                 campaign.getEnqueuedAt(), campaign.getCompletedAt(),
+                campaign.getEndsAt(),
                 campaign.getTemplateId(),
                 templateName,
                 campaign.getListId(),

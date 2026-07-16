@@ -3,26 +3,13 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import Portal from "../components/Portal";
 import type { CampaignView, ContactListView } from "../types";
-import { badgeClass, fmt, pctOf } from "../outpace/format";
+import { badgeClass, fmt, pctOf, statusLabel } from "../outpace/format";
 
 /* Column template shared by the header and body rows. */
 const COLS = "minmax(0, 1.6fr) minmax(0, 2fr) 90px 100px 110px";
 
 function dateOf(iso: string): string {
   return new Date(iso).toLocaleDateString("ko-KR");
-}
-
-/* Korean status label of a campaign row inside the expanded panel. */
-function statusLabelOf(c: CampaignView): string {
-  if (c.status === "QUEUED" && c.scheduledAt && new Date(c.scheduledAt).getTime() > Date.now()) return "예약됨";
-  switch (c.status) {
-    case "QUEUED": return "대기 중";
-    case "EXPANDING":
-    case "SENDING": return "발송 중";
-    case "COMPLETED": return "완료";
-    case "CANCELED": return "취소됨";
-    default: return c.status;
-  }
 }
 
 /* Engagement rate over delivered mail; "-" until anything was sent. */
@@ -242,7 +229,7 @@ export default function Lists() {
                             onClick={(e) => { e.stopPropagation(); nav(`/campaigns/${c.id}`); }}
                           >
                             <span className="strong op-ell">{c.name ?? c.subject}</span>
-                            <span><span className={`op-badge ${badgeClass(c.status)}`}>{statusLabelOf(c)}</span></span>
+                            <span><span className={`op-badge ${badgeClass(c.status)}`}>{statusLabel(c)}</span></span>
                             <span className="op-minibar">
                               <span className="op-bar sm"><span className="op-bar-fill" style={{ width: `${pct}%` }} /></span>
                               <span className="pct">{fmt(c.sent)}/{fmt(c.total)}</span>

@@ -16,6 +16,9 @@ public interface CampaignRepository {
 
     Optional<Campaign> findById(Long id);
 
+    /** Remove a campaign row entirely — only sensible for DRAFTs (no messages yet). */
+    void deleteById(Long id);
+
     List<Campaign> findAll();
 
     void updateStatus(Long id, CampaignStatus status);

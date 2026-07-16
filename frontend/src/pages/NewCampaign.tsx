@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api";
+import VariableMenu from "../components/VariableMenu";
 import Portal from "../components/Portal";
 import { fmt } from "../outpace/format";
 import { renderPreview } from "../outpace/starters";
-import type { ContactListView, TemplateView } from "../types";
+import type { CampaignContentView, CampaignDraftView, CampaignView, ContactListView, TemplateView } from "../types";
 
 type Timing = "now" | "scheduled";
 type ContentSource = "direct" | "template";
@@ -33,7 +34,21 @@ export default function NewCampaign() {
   // template so it arrives here already selected.
   const [searchParams] = useSearchParams();
   const initialTemplateId = searchParams.get("templateId") ?? "";
+  // ?draftId= — resume a draft saved from this form; 임시저장 then updates it.
+  const draftId = searchParams.get("draftId");
+  const [savingDraft, setSavingDraft] = useState(false);
+  // 불러오기: start from a past campaign (settings + content snapshot) or a draft.
+  const [importOpen, setImportOpen] = useState(false);
+  const [importList, setImportList] = useState<CampaignView[] | null>(null);
+  const [importQuery, setImportQuery] = useState("");
+  const [importing, setImporting] = useState(false);
+  // Picker selection: clicking a row previews it; the button applies it.
+  const [importSel, setImportSel] = useState<CampaignView | null>(null);
+  const [importVariant, setImportVariant] = useState<"A" | "B">("A");
+  const [importContents, setImportContents] = useState<Record<number, CampaignContentView | null>>({});
   const recipientsRef = useRef<HTMLTextAreaElement>(null);
+  const bodyARef = useRef<HTMLTextAreaElement>(null);
+  const bodyBRef = useRef<HTMLTextAreaElement>(null);
 
   const [name, setName] = useState("월간 뉴스레터 7월호");
   const [description, setDescription] = useState("");
@@ -44,6 +59,9 @@ export default function NewCampaign() {
   const [recipients, setRecipients] = useState("alice@example.com\nbob@example.com");
   const [timing, setTiming] = useState<Timing>("now");
   const [scheduledLocal, setScheduledLocal] = useState(""); // datetime-local value
+  // Campaign period: opens/clicks observed after this end are not recorded.
+  const [periodEnabled, setPeriodEnabled] = useState(false);
+  const [endsLocal, setEndsLocal] = useState(""); // datetime-local value
   // A/B winner flow: variant B content (direct or template), the audience share
   // entering the test, the winner metric and the evaluation wait. The A:B split
   // inside the test group is fixed at 50:50 (the backend defaults it).
@@ -89,6 +107,57 @@ export default function NewCampaign() {
     return () => { cancelled = true; clearTimeout(timer); };
   }, [segEnabled, listId, segOpenPct, segClickPct]);
 
+  // Resuming a draft: pour its saved fields back into the form once.
+  useEffect(() => {
+    if (!draftId) return;
+    let cancelled = false;
+    const toLocal = (iso: string) => {
+      const d = new Date(iso);
+      const pad = (n: number) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    };
+    api(`/api/campaigns/drafts/${draftId}`)
+      .then(async (res) => {
+        if (!res.ok || cancelled) return;
+        const d: CampaignDraftView = await res.json();
+        setName(d.name ?? "");
+        setDescription(d.description ?? "");
+        setSenderName(d.senderName ?? "");
+        setSenderEmail(d.senderEmail ?? "");
+        setSubject(d.subject ?? "");
+        setBody(d.body ?? "");
+        setContentSource(d.templateId != null ? "template" : "direct");
+        setTemplateId(d.templateId != null ? String(d.templateId) : "");
+        setAudienceSource(d.listId != null ? "list" : "direct");
+        setListId(d.listId != null ? String(d.listId) : "");
+        setRecipients(d.recipients.join("\n"));
+        if (d.scheduledAt && new Date(d.scheduledAt).getTime() > Date.now()) {
+          setTiming("scheduled");
+          setScheduledLocal(toLocal(d.scheduledAt));
+        }
+        if (d.endsAt) {
+          setPeriodEnabled(true);
+          setEndsLocal(toLocal(d.endsAt));
+        }
+        if (d.abSubjectB || d.abBodyB) {
+          setAbEnabled(true);
+          setAbSubjectB(d.abSubjectB ?? "");
+          setAbBodyB(d.abBodyB ?? "");
+          if (d.abTestPercent != null) setAbTestPercent(d.abTestPercent);
+          if (d.abEvalMetric === "OPEN" || d.abEvalMetric === "CLICK") setAbMetric(d.abEvalMetric);
+          if (d.abEvalWaitMinutes != null) setAbEvalWait(d.abEvalWaitMinutes);
+        }
+        if (d.segMinOpenPercent != null || d.segMinClickPercent != null) {
+          setSegEnabled(true);
+          setSegOpenPct(d.segMinOpenPercent ?? 0);
+          setSegClickPct(d.segMinClickPercent ?? 0);
+        }
+      })
+      .catch(() => { /* a missing/launched draft just leaves the blank form */ });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftId]);
+
   useEffect(() => {
     let cancelled = false;
     Promise.all([api("/api/templates"), api("/api/lists")])
@@ -115,6 +184,150 @@ export default function NewCampaign() {
   const previewSubject = contentSource === "template" ? selectedTemplate?.subject ?? "" : subject;
   const previewHtml = contentSource === "template" ? selectedTemplate?.htmlBody ?? "" : body;
   const canPreview = contentSource === "direct" || !!selectedTemplate;
+
+  // Lazy-load the campaign list the first time the import modal opens.
+  useEffect(() => {
+    if (!importOpen || importList !== null) return;
+    let cancelled = false;
+    api("/api/campaigns")
+      .then(async (res) => { if (res.ok && !cancelled) setImportList(await res.json()); })
+      .catch(() => { if (!cancelled) setImportList([]); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [importOpen]);
+
+  // Preview pane: fetch the selected campaign's content snapshot once, cached.
+  useEffect(() => {
+    if (!importSel || importSel.id in importContents) return;
+    let cancelled = false;
+    api(`/api/campaigns/${importSel.id}/content`)
+      .then(async (res) => {
+        const content = res.ok ? await res.json() : null;
+        if (cancelled) return;
+        setImportContents((prev) => ({ ...prev, [importSel.id]: content }));
+      })
+      .catch(() => { if (!cancelled) setImportContents((prev) => ({ ...prev, [importSel.id]: null })); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [importSel]);
+
+  /**
+   * Fill the form from a past campaign: settings from the view, subject/body
+   * from the (already previewed) content snapshot. Times (예약/기간) are
+   * deliberately not copied — they belong to the original run. Drafts reroute
+   * to their resume flow.
+   */
+  function importCampaign(c: CampaignView) {
+    if (c.status === "DRAFT") {
+      setImportOpen(false);
+      nav(`/campaigns/new?draftId=${c.id}`);
+      return;
+    }
+    setImporting(true);
+    try {
+      const content = importContents[c.id] ?? null;
+      setName(c.name ? `${c.name} (복사)` : "");
+      setDescription(c.description ?? "");
+      setSenderName(c.senderName ?? "");
+      setSenderEmail(c.senderEmail ?? "");
+      // The snapshot is the source of truth for what was actually sent, so the
+      // copy edits it directly instead of re-linking the template.
+      setContentSource("direct");
+      setTemplateId("");
+      setSubject(content?.subject ?? c.subject ?? "");
+      setBody(content?.htmlBody ?? "");
+      setAudienceSource(c.listId != null ? "list" : "direct");
+      setListId(c.listId != null ? String(c.listId) : "");
+      if (c.segMinOpenPercent != null || c.segMinClickPercent != null) {
+        setSegEnabled(true);
+        setSegOpenPct(c.segMinOpenPercent ?? 0);
+        setSegClickPct(c.segMinClickPercent ?? 0);
+      } else {
+        setSegEnabled(false);
+      }
+      if (content?.abSubjectB || content?.abBodyB) {
+        setAbEnabled(true);
+        setAbContentSource("direct");
+        setAbSubjectB(content.abSubjectB ?? "");
+        setAbBodyB(content.abBodyB ?? "");
+        if (c.abTestPercent != null) setAbTestPercent(c.abTestPercent);
+        if (c.abEvalMetric === "OPEN" || c.abEvalMetric === "CLICK") setAbMetric(c.abEvalMetric);
+      } else {
+        setAbEnabled(false);
+      }
+      setTiming("now");
+      setScheduledLocal("");
+      setPeriodEnabled(false);
+      setEndsLocal("");
+      setImportOpen(false);
+      window.scrollTo({ top: 0 });
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  /** Insert a personalization token at a textarea's caret (falls back to append). */
+  function insertVariableInto(ref: React.RefObject<HTMLTextAreaElement>, value: string,
+                              set: (v: string) => void, token: string) {
+    const area = ref.current;
+    if (!area) { set(value + token); return; }
+    const start = area.selectionStart ?? value.length;
+    const end = area.selectionEnd ?? value.length;
+    set(value.slice(0, start) + token + value.slice(end));
+    requestAnimationFrame(() => {
+      area.focus();
+      area.setSelectionRange(start + token.length, start + token.length);
+    });
+  }
+
+  /** The request body both 발송 등록 and 임시저장 send — drafts skip validation. */
+  function payloadOf(scheduledAt: string | null, endsAt: string | null) {
+    return {
+      name: name || null,
+      description: description || null,
+      subject: contentSource === "direct" ? subject : null,
+      body: contentSource === "direct" ? body : null,
+      templateId: contentSource === "template" && templateId ? Number(templateId) : null,
+      recipients: audienceSource === "direct" ? emails : null,
+      listId: audienceSource === "list" && listId ? Number(listId) : null,
+      senderName: senderName || null,
+      senderEmail: senderEmail || null,
+      scheduledAt,
+      abSubjectB: abEnabled && abContentSource === "direct" && abSubjectB.trim() !== "" ? abSubjectB : null,
+      abBodyB: abEnabled && abContentSource === "direct" && abBodyB.trim() !== "" ? abBodyB : null,
+      abTemplateId: abEnabled && abContentSource === "template" && abTemplateId ? Number(abTemplateId) : null,
+      abTestPercent: abEnabled ? abTestPercent : null,
+      abEvalMetric: abEnabled ? abMetric : null,
+      abEvalWaitMinutes: abEnabled ? abEvalWait : null,
+      segMinOpenPercent: audienceSource === "list" && segEnabled && segOpenPct > 0 ? segOpenPct : null,
+      segMinClickPercent: audienceSource === "list" && segEnabled && segClickPct > 0 ? segClickPct : null,
+      endsAt,
+    };
+  }
+
+  /** 임시저장: keep the form's state as a DRAFT — no validation, nothing queued. */
+  async function saveDraft() {
+    setSavingDraft(true);
+    setError(null);
+    try {
+      const scheduledAt = timing === "scheduled" && scheduledLocal ? new Date(scheduledLocal).toISOString() : null;
+      const endsAt = periodEnabled && endsLocal ? new Date(endsLocal).toISOString() : null;
+      const res = await api(draftId ? `/api/campaigns/drafts/${draftId}` : "/api/campaigns/drafts", {
+        method: draftId ? "PUT" : "POST",
+        body: JSON.stringify(payloadOf(scheduledAt, endsAt)),
+      });
+      if (res.ok) {
+        nav("/campaigns?tab=drafts");
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error ?? "임시저장에 실패했습니다. 이름·제목·템플릿 중 하나는 있어야 해요.");
+      }
+    } catch {
+      setError("임시저장에 실패했습니다.");
+    } finally {
+      setSavingDraft(false);
+    }
+  }
 
   async function submit() {
     if (contentSource === "template" && !templateId) {
@@ -152,36 +365,35 @@ export default function NewCampaign() {
       }
       scheduledAt = when.toISOString();
     }
+    let endsAt: string | null = null;
+    if (periodEnabled) {
+      if (!endsLocal) {
+        setError("캠페인 종료 시각을 선택하세요.");
+        return;
+      }
+      const ends = new Date(endsLocal);
+      const sendStart = scheduledAt ? new Date(scheduledAt).getTime() : Date.now();
+      if (Number.isNaN(ends.getTime()) || ends.getTime() <= sendStart) {
+        setError("캠페인 종료 시각은 발송 시각보다 이후여야 합니다.");
+        return;
+      }
+      endsAt = ends.toISOString();
+    }
     setSubmitting(true);
     setError(null);
     try {
       const res = await api("/api/campaigns", {
         method: "POST",
-        body: JSON.stringify({
-          name: name || null,
-          description: description || null,
-          subject: contentSource === "direct" ? subject : null,
-          body: contentSource === "direct" ? body : null,
-          templateId: contentSource === "template" ? Number(templateId) : null,
-          recipients: audienceSource === "direct" ? emails : null,
-          listId: audienceSource === "list" ? Number(listId) : null,
-          senderName: senderName || null,
-          senderEmail: senderEmail || null,
-          scheduledAt,
-          abSubjectB: abEnabled && abContentSource === "direct" && abSubjectB.trim() !== "" ? abSubjectB : null,
-          abBodyB: abEnabled && abContentSource === "direct" && abBodyB.trim() !== "" ? abBodyB : null,
-          abTemplateId: abEnabled && abContentSource === "template" ? Number(abTemplateId) : null,
-          abTestPercent: abEnabled ? abTestPercent : null,
-          abEvalMetric: abEnabled ? abMetric : null,
-          abEvalWaitMinutes: abEnabled ? abEvalWait : null,
-          segMinOpenPercent: audienceSource === "list" && segEnabled && segOpenPct > 0 ? segOpenPct : null,
-          segMinClickPercent: audienceSource === "list" && segEnabled && segClickPct > 0 ? segClickPct : null,
-        }),
+        body: JSON.stringify(payloadOf(scheduledAt, endsAt)),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         setError(data.error ?? "발송 큐 등록에 실패했습니다.");
         return;
+      }
+      // The draft is consumed by the launch — drop it (best-effort).
+      if (draftId) {
+        api(`/api/campaigns/drafts/${draftId}`, { method: "DELETE" }).catch(() => {});
       }
       const created = await res.json().catch(() => null);
       if (created && typeof created.id !== "undefined") {
@@ -204,6 +416,7 @@ export default function NewCampaign() {
     setSubj: (v: string) => void,
     bod: string,
     setBod: (v: string) => void,
+    bodyRef: React.RefObject<HTMLTextAreaElement>,
     tplId: string,
     setTplId: (v: string) => void,
     selectedTpl: TemplateView | null,
@@ -232,16 +445,23 @@ export default function NewCampaign() {
                 placeholder={variantB ? "B안 제목 — 비우면 A와 동일" : undefined}
               />
             </label>
-            <label className="op-field" style={{ marginBottom: 0 }}>
-              <span className="op-flabel">본문</span>
+            <div className="op-field" style={{ marginBottom: 0 }}>
+              <span className="op-flabel" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                본문
+                <VariableMenu
+                  buttonClass="op-varbtn-form"
+                  onInsert={(token) => insertVariableInto(bodyRef, bod, setBod, token)}
+                />
+              </span>
               <textarea
+                ref={bodyRef}
                 className="op-input"
                 rows={4}
                 value={bod}
                 onChange={(e) => setBod(e.target.value)}
                 placeholder={variantB ? "B안 본문 (선택) — 비우면 본문은 공통" : undefined}
               />
-            </label>
+            </div>
           </>
         ) : (
           // div, not label: the preview button below must not re-trigger the select.
@@ -279,10 +499,125 @@ export default function NewCampaign() {
   return (
     <div className="op-container-mid op-fade">
       <button className="op-back" onClick={() => nav("/campaigns")}>← 캠페인 목록</button>
-      <div className="op-pagehead" style={{ marginBottom: 26, display: "block" }}>
-        <h2 style={{ fontSize: 24 }}>새 캠페인</h2>
-        <p>내용을 작성하고 수신자를 선택하세요.</p>
+      <div className="op-pagehead" style={{ marginBottom: 26 }}>
+        <div>
+          <h2 style={{ fontSize: 24 }}>새 캠페인</h2>
+          <p>내용을 작성하고 수신자를 선택하세요.</p>
+        </div>
+        <button className="op-btn op-btn-sm op-btn-ghost" onClick={() => setImportOpen(true)}>
+          불러오기
+        </button>
       </div>
+
+      {importOpen && (
+        <Portal>
+        <div className="op-modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setImportOpen(false); }}>
+          <div className="op-modal" style={{ maxWidth: 780 }}>
+            <h3>캠페인 불러오기</h3>
+            <p className="op-modal-sub">
+              이전 캠페인의 설정과 발송 당시 내용을 복사해서 시작해요. 예약·기간은 복사되지 않아요.
+              초안을 고르면 이어서 편집합니다.
+            </p>
+            <div className="op-import2">
+              <div className="op-import2-left">
+                <input
+                  className="op-input"
+                  placeholder="캠페인 이름·제목 검색"
+                  value={importQuery}
+                  onChange={(e) => setImportQuery(e.target.value)}
+                  style={{ marginBottom: 8, height: 40 }}
+                />
+                <div className="op-import-list">
+                  {importList === null ? (
+                    <div className="op-import-empty">불러오는 중…</div>
+                  ) : (() => {
+                    const q = importQuery.trim().toLowerCase();
+                    const rows = importList
+                      .filter((c) => !q || (c.name ?? "").toLowerCase().includes(q) || c.subject.toLowerCase().includes(q))
+                      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                      .slice(0, 30);
+                    return rows.length === 0 ? (
+                      <div className="op-import-empty">불러올 캠페인이 없습니다.</div>
+                    ) : rows.map((c) => {
+                      const isAb = (c.variants?.length ?? 0) > 0;
+                      const hasSeg = c.segMinOpenPercent != null || c.segMinClickPercent != null;
+                      return (
+                        <button
+                          key={c.id}
+                          className={`op-import-row${importSel?.id === c.id ? " sel" : ""}`}
+                          onClick={() => { setImportSel(c); setImportVariant("A"); }}
+                        >
+                          <span className="nm op-ell">
+                            {c.name ?? c.subject}
+                            {c.status === "DRAFT" && <span className="op-minibadge amber" style={{ marginLeft: 6 }}>초안</span>}
+                            {isAb && <span className="op-minibadge blue" style={{ marginLeft: 6 }}>A/B</span>}
+                            {hasSeg && " ⚡"}
+                          </span>
+                          <span className="sub op-ell">
+                            {c.listName ?? (c.listId != null ? `#${c.listId}` : "직접 입력")}
+                            {" · "}{fmt(c.total)}명 · {new Date(c.createdAt).toLocaleDateString("ko-KR")}
+                          </span>
+                          {c.sent > 0 && (
+                            <span className="stats">오픈 {Math.round((c.opened / c.sent) * 100)}% · 클릭 {Math.round((c.clicked / c.sent) * 100)}%</span>
+                          )}
+                        </button>
+                      );
+                    });
+                  })()}
+                </div>
+              </div>
+              <div className="op-import2-right">
+                {!importSel ? (
+                  <div className="op-import-empty" style={{ marginTop: 120 }}>
+                    왼쪽에서 캠페인을 선택하면<br />발송된 메일을 미리 볼 수 있어요.
+                  </div>
+                ) : (() => {
+                  const content = importContents[importSel.id];
+                  const hasB = !!(content?.abSubjectB || content?.abBodyB);
+                  const subj = importVariant === "B" && content?.abSubjectB ? content.abSubjectB : content?.subject ?? importSel.subject;
+                  const html = importVariant === "B" && content?.abBodyB ? content.abBodyB : content?.htmlBody ?? "";
+                  return (
+                    <>
+                      <div className="op-import2-head">
+                        <span className="subj op-ell" title={subj}>{subj}</span>
+                        {hasB && (
+                          <span className="op-acttabs" style={{ marginBottom: 0 }}>
+                            <button className={`op-acttab${importVariant === "A" ? " on" : ""}`} onClick={() => setImportVariant("A")}>A안</button>
+                            <button className={`op-acttab${importVariant === "B" ? " on" : ""}`} onClick={() => setImportVariant("B")}>B안</button>
+                          </span>
+                        )}
+                      </div>
+                      {content === undefined ? (
+                        <div className="op-import-empty" style={{ marginTop: 120 }}>내용을 불러오는 중…</div>
+                      ) : (
+                        /* srcdoc updates may not repaint — remount per campaign/variant. */
+                        <iframe
+                          key={`${importSel.id}-${importVariant}`}
+                          className="op-import2-frame"
+                          sandbox=""
+                          srcDoc={html || "<p style='color:#a1a1aa;font-family:sans-serif'>본문이 비어 있어요.</p>"}
+                          title="캠페인 미리보기"
+                        />
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+            <div className="op-modal-foot">
+              <button className="op-btn op-btn-sm op-btn-ghost" onClick={() => setImportOpen(false)}>닫기</button>
+              <button
+                className="op-btn op-btn-sm"
+                disabled={!importSel || importing}
+                onClick={() => importSel && importCampaign(importSel)}
+              >
+                {importSel?.status === "DRAFT" ? "이어서 편집" : "이 캠페인으로 시작"}
+              </button>
+            </div>
+          </div>
+        </div>
+        </Portal>
+      )}
 
       <div className="op-form-card">
         <h3 className="op-sect-title">기본 정보</h3>
@@ -474,19 +809,19 @@ export default function NewCampaign() {
               <div style={{ border: "1px solid var(--op-border)", borderRadius: 12, padding: 14 }}>
                 <span className="op-pill" style={{ marginBottom: 10, display: "inline-block" }}>A안 · 테스트 {abTestPercent / 2}%</span>
                 {contentControls(contentSource, setContentSource, subject, setSubject, body, setBody,
-                  templateId, setTemplateId, selectedTemplate, false)}
+                  bodyARef, templateId, setTemplateId, selectedTemplate, false)}
               </div>
               <div style={{ border: "1px solid var(--op-border)", borderRadius: 12, padding: 14 }}>
                 <span className="op-pill" style={{ marginBottom: 10, display: "inline-block" }}>B안 · 테스트 {abTestPercent / 2}%</span>
                 {contentControls(abContentSource, setAbContentSource, abSubjectB, setAbSubjectB, abBodyB, setAbBodyB,
-                  abTemplateId, setAbTemplateId, selectedAbTemplate, true)}
+                  bodyBRef, abTemplateId, setAbTemplateId, selectedAbTemplate, true)}
               </div>
             </div>
           </div>
         ) : (
           <div className="op-field" style={{ marginBottom: 0 }}>
             {contentControls(contentSource, setContentSource, subject, setSubject, body, setBody,
-              templateId, setTemplateId, selectedTemplate, false)}
+              bodyARef, templateId, setTemplateId, selectedTemplate, false)}
           </div>
         )}
       </div>
@@ -518,13 +853,46 @@ export default function NewCampaign() {
             <span className="op-hint">지금 바로 발송 큐에 등록됩니다.</span>
           )}
         </div>
+        <div className="op-field" style={{ marginTop: 16, marginBottom: 0 }}>
+          <label className="op-check">
+            <input
+              type="checkbox"
+              checked={periodEnabled}
+              onChange={(e) => setPeriodEnabled(e.target.checked)}
+            />
+            캠페인 기간 설정
+          </label>
+          {periodEnabled ? (
+            <>
+              <input
+                className="op-input"
+                type="datetime-local"
+                style={{ marginTop: 10 }}
+                value={endsLocal}
+                min={timing === "scheduled" && scheduledLocal ? scheduledLocal : minScheduleLocal()}
+                onChange={(e) => setEndsLocal(e.target.value)}
+              />
+              <span className="op-hint">
+                종료 시각 이후의 오픈·클릭은 지표에 집계되지 않아요 — 클릭율 등이 이 기간의 성과로 고정됩니다.
+                (링크 이동과 메일 표시는 계속 동작해요.)
+              </span>
+            </>
+          ) : (
+            <span className="op-hint">기간을 정하지 않으면 오픈·클릭을 계속 집계합니다.</span>
+          )}
+        </div>
       </div>
 
       {error && <p className="error">{error}</p>}
 
       <div style={{ display: "flex", gap: 10, marginTop: 8, justifyContent: "flex-end" }}>
-        <button className="op-btn op-btn-ghost" style={{ height: 48, padding: "0 20px", borderRadius: 11, fontSize: 14.5 }} onClick={() => nav("/campaigns")}>
-          임시저장
+        <button
+          className="op-btn op-btn-ghost"
+          style={{ height: 48, padding: "0 20px", borderRadius: 11, fontSize: 14.5 }}
+          disabled={savingDraft}
+          onClick={saveDraft}
+        >
+          {savingDraft ? "저장 중…" : draftId ? "임시저장 (덮어쓰기)" : "임시저장"}
         </button>
         <button
           className="op-btn op-btn-ghost"

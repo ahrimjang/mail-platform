@@ -55,6 +55,7 @@ export interface CampaignView {
   scheduledAt: string | null; // requested send time; null = immediate
   enqueuedAt?: string | null;  // when messages were released to the queue (= run start)
   completedAt?: string | null; // when the campaign finished draining; null while in flight/legacy
+  endsAt?: string | null;      // campaign period end — engagement after this is not recorded
   segMinOpenPercent?: number | null;  // engagement segment floor; null = whole list
   segMinClickPercent?: number | null; // engagement segment floor; null = whole list
   templateId: number | null; // content source (null = authored directly)
@@ -198,6 +199,29 @@ export interface ContactMessageView {
   campaignName: string | null;
   status: MessageStatus;
   updatedAt: string;
+}
+
+// Editable fields of a DRAFT campaign, for the compose form to resume from.
+export interface CampaignDraftView {
+  id: number;
+  name: string | null;
+  description: string | null;
+  subject: string | null;
+  body: string | null;
+  templateId: number | null;
+  recipients: string[];
+  listId: number | null;
+  senderName: string | null;
+  senderEmail: string | null;
+  scheduledAt: string | null;
+  endsAt: string | null;
+  abSubjectB: string | null;
+  abBodyB: string | null;
+  abTestPercent: number | null;
+  abEvalMetric: string | null;
+  abEvalWaitMinutes: number | null;
+  segMinOpenPercent: number | null;
+  segMinClickPercent: number | null;
 }
 
 // One contact's engagement summary; rates are derived (opened/sent, clicked/sent).

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../api";
+import VariableMenu from "../components/VariableMenu";
 import type { TemplateView } from "../types";
 import Portal from "../components/Portal";
 import { renderPreview } from "../outpace/starters";
@@ -497,6 +498,10 @@ export default function EmailEditor() {
   function execRich(cmd: "bold" | "italic") {
     document.execCommand(cmd);
   }
+  /* Personalization token at the caret; the block's onBlur commit syncs the model. */
+  function insertVariableAtCaret(token: string) {
+    document.execCommand("insertText", false, token);
+  }
   function execLink() {
     const selApi = window.getSelection();
     if (!selApi || selApi.rangeCount === 0 || selApi.isCollapsed) return;
@@ -605,6 +610,7 @@ export default function EmailEditor() {
             <div className="op-richbar" onMouseDown={(e) => e.preventDefault()}>
               <button onClick={() => execRich("bold")}><b>B</b></button>
               <button onClick={() => execRich("italic")}><i>I</i></button>
+              <VariableMenu buttonClass="op-varbtn-rich" onInsert={insertVariableAtCaret} />
               <button onClick={execLink}>링크</button>
             </div>
           )}

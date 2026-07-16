@@ -4,7 +4,7 @@ import ActivityChart from "../components/ActivityChart";
 import { api } from "../api";
 import type { CampaignView, DashboardDay, DashboardView } from "../types";
 import { useAuth } from "../outpace/auth";
-import { badgeClass, fmt, pctOf } from "../outpace/format";
+import { badgeClass, fmt, pctOf, statusLabel } from "../outpace/format";
 import { MOCK_CAMPAIGNS } from "../outpace/mock";
 
 const CHART_DAYS = 14;
@@ -141,7 +141,7 @@ export default function Dashboard() {
 
   // Newest first; six cards fill the grid evenly.
   const recent = rows
-    .slice()
+    .filter((c) => c.status !== "DRAFT") // drafts live on the campaigns page's 임시 tab
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, 6);
   const name = (email?.split("@")[0] || "회원");
@@ -297,7 +297,7 @@ export default function Dashboard() {
                   <div className="head">
                     <div className="name">{c.name ?? c.subject}</div>
                     <span className={`op-badge ${badgeClass(c.status)}`}>
-                      {c.status === "CANCELED" ? "취소됨" : c.status}
+                      {statusLabel(c)}
                     </span>
                   </div>
                   <div className="meta">
