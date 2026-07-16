@@ -23,11 +23,53 @@ public class WebhookController {
 
     private final BounceService bounceService;
     private final String secret;
+    private final io.github.ahrimjang.mail.api.webhook.SnsSignatureVerifier snsVerifier;
+    private final io.github.ahrimjang.mail.api.webhook.SnsSubscriptionConfirmer snsConfirmer;
+    private final io.github.ahrimjang.mail.api.webhook.SesNotificationParser sesParser;
+    private final boolean verifySnsSignature;
 
     public WebhookController(BounceService bounceService,
-                             @Value("${app.webhook.secret:dev-webhook-secret}") String secret) {
+                             io.github.ahrimjang.mail.api.webhook.SnsSignatureVerifier snsVerifier,
+                             io.github.ahrimjang.mail.api.webhook.SnsSubscriptionConfirmer snsConfirmer,
+                             io.github.ahrimjang.mail.api.webhook.SesNotificationParser sesParser,
+                             @Value("${app.webhook.secret:dev-webhook-secret}") String secret,
+                             @Value("${app.webhook.sns.verify-signature:true}") boolean verifySnsSignature) {
         this.bounceService = bounceService;
+        this.snsVerifier = snsVerifier;
+        this.snsConfirmer = snsConfirmer;
+        this.sesParser = sesParser;
         this.secret = secret;
+        this.verifySnsSignature = verifySnsSignature;
+    }
+
+    /**
+     * SES notifications delivered through SNS. The endpoint is public
+     * (SecurityConfig permits /api/webhooks/**), so authenticity comes from
+     * Amazon's message signature, not a shared secret. SNS posts the JSON with
+     * a text/plain content type — hence the raw String body.
+     */
+    @PostMapping(value = "/ses", consumes = org.springframework.http.MediaType.ALL_VALUE)
+    public ResponseEntity<Void> ses(@RequestBody String rawBody) {
+        io.github.ahrimjang.mail.api.webhook.SnsMessage sns;
+        try {
+            sns = io.github.ahrimjang.mail.api.webhook.SnsMessage.parse(rawBody);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().build();
+        }
+        if (verifySnsSignature && !snsVerifier.isValid(sns)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        switch (sns.type() == null ? "" : sns.type()) {
+            case "SubscriptionConfirmation" -> {
+                // First contact from a new topic: fetching SubscribeURL activates it.
+                if (!snsConfirmer.confirm(sns.subscribeUrl())) {
+                    return ResponseEntity.badRequest().build();
+                }
+            }
+            case "Notification" -> sesParser.parse(sns.message()).forEach(bounceService::handle);
+            default -> { /* UnsubscribeConfirmation etc. — acknowledge and ignore */ }
+        }
+        return ResponseEntity.accepted().build();
     }
 
     @PostMapping("/generic")
