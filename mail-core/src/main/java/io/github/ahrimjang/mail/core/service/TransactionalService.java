@@ -63,6 +63,7 @@ public class TransactionalService {
                 renderer.render(template.getSubject(), vars),
                 renderer.render(template.getHtmlBody(), vars));
         campaign.setWorkspaceId(ctx.currentWorkspaceId());
+        campaign.setCreatedBy(ctx.currentUserEmail());
         campaign.setStatus(CampaignStatus.QUEUED);
         campaign.setEnqueuedAt(java.time.Instant.now()); // transactional sends are always immediate
         campaign.setTemplateId(template.getId());

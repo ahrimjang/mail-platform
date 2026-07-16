@@ -56,6 +56,7 @@ class CampaignServiceTest {
     @BeforeEach
     void stubWorkspaceContext() {
         org.mockito.Mockito.lenient().when(ctx.currentWorkspaceId()).thenReturn(WS);
+        org.mockito.Mockito.lenient().when(ctx.currentUserEmail()).thenReturn("actor@ws.com");
     }
 
     private static final long CAMPAIGN_ID = 42L;
@@ -125,6 +126,7 @@ class CampaignServiceTest {
         ArgumentCaptor<Campaign> campaignCaptor = ArgumentCaptor.forClass(Campaign.class);
         verify(campaigns).save(campaignCaptor.capture());
         assertThat(campaignCaptor.getValue().getStatus()).isEqualTo(CampaignStatus.QUEUED);
+        assertThat(campaignCaptor.getValue().getCreatedBy()).isEqualTo("actor@ws.com");
         assertThat(campaignCaptor.getValue().getSubject()).isEqualTo("Hello");
         assertThat(campaignCaptor.getValue().getBody()).isEqualTo("<p>Hi there</p>");
 

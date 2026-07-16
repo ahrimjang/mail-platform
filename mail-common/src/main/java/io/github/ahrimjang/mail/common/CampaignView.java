@@ -44,6 +44,7 @@ public record CampaignView(
         Instant enqueuedAt,
         Instant completedAt,
         Instant endsAt,
+        String createdBy,
         Long templateId,
         String templateName,
         Long listId,

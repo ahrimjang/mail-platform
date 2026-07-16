@@ -198,6 +198,9 @@ export default function CampaignDetail() {
   if (campaign.templateId) {
     info.push({ k: "템플릿", v: campaign.templateName ?? `#${campaign.templateId} (삭제됨)` });
   }
+  if (campaign.createdBy) {
+    info.push({ k: "등록자", v: campaign.createdBy });
+  }
 
   return (
     <div className="op-container op-fade">

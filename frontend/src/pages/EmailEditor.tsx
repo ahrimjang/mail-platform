@@ -530,7 +530,9 @@ export default function EmailEditor() {
         : await api("/api/templates", { method: "POST", body: payload });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        setError(data.error ?? "저장에 실패했습니다.");
+        setError(res.status === 409
+          ? "기본 제공 템플릿은 읽기 전용이에요. 템플릿 목록에서 '복사해서 편집'으로 시작하세요."
+          : data.error ?? "저장에 실패했습니다.");
         return null;
       }
       const view: TemplateView = await res.json();

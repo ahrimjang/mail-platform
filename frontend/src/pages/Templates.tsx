@@ -52,7 +52,7 @@ function CardMenu({ builtin, onEdit, onReset, onDelete }: {
       <span className="op-dots" onClick={() => setOpen((o) => !o)}>···</span>
       {open && (
         <div className="op-menu" style={{ top: 26 }}>
-          <button onClick={() => { setOpen(false); onEdit(); }}>수정</button>
+          <button onClick={() => { setOpen(false); onEdit(); }}>{builtin ? "복사해서 편집" : "수정"}</button>
           {builtin
             ? <button onClick={() => { setOpen(false); onReset(); }}>원본 복원</button>
             : <button className="danger" onClick={() => { setOpen(false); onDelete(); }}>삭제</button>}
@@ -183,6 +183,26 @@ export default function Templates() {
     return () => { cancelled = true; };
   }, [tab, campaigns]);
 
+  // Built-ins are read-only and shared by every workspace — editing starts
+  // from a private copy (copy-on-write).
+  async function copyAndEdit(t: TemplateView) {
+    try {
+      const res = await api(`/api/templates/${t.id}/copy`, { method: "POST" });
+      if (res.ok) {
+        const copy: TemplateView = await res.json();
+        nav(editorRouteFor(copy));
+      }
+    } catch { /* transient */ }
+  }
+
+  function openTemplate(t: TemplateView) {
+    if (t.builtinKey) {
+      copyAndEdit(t);
+    } else {
+      nav(editorRouteFor(t));
+    }
+  }
+
   const builtins = templates
     .filter((t) => t.builtinKey)
     .sort((a, b) => a.id - b.id);
@@ -276,7 +296,7 @@ export default function Templates() {
             </button>
           </div>
           <p className="op-tab-hint">
-            카드를 클릭하면 편집 화면이 열려요. 기본 제공 템플릿은 코드 없이 블록(편집상자)을
+            카드를 클릭하면 편집 화면이 열려요 — 기본 제공 템플릿은 읽기 전용이라 내 복사본으로 시작합니다. 기본 제공 템플릿은 코드 없이 블록(편집상자)을
             끌어다 수정하고, 언제든 메뉴(···)에서 원본으로 복원할 수 있습니다.
           </p>
           <div className="op-tpl-grid">
@@ -284,7 +304,7 @@ export default function Templates() {
               const cat = t.builtinKey ? BUILTIN_CATEGORY[t.builtinKey] : null;
               return (
                 // marker-aware routing: block/text templates reopen in their own editor
-                <div key={t.id} className="op-tpl-card" onClick={() => nav(editorRouteFor(t))}>
+                <div key={t.id} className="op-tpl-card" onClick={() => openTemplate(t)}>
                   <LiveThumb html={renderPreview(t.htmlBody)} />
                   <div className="op-tpl-body between">
                     <div style={{ minWidth: 0 }}>
@@ -297,7 +317,7 @@ export default function Templates() {
                     </div>
                     <CardMenu
                       builtin={!!t.builtinKey}
-                      onEdit={() => nav(editorRouteFor(t))}
+                      onEdit={() => openTemplate(t)}
                       onReset={() => setResetting(t)}
                       onDelete={() => setDeleting(t)}
                     />

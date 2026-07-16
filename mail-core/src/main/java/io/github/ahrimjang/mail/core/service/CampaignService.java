@@ -94,6 +94,7 @@ public class CampaignService {
 
         Campaign campaign = Campaign.draft(subject, body);
         campaign.setWorkspaceId(ctx.currentWorkspaceId());
+        campaign.setCreatedBy(ctx.currentUserEmail());
         campaign.setStatus(CampaignStatus.QUEUED);
         campaign.setName(blankToNull(request.name()));
         campaign.setDescription(blankToNull(request.description()));
@@ -256,6 +257,7 @@ public class CampaignService {
     public CampaignView saveDraft(CreateCampaignRequest request) {
         Campaign draft = Campaign.draft(orEmpty(request.subject()), orEmpty(request.body()));
         draft.setWorkspaceId(ctx.currentWorkspaceId());
+        draft.setCreatedBy(ctx.currentUserEmail());
         applyDraftFields(draft, request);
         return toView(campaigns.save(draft));
     }
@@ -435,6 +437,7 @@ public class CampaignService {
                 campaign.getScheduledAt(),
                 campaign.getEnqueuedAt(), campaign.getCompletedAt(),
                 campaign.getEndsAt(),
+                campaign.getCreatedBy(),
                 campaign.getTemplateId(),
                 templateName,
                 campaign.getListId(),

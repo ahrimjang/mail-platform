@@ -56,6 +56,7 @@ export interface CampaignView {
   enqueuedAt?: string | null;  // when messages were released to the queue (= run start)
   completedAt?: string | null; // when the campaign finished draining; null while in flight/legacy
   endsAt?: string | null;      // campaign period end — engagement after this is not recorded
+  createdBy?: string | null;   // who registered the campaign; null = legacy/system
   segMinOpenPercent?: number | null;  // engagement segment floor; null = whole list
   segMinClickPercent?: number | null; // engagement segment floor; null = whole list
   templateId: number | null; // content source (null = authored directly)

@@ -68,6 +68,12 @@ public class TemplateController {
     }
 
     /** Restore an edited built-in template to its original content. 409 for user templates. */
+    /** Duplicate a template (typically a read-only built-in) into my workspace. */
+    @PostMapping("/{id}/copy")
+    public ResponseEntity<TemplateView> copy(@PathVariable Long id) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(templates.copy(id));
+    }
+
     @PostMapping("/{id}/reset")
     public TemplateView reset(@PathVariable Long id) {
         return templates.resetBuiltin(id);

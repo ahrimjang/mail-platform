@@ -24,6 +24,9 @@ public class CampaignEntity {
     @Column(name = "workspace_id")
     private Long workspaceId;
 
+    /** Email of the account that registered the campaign; null = legacy/system. */
+    private String createdBy;
+
 
     /** Console display name; null = fall back to the subject. */
     private String name;
@@ -164,6 +167,14 @@ public class CampaignEntity {
 
     public void setWorkspaceId(Long workspaceId) {
         this.workspaceId = workspaceId;
+    }
+
+    public String getCreatedBy() {
+        return createdBy;
+    }
+
+    public void setCreatedBy(String createdBy) {
+        this.createdBy = createdBy;
     }
 
 

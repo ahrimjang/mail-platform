@@ -17,6 +17,8 @@ public class Campaign {
     private Long id;
     // Owning tenant — every campaign lives inside exactly one workspace.
     private Long workspaceId;
+    // Minimal audit: email of the account that registered the campaign (null = legacy/system).
+    private String createdBy;
     // Console display name (null = fall back to subject) and free-form note.
     private String name;
     private String description;
@@ -80,6 +82,14 @@ public class Campaign {
 
     public void setWorkspaceId(Long workspaceId) {
         this.workspaceId = workspaceId;
+    }
+
+    public String getCreatedBy() {
+        return createdBy;
+    }
+
+    public void setCreatedBy(String createdBy) {
+        this.createdBy = createdBy;
     }
 
 

@@ -1,6 +1,13 @@
 spring:
   application:
     name: mail-api
+  mail:
+    # Test sends ("내게 먼저 보내기") go out synchronously from the API — same
+    # dev default (MailHog) and overrides as the worker's dispatch path.
+    host: ${SMTP_HOST:localhost}
+    port: ${SMTP_PORT:1025}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
   datasource:
     # Shared Postgres instance (docker compose) — mail-api/worker/admin all connect
     # to the same database as the state store. Defaults target local dev; override
@@ -44,3 +51,7 @@ app:
   uploads:
     # Local template-image storage; served publicly at /uploads/**.
     dir: ${APP_UPLOADS_DIR:uploads}
+
+mail:
+  sender:
+    type: ${MAIL_SENDER_TYPE:smtp}

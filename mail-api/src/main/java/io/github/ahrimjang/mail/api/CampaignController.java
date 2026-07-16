@@ -5,7 +5,9 @@ import io.github.ahrimjang.mail.common.LinkClicksView;
 import io.github.ahrimjang.mail.common.CreateCampaignRequest;
 import io.github.ahrimjang.mail.common.MessageView;
 import io.github.ahrimjang.mail.common.SendLogEntry;
+import io.github.ahrimjang.mail.common.TestSendRequest;
 import io.github.ahrimjang.mail.core.service.CampaignService;
+import io.github.ahrimjang.mail.core.service.TestSendService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -32,7 +34,10 @@ public class CampaignController {
 
     private final CampaignService campaigns;
 
-    public CampaignController(CampaignService campaigns) {
+    private final TestSendService testSend;
+
+    public CampaignController(CampaignService campaigns, TestSendService testSend) {
+        this.testSend = testSend;
         this.campaigns = campaigns;
     }
 
@@ -46,6 +51,12 @@ public class CampaignController {
     @GetMapping
     public List<CampaignView> list() {
         return campaigns.list();
+    }
+
+    /** 내게 먼저 보내기: mail the form's content to one address, outside the pipeline. */
+    @PostMapping("/test-send")
+    public java.util.Map<String, String> testSend(@RequestBody TestSendRequest request) {
+        return java.util.Map.of("recipient", testSend.send(request));
     }
 
     /** Save the compose form as a draft — nothing is queued yet. */

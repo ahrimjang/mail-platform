@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api";
+import { useAuth } from "../outpace/auth";
 import VariableMenu from "../components/VariableMenu";
 import Portal from "../components/Portal";
 import { fmt } from "../outpace/format";
@@ -30,6 +31,7 @@ function minScheduleLocal(): string {
 
 export default function NewCampaign() {
   const nav = useNavigate();
+  const { email: myEmail } = useAuth();
   // ?templateId= — the editors' "다음 · 발송 설정" hands over the just-saved
   // template so it arrives here already selected.
   const [searchParams] = useSearchParams();
@@ -73,6 +75,15 @@ export default function NewCampaign() {
   const [abEvalWait, setAbEvalWait] = useState(60);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Confirm-before-send: validated times park here while the summary is shown.
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingTimes, setPendingTimes] = useState<{ scheduledAt: string | null; endsAt: string | null } | null>(null);
+  // 내게 먼저 보내기
+  const [testOpen, setTestOpen] = useState(false);
+  const [testRecipient, setTestRecipient] = useState("");
+  const [testVariant, setTestVariant] = useState<"A" | "B">("A");
+  const [testSending, setTestSending] = useState(false);
+  const [testResult, setTestResult] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   // Template preview popup: which template + the variant label it belongs to.
   const [tplPreview, setTplPreview] = useState<{ tpl: TemplateView; label: string } | null>(null);
@@ -379,6 +390,16 @@ export default function NewCampaign() {
       }
       endsAt = ends.toISOString();
     }
+    // Everything validated — show the summary instead of firing immediately.
+    // A bulk mis-send is this domain's worst accident; one look costs a click.
+    setError(null);
+    setPendingTimes({ scheduledAt, endsAt });
+    setConfirmOpen(true);
+  }
+
+  async function confirmSend() {
+    if (!pendingTimes) return;
+    const { scheduledAt, endsAt } = pendingTimes;
     setSubmitting(true);
     setError(null);
     try {
@@ -405,6 +426,50 @@ export default function NewCampaign() {
       setError("발송 큐 등록에 실패했습니다.");
     } finally {
       setSubmitting(false);
+      setConfirmOpen(false);
+    }
+  }
+
+  /** Content the test mail should carry, honoring the A/B variant choice. */
+  function testPayload() {
+    if (testVariant === "B" && abEnabled) {
+      if (abContentSource === "template" && abTemplateId) {
+        return { templateId: Number(abTemplateId) };
+      }
+      // A subject-only (or body-only) B test falls back to A's direct content.
+      return {
+        subject: abSubjectB.trim() || (contentSource === "direct" ? subject : ""),
+        body: abBodyB.trim() || (contentSource === "direct" ? body : ""),
+      };
+    }
+    return contentSource === "template" && templateId
+        ? { templateId: Number(templateId) }
+        : { subject, body };
+  }
+
+  async function sendTest() {
+    setTestSending(true);
+    setTestResult(null);
+    try {
+      const res = await api("/api/campaigns/test-send", {
+        method: "POST",
+        body: JSON.stringify({
+          recipient: testRecipient.trim(),
+          senderName: senderName || null,
+          senderEmail: senderEmail || null,
+          ...testPayload(),
+        }),
+      });
+      if (res.ok) {
+        setTestResult(`${testRecipient.trim()} 앞으로 보냈어요 — 받은편지함(개발 환경은 MailHog)을 확인하세요.`);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setTestResult(`실패: ${data.error ?? "테스트 발송에 실패했습니다."}`);
+      }
+    } catch {
+      setTestResult("실패: 테스트 발송에 실패했습니다.");
+    } finally {
+      setTestSending(false);
     }
   }
 
@@ -897,6 +962,13 @@ export default function NewCampaign() {
         <button
           className="op-btn op-btn-ghost"
           style={{ height: 48, padding: "0 20px", borderRadius: 11, fontSize: 14.5 }}
+          onClick={() => { setTestRecipient(myEmail ?? ""); setTestVariant("A"); setTestResult(null); setTestOpen(true); }}
+        >
+          테스트 발송
+        </button>
+        <button
+          className="op-btn op-btn-ghost"
+          style={{ height: 48, padding: "0 20px", borderRadius: 11, fontSize: 14.5 }}
           disabled={!canPreview}
           title={canPreview ? undefined : "먼저 템플릿을 선택하세요"}
           onClick={() => setPreviewOpen(true)}
@@ -907,6 +979,87 @@ export default function NewCampaign() {
           {submitting ? "발송 큐 등록 중…" : `${fmt(audienceCount)}명에게 발송 큐 등록`}
         </button>
       </div>
+
+      {confirmOpen && (
+        <Portal>
+        <div className="op-modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setConfirmOpen(false); }}>
+          <div className="op-modal" style={{ maxWidth: 460 }}>
+            <h3>발송 전 마지막 확인</h3>
+            <p className="op-modal-sub">아래 내용으로 발송 큐에 등록합니다. 등록 후에는 예약 취소 외에 되돌릴 수 없어요.</p>
+            <div className="op-confirm-rows">
+              <div><span className="k">캠페인</span><span className="v">{name || subject || "(제목 없음)"}</span></div>
+              <div>
+                <span className="k">대상</span>
+                <span className="v">
+                  {audienceSource === "direct"
+                    ? `직접 입력 ${fmt(emails.length)}명`
+                    : `리스트 '${selectedList?.name ?? "-"}' (${fmt(selectedList?.memberCount ?? 0)}명)`}
+                  {audienceSource === "list" && segEnabled && (
+                    <> · 참여도 조건{segOpenPct > 0 ? ` 오픈율 ${segOpenPct}%+` : ""}{segClickPct > 0 ? ` 클릭율 ${segClickPct}%+` : ""}
+                      {segPreview !== null ? ` → 예상 ${fmt(segPreview)}명` : ""}</>
+                  )}
+                </span>
+              </div>
+              <div>
+                <span className="k">발송 시점</span>
+                <span className="v">{timing === "scheduled" && scheduledLocal ? new Date(scheduledLocal).toLocaleString("ko-KR") : "지금 즉시"}</span>
+              </div>
+              {periodEnabled && endsLocal && (
+                <div><span className="k">수집 종료</span><span className="v">{new Date(endsLocal).toLocaleString("ko-KR")}</span></div>
+              )}
+              {abEnabled && (
+                <div><span className="k">A/B</span><span className="v">테스트 {abTestPercent}% · {abMetric === "OPEN" ? "오픈율" : "클릭율"} 기준 · {abEvalWait}분 후 승자 발송</span></div>
+              )}
+            </div>
+            {error && <div className="op-modal-error">{error}</div>}
+            <div className="op-modal-foot">
+              <button className="op-btn op-btn-sm op-btn-ghost" onClick={() => setConfirmOpen(false)}>다시 확인</button>
+              <button className="op-btn op-btn-sm" disabled={submitting} onClick={confirmSend}>
+                {submitting ? "등록 중…" : "발송 등록"}
+              </button>
+            </div>
+          </div>
+        </div>
+        </Portal>
+      )}
+
+      {testOpen && (
+        <Portal>
+        <div className="op-modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setTestOpen(false); }}>
+          <div className="op-modal" style={{ maxWidth: 440 }}>
+            <h3>테스트 발송</h3>
+            <p className="op-modal-sub">
+              지금 작성 중인 내용을 한 명에게 먼저 보내 봅니다. 제목에 [테스트]가 붙고,
+              캠페인·지표에는 아무 기록도 남지 않아요.
+            </p>
+            <label className="op-field">
+              <span className="op-flabel">받는 사람</span>
+              <input className="op-input" type="email" value={testRecipient} onChange={(e) => setTestRecipient(e.target.value)} placeholder="me@company.com" />
+            </label>
+            {abEnabled && (
+              <label className="op-field">
+                <span className="op-flabel">보낼 안</span>
+                <select className="op-input" value={testVariant} onChange={(e) => setTestVariant(e.target.value as "A" | "B")}>
+                  <option value="A">A안</option>
+                  <option value="B">B안</option>
+                </select>
+              </label>
+            )}
+            {testResult && (
+              <p style={{ fontSize: 13, color: testResult.startsWith("실패") ? "var(--op-red)" : "var(--op-green-700)", margin: "0 0 8px" }}>
+                {testResult}
+              </p>
+            )}
+            <div className="op-modal-foot">
+              <button className="op-btn op-btn-sm op-btn-ghost" onClick={() => setTestOpen(false)}>닫기</button>
+              <button className="op-btn op-btn-sm" disabled={testSending || !testRecipient.includes("@")} onClick={sendTest}>
+                {testSending ? "발송 중…" : "테스트 발송"}
+              </button>
+            </div>
+          </div>
+        </div>
+        </Portal>
+      )}
 
       {previewOpen && (
         <Portal>

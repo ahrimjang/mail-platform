@@ -361,6 +361,13 @@ textarea.op-input { height: auto; padding: 13px 15px; line-height: 1.6; resize: 
 .op-inforow .k { flex: 0 0 84px; color: var(--op-muted); font-size: 12.5px; }
 .op-inforow .v { color: var(--op-ink); font-weight: 600; }
 
+/* new campaign: confirm-before-send summary rows */
+.op-confirm-rows { display: flex; flex-direction: column; gap: 0; margin-bottom: 16px; }
+.op-confirm-rows > div { display: flex; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--op-divider); font-size: 13.5px; align-items: baseline; }
+.op-confirm-rows > div:last-child { border-bottom: none; }
+.op-confirm-rows .k { flex: 0 0 76px; color: var(--op-muted); font-size: 12.5px; }
+.op-confirm-rows .v { color: var(--op-ink); font-weight: 600; line-height: 1.5; }
+
 /* lists page: expandable row -> campaigns that targeted the list */
 .op-rowcaret { display: inline-block; margin-right: 7px; color: var(--op-faint); font-size: 11px; transition: transform 0.15s; }
 .op-rowcaret.open { transform: rotate(90deg); color: var(--op-primary); }

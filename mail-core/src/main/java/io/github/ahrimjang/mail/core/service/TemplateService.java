@@ -46,6 +46,11 @@ public class TemplateService {
     public TemplateView update(Long id, TemplateRequest request) {
         validate(request);
         Template template = load(id);
+        // Built-ins are shared by every workspace — editing one would leak the
+        // change across tenants. They are read-only: copy, then edit the copy.
+        if (template.isBuiltin()) {
+            throw new IllegalStateException("built-in templates are read-only — copy them first: " + id);
+        }
         template.setName(request.name());
         template.setSubject(request.subject());
         template.setHtmlBody(request.htmlBody());
@@ -90,6 +95,18 @@ public class TemplateService {
             }
         }
         return inserted;
+    }
+
+    /**
+     * Copy any visible template (typically a built-in) into the acting
+     * workspace as an editable duplicate — the copy-on-write half of the
+     * read-only built-ins rule.
+     */
+    public TemplateView copy(Long id) {
+        Template source = load(id);
+        Template copy = Template.create(source.getName() + " (복사)", source.getSubject(), source.getHtmlBody());
+        copy.setWorkspaceId(ctx.currentWorkspaceId());
+        return toView(templates.save(copy));
     }
 
     /** Restores an edited built-in template back to its original seed content. */

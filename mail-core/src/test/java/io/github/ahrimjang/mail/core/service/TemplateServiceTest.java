@@ -1,5 +1,6 @@
 package io.github.ahrimjang.mail.core.service;
 
+import io.github.ahrimjang.mail.common.TemplateRequest;
 import io.github.ahrimjang.mail.common.TemplateView;
 import io.github.ahrimjang.mail.core.domain.Template;
 import io.github.ahrimjang.mail.core.port.WorkspaceContext;
@@ -128,5 +129,38 @@ class TemplateServiceTest {
         service.delete(9L);
 
         verify(templates).deleteById(9L);
+    }
+
+    @Test
+    void update_ofABuiltin_isReadOnlyAndPointsAtCopy() {
+        Template builtin = Template.create("빌트인", "s", "b");
+        builtin.setBuiltinKey("welcome");
+        when(templates.findById(1L)).thenReturn(Optional.of(builtin));
+
+        assertThatThrownBy(() -> service.update(1L, new TemplateRequest("이름", "제목", "<p>본문</p>")))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("read-only");
+        verify(templates, never()).save(any());
+    }
+
+    @Test
+    void copy_duplicatesIntoTheActingWorkspace() {
+        Template builtin = Template.create("환영 메일", "환영해요", "<p>hi</p>");
+        builtin.setBuiltinKey("welcome");
+        when(templates.findById(1L)).thenReturn(Optional.of(builtin));
+        when(templates.save(any())).thenAnswer(inv -> {
+            Template t = inv.getArgument(0);
+            t.setId(9L);
+            return t;
+        });
+
+        var view = service.copy(1L);
+
+        org.mockito.ArgumentCaptor<Template> captor = org.mockito.ArgumentCaptor.forClass(Template.class);
+        verify(templates).save(captor.capture());
+        assertThat(captor.getValue().getWorkspaceId()).isEqualTo(WS);
+        assertThat(captor.getValue().getBuiltinKey()).isNull(); // the copy is an ordinary template
+        assertThat(view.name()).isEqualTo("환영 메일 (복사)");
+        assertThat(view.subject()).isEqualTo("환영해요");
     }
 }
