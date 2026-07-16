@@ -2,7 +2,9 @@ package io.github.ahrimjang.mail.core.service;
 
 import io.github.ahrimjang.mail.common.TemplateView;
 import io.github.ahrimjang.mail.core.domain.Template;
+import io.github.ahrimjang.mail.core.port.WorkspaceContext;
 import io.github.ahrimjang.mail.core.port.TemplateRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -24,6 +26,17 @@ import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class TemplateServiceTest {
+
+    /** The acting tenant every scoped call resolves to in these tests. */
+    private static final long WS = 7L;
+
+    @Mock
+    private WorkspaceContext ctx;
+
+    @BeforeEach
+    void stubWorkspaceContext() {
+        org.mockito.Mockito.lenient().when(ctx.currentWorkspaceId()).thenReturn(WS);
+    }
 
     @Mock
     private TemplateRepository templates;

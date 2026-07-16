@@ -12,6 +12,7 @@ import io.github.ahrimjang.mail.common.SendLogEntry;
 import io.github.ahrimjang.mail.core.domain.Campaign;
 import io.github.ahrimjang.mail.core.domain.MailMessage;
 import io.github.ahrimjang.mail.core.domain.Template;
+import io.github.ahrimjang.mail.core.port.WorkspaceContext;
 import io.github.ahrimjang.mail.core.port.CampaignRepository;
 import io.github.ahrimjang.mail.core.port.ContactListRepository;
 import io.github.ahrimjang.mail.core.port.ContactRepository;
@@ -47,9 +48,14 @@ public class CampaignService {
     private final ContactRepository contacts;
     private final ContactListRepository lists;
 
+    /** Who is acting, for which tenant — resolved by the API adapter per request. */
+    private final WorkspaceContext ctx;
+
     public CampaignService(CampaignRepository campaigns, MailMessageRepository messages, EmailEventRepository events,
                            MailQueue mailQueue, TemplateRepository templates, ContactRepository contacts,
-                           ContactListRepository lists) {
+                           ContactListRepository lists,
+                           WorkspaceContext ctx) {
+        this.ctx = ctx;
         this.campaigns = campaigns;
         this.messages = messages;
         this.events = events;
@@ -64,6 +70,7 @@ public class CampaignService {
         String body;
         if (request.templateId() != null) {
             Template template = templates.findById(request.templateId())
+                    .filter(this::templateVisible)
                     .orElseThrow(() -> new NoSuchElementException("template not found: " + request.templateId()));
             subject = template.getSubject();
             body = template.getHtmlBody();
@@ -79,7 +86,14 @@ public class CampaignService {
         Instant now = Instant.now();
         boolean deferred = request.scheduledAt() != null && request.scheduledAt().isAfter(now);
 
+        if (request.listId() != null) {
+            lists.findById(request.listId())
+                    .filter(l -> l.getWorkspaceId().equals(ctx.currentWorkspaceId()))
+                    .orElseThrow(() -> new NoSuchElementException("list not found: " + request.listId()));
+        }
+
         Campaign campaign = Campaign.draft(subject, body);
+        campaign.setWorkspaceId(ctx.currentWorkspaceId());
         campaign.setStatus(CampaignStatus.QUEUED);
         campaign.setName(blankToNull(request.name()));
         campaign.setDescription(blankToNull(request.description()));
@@ -115,6 +129,7 @@ public class CampaignService {
         // template snapshotted at create time.
         if (request.abTemplateId() != null) {
             Template abTemplate = templates.findById(request.abTemplateId())
+                    .filter(this::templateVisible)
                     .orElseThrow(() -> new NoSuchElementException("template not found: " + request.abTemplateId()));
             campaign.setAbSubjectB(abTemplate.getSubject());
             campaign.setAbBodyB(abTemplate.getHtmlBody());
@@ -198,6 +213,18 @@ public class CampaignService {
         return toView(saved);
     }
 
+    /** A campaign of another tenant reads as absent, never as forbidden. */
+    private boolean owned(Campaign campaign) {
+        return campaign.getWorkspaceId() != null
+                && campaign.getWorkspaceId().equals(ctx.currentWorkspaceId());
+    }
+
+    /** Built-ins (workspace null) are usable by everyone; user templates only by their tenant. */
+    private boolean templateVisible(Template template) {
+        return template.getWorkspaceId() == null
+                || template.getWorkspaceId().equals(ctx.currentWorkspaceId());
+    }
+
     /** Null passes through (no floor on that metric); otherwise must be 1..100. */
     private static Integer requirePercent(Integer percent, String field) {
         if (percent == null) {
@@ -215,6 +242,7 @@ public class CampaignService {
 
     public CampaignView get(Long id) {
         Campaign campaign = campaigns.findById(id)
+                .filter(this::owned)
                 .orElseThrow(() -> new NoSuchElementException("campaign not found: " + id));
         return toView(campaign);
     }
@@ -227,6 +255,7 @@ public class CampaignService {
      */
     public CampaignView saveDraft(CreateCampaignRequest request) {
         Campaign draft = Campaign.draft(orEmpty(request.subject()), orEmpty(request.body()));
+        draft.setWorkspaceId(ctx.currentWorkspaceId());
         applyDraftFields(draft, request);
         return toView(campaigns.save(draft));
     }
@@ -290,6 +319,7 @@ public class CampaignService {
 
     private Campaign requireDraft(Long id) {
         Campaign campaign = campaigns.findById(id)
+                .filter(this::owned)
                 .orElseThrow(() -> new NoSuchElementException("campaign not found: " + id));
         if (campaign.getStatus() != CampaignStatus.DRAFT) {
             throw new IllegalStateException("campaign is not a draft: " + id);
@@ -302,7 +332,7 @@ public class CampaignService {
     }
 
     public List<CampaignView> list() {
-        return campaigns.findAll().stream()
+        return campaigns.findByWorkspace(ctx.currentWorkspaceId()).stream()
                 .map(this::toView)
                 .toList();
     }
@@ -317,6 +347,7 @@ public class CampaignService {
      */
     public CampaignView cancelSchedule(Long id) {
         campaigns.findById(id)
+                .filter(this::owned)
                 .orElseThrow(() -> new NoSuchElementException("campaign not found: " + id));
         if (!campaigns.claimForCancel(id)) {
             throw new IllegalStateException("campaign already released or not cancellable: " + id);
@@ -329,6 +360,7 @@ public class CampaignService {
     /** This campaign's clicked links, best first (tracked click URLs from the event stream). */
     public List<LinkClicksView> linkClicks(Long id, int limit) {
         campaigns.findById(id)
+                .filter(this::owned)
                 .orElseThrow(() -> new NoSuchElementException("campaign not found: " + id));
         int capped = Math.max(1, Math.min(50, limit));
         return events.linkClicksByCampaign(id, capped).stream()
@@ -339,6 +371,7 @@ public class CampaignService {
     /** The mail this campaign sends (subject + raw HTML body snapshot, A/B variant B included). */
     public CampaignContentView content(Long id) {
         Campaign campaign = campaigns.findById(id)
+                .filter(this::owned)
                 .orElseThrow(() -> new NoSuchElementException("campaign not found: " + id));
         return new CampaignContentView(campaign.getSubject(), campaign.getBody(),
                 campaign.getAbSubjectB(), campaign.getAbBodyB());
@@ -347,6 +380,7 @@ public class CampaignService {
     /** Recent per-recipient deliveries of a campaign, newest first (drill-down feed). */
     public List<MessageView> recentMessages(Long campaignId, int limit) {
         campaigns.findById(campaignId)
+                .filter(this::owned)
                 .orElseThrow(() -> new NoSuchElementException("campaign not found: " + campaignId));
         int capped = Math.max(1, Math.min(limit, 200));
         return messages.findRecentByCampaign(campaignId, capped).stream()
@@ -362,6 +396,7 @@ public class CampaignService {
      */
     public List<SendLogEntry> sendLog(Long campaignId, int bucketSeconds, int limit) {
         campaigns.findById(campaignId)
+                .filter(this::owned)
                 .orElseThrow(() -> new NoSuchElementException("campaign not found: " + campaignId));
         int bucket = Math.max(1, Math.min(bucketSeconds, 3600));
         int capped = Math.max(1, Math.min(limit, 200));

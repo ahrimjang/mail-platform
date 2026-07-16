@@ -14,6 +14,7 @@ public class JpaListUnsubscribeRepository implements ListUnsubscribeRepository {
 
     private final ListUnsubscribeJpaRepository jpa;
 
+
     public JpaListUnsubscribeRepository(ListUnsubscribeJpaRepository jpa) {
         this.jpa = jpa;
     }
@@ -51,8 +52,8 @@ public class JpaListUnsubscribeRepository implements ListUnsubscribeRepository {
     }
 
     @Override
-    public List<ListCount> countByList() {
-        return jpa.countByList().stream()
+    public List<ListCount> countByList(Long workspaceId) {
+        return jpa.countByList(workspaceId).stream()
                 .map(row -> new ListCount((Long) row[0], ((Number) row[1]).longValue()))
                 .toList();
     }

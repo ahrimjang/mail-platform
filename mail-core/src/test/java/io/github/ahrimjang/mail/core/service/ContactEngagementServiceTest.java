@@ -2,9 +2,11 @@ package io.github.ahrimjang.mail.core.service;
 
 import io.github.ahrimjang.mail.common.ContactEngagementView;
 import io.github.ahrimjang.mail.core.domain.Contact;
+import io.github.ahrimjang.mail.core.port.WorkspaceContext;
 import io.github.ahrimjang.mail.core.port.ContactRepository;
 import io.github.ahrimjang.mail.core.port.EmailEventRepository;
 import io.github.ahrimjang.mail.core.port.MailMessageRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -19,6 +21,17 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class ContactEngagementServiceTest {
 
+    /** The acting tenant every scoped call resolves to in these tests. */
+    private static final long WS = 7L;
+
+    @Mock
+    private WorkspaceContext ctx;
+
+    @BeforeEach
+    void stubWorkspaceContext() {
+        org.mockito.Mockito.lenient().when(ctx.currentWorkspaceId()).thenReturn(WS);
+    }
+
     @Mock
     private ContactRepository contacts;
     @Mock
@@ -31,13 +44,14 @@ class ContactEngagementServiceTest {
 
     private static Contact contact(long id, String email) {
         Contact c = Contact.of(email, null, null, null);
+        c.setWorkspaceId(WS);
         c.setId(id);
         return c;
     }
 
     /** Three contacts: heavy clicker, opener-only, and one never delivered to. */
     private void stubTypicalAudience() {
-        when(contacts.findAll()).thenReturn(List.of(
+        when(contacts.findByWorkspace(WS)).thenReturn(List.of(
                 contact(1L, "clicker@x.com"),
                 contact(2L, "opener@x.com"),
                 contact(3L, "silent@x.com")));

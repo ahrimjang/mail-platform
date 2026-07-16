@@ -10,6 +10,7 @@ import CampaignDetail from "./pages/CampaignDetail";
 import Templates from "./pages/Templates";
 import Recipients from "./pages/Recipients";
 import Analytics from "./pages/Analytics";
+import WorkspaceSettings from "./pages/WorkspaceSettings";
 import Lists from "./pages/Lists";
 import EmailEditor from "./pages/EmailEditor";
 import TextEditor from "./pages/TextEditor";
@@ -50,6 +51,7 @@ function AppRoutes() {
         <Route path="recipients" element={<Recipients />} />
         <Route path="lists" element={<Lists />} />
         <Route path="analytics" element={<Analytics />} />
+        <Route path="settings" element={<WorkspaceSettings />} />
       </Route>
 
       {/* Full-screen editors live outside the shell. */}

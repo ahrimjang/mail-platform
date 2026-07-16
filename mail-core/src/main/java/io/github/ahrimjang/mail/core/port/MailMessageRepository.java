@@ -97,7 +97,7 @@ public interface MailMessageRepository {
      * only), bucketed by calendar day in {@code zone} — feeds the dashboard chart.
      * Days with no activity are simply absent; the caller fills gaps.
      */
-    List<DailyOutcome> aggregateDailyOutcomes(java.time.Instant since, java.time.ZoneId zone);
+    List<DailyOutcome> aggregateDailyOutcomes(Long workspaceId, java.time.Instant since, java.time.ZoneId zone);
 
     /** One (day, status) count of the daily outcome aggregation. */
     record DailyOutcome(java.time.LocalDate day, io.github.ahrimjang.mail.common.MessageStatus status, long count) {

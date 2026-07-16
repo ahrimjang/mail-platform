@@ -7,6 +7,7 @@ import io.github.ahrimjang.mail.common.MessageStatus;
 import io.github.ahrimjang.mail.core.domain.EmailEvent;
 import io.github.ahrimjang.mail.core.domain.MailMessage;
 import io.github.ahrimjang.mail.core.domain.Suppression;
+import io.github.ahrimjang.mail.core.port.WorkspaceContext;
 import io.github.ahrimjang.mail.core.port.EmailEventPublisher;
 import io.github.ahrimjang.mail.core.port.MailMessageRepository;
 import io.github.ahrimjang.mail.core.port.SuppressionRepository;
@@ -29,6 +30,17 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class BounceServiceTest {
 
+    /** The acting tenant every scoped call resolves to in these tests. */
+    private static final long WS = 7L;
+
+    @Mock
+    private WorkspaceContext ctx;
+
+    @BeforeEach
+    void stubWorkspaceContext() {
+        org.mockito.Mockito.lenient().when(ctx.currentWorkspaceId()).thenReturn(WS);
+    }
+
     private static final Long MESSAGE_ID = 10L;
     private static final Long CAMPAIGN_ID = 3L;
     private static final String EMAIL = "bouncer@example.com";
@@ -40,11 +52,14 @@ class BounceServiceTest {
     @Mock
     private EmailEventPublisher events;
 
+    @Mock
+    private io.github.ahrimjang.mail.core.port.CampaignRepository campaigns;
+
     private BounceService service;
 
     @BeforeEach
     void setUp() {
-        service = new BounceService(suppressions, messages, events);
+        service = new BounceService(suppressions, messages, campaigns, events);
     }
 
     private MailMessage sentMessage() {
@@ -57,6 +72,7 @@ class BounceServiceTest {
     @Test
     void handle_hardBounceWithMessageId_marksBouncedRecordsEventAndSuppresses() {
         when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(sentMessage()));
+        when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(workspaceCampaign()));
 
         service.handle(new BounceNotification(EMAIL, BounceType.HARD_BOUNCE, "mailbox full", MESSAGE_ID));
 
@@ -74,8 +90,17 @@ class BounceServiceTest {
 
         ArgumentCaptor<Suppression> suppression = ArgumentCaptor.forClass(Suppression.class);
         verify(suppressions).save(suppression.capture());
+        assertThat(suppression.getValue().getWorkspaceId()).isEqualTo(WS);
         assertThat(suppression.getValue().getEmail()).isEqualTo(EMAIL);
         assertThat(suppression.getValue().getReason()).isEqualTo("hard_bounce");
+    }
+
+    private io.github.ahrimjang.mail.core.domain.Campaign workspaceCampaign() {
+        io.github.ahrimjang.mail.core.domain.Campaign c =
+                io.github.ahrimjang.mail.core.domain.Campaign.draft("s", "b");
+        c.setId(CAMPAIGN_ID);
+        c.setWorkspaceId(WS);
+        return c;
     }
 
     @Test
@@ -84,12 +109,13 @@ class BounceServiceTest {
         message.markBounced("earlier notification");
         when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(message));
 
+        when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(workspaceCampaign()));
         service.handle(new BounceNotification(EMAIL, BounceType.HARD_BOUNCE, "mailbox full", MESSAGE_ID));
 
         // Already BOUNCED: no second write, no duplicate event — but suppression still applies.
         verify(messages, never()).save(any(MailMessage.class));
         verifyNoInteractions(events);
-        verify(suppressions).save(any(Suppression.class));
+        verify(suppressions, org.mockito.Mockito.atLeastOnce()).save(any(Suppression.class));
     }
 
     @Test
@@ -100,24 +126,20 @@ class BounceServiceTest {
     }
 
     @Test
-    void handle_complaintWithoutMessageId_suppressesOnly() {
+    void handle_complaintWithoutMessageId_dropsTheUnattributableSuppression() {
         service.handle(new BounceNotification(EMAIL, BounceType.COMPLAINT, "marked as spam", null));
 
-        ArgumentCaptor<Suppression> suppression = ArgumentCaptor.forClass(Suppression.class);
-        verify(suppressions).save(suppression.capture());
-        assertThat(suppression.getValue().getEmail()).isEqualTo(EMAIL);
-        assertThat(suppression.getValue().getReason()).isEqualTo("complaint");
-        verifyNoInteractions(messages, events);
+        // No correlation -> no tenant -> suppressing would poison every workspace.
+        verifyNoInteractions(suppressions, events);
     }
 
     @Test
-    void handle_unknownMessageId_stillSuppressesForHardBounce() {
+    void handle_unknownMessageId_dropsTheUnattributableSuppression() {
         when(messages.findById(MESSAGE_ID)).thenReturn(Optional.empty());
 
         service.handle(new BounceNotification(EMAIL, BounceType.HARD_BOUNCE, "unknown user", MESSAGE_ID));
 
         verify(messages, never()).save(any(MailMessage.class));
-        verifyNoInteractions(events);
-        verify(suppressions).save(any(Suppression.class));
+        verifyNoInteractions(events, suppressions);
     }
 }

@@ -17,6 +17,11 @@ public class ContactListEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /** Owning tenant. */
+    @Column(name = "workspace_id")
+    private Long workspaceId;
+
+
     @Column(nullable = false)
     private String name;
 
@@ -38,6 +43,15 @@ public class ContactListEntity {
     public Long getId() {
         return id;
     }
+
+    public Long getWorkspaceId() {
+        return workspaceId;
+    }
+
+    public void setWorkspaceId(Long workspaceId) {
+        this.workspaceId = workspaceId;
+    }
+
 
     public String getName() {
         return name;

@@ -14,14 +14,13 @@ public interface ContactRepository {
 
     Optional<Contact> findById(Long id);
 
-    Optional<Contact> findByEmail(String email);
+    Optional<Contact> findByWorkspaceAndEmail(Long workspaceId, String email);
 
-    boolean existsByEmail(String email);
+    boolean existsByWorkspaceAndEmail(Long workspaceId, String email);
 
-    List<Contact> findAll();
-
+    List<Contact> findByWorkspace(Long workspaceId);
     /** Total number of contacts (dashboard audience size). */
-    long count();
+    long countByWorkspace(Long workspaceId);
 
     /** All contacts that are members of the given list, ordered by id. */
     List<Contact> findByListId(Long listId);

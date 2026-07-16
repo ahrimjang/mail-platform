@@ -4,6 +4,7 @@ import io.github.ahrimjang.mail.common.ContactListRequest;
 import io.github.ahrimjang.mail.common.ContactListView;
 import io.github.ahrimjang.mail.core.domain.Contact;
 import io.github.ahrimjang.mail.core.domain.ContactList;
+import io.github.ahrimjang.mail.core.port.WorkspaceContext;
 import io.github.ahrimjang.mail.core.port.ContactListRepository;
 import io.github.ahrimjang.mail.core.port.ContactRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,6 +31,17 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class ContactListServiceTest {
 
+    /** The acting tenant every scoped call resolves to in these tests. */
+    private static final long WS = 7L;
+
+    @Mock
+    private WorkspaceContext ctx;
+
+    @BeforeEach
+    void stubWorkspaceContext() {
+        org.mockito.Mockito.lenient().when(ctx.currentWorkspaceId()).thenReturn(WS);
+    }
+
     @Mock
     private ContactListRepository lists;
 
@@ -40,17 +52,19 @@ class ContactListServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new ContactListService(lists, contacts);
+        service = new ContactListService(lists, contacts, ctx);
     }
 
     private ContactList listWithId(Long id, String name, String description) {
         ContactList l = ContactList.of(name, description);
+        l.setWorkspaceId(WS);
         l.setId(id);
         return l;
     }
 
     private Contact contactWithId(Long id, String email) {
         Contact c = Contact.of(email, null, null, Map.of());
+        c.setWorkspaceId(WS);
         c.setId(id);
         return c;
     }
@@ -92,6 +106,8 @@ class ContactListServiceTest {
 
     @Test
     void delete_delegatesToRepository() {
+        when(lists.findById(5L)).thenReturn(Optional.of(listWithId(5L, "대상", null)));
+
         service.delete(5L);
 
         verify(lists).deleteById(5L);

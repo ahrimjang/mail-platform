@@ -5,6 +5,7 @@ import io.github.ahrimjang.mail.common.ContactView;
 import io.github.ahrimjang.mail.common.ImportResult;
 import io.github.ahrimjang.mail.common.UpdateContactRequest;
 import io.github.ahrimjang.mail.core.domain.Contact;
+import io.github.ahrimjang.mail.core.port.WorkspaceContext;
 import io.github.ahrimjang.mail.core.port.ContactListRepository;
 import io.github.ahrimjang.mail.core.port.ContactRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -14,6 +15,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Optional;
@@ -32,6 +34,17 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class ContactServiceTest {
 
+    /** The acting tenant every scoped call resolves to in these tests. */
+    private static final long WS = 7L;
+
+    @Mock
+    private WorkspaceContext ctx;
+
+    @BeforeEach
+    void stubWorkspaceContext() {
+        org.mockito.Mockito.lenient().when(ctx.currentWorkspaceId()).thenReturn(WS);
+    }
+
     @Mock
     private ContactRepository contacts;
 
@@ -42,7 +55,7 @@ class ContactServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new ContactService(contacts, lists);
+        service = new ContactService(contacts, lists, ctx);
     }
 
     /** Makes save(...) behave like a real repository: assigns an id and returns the entity. */
@@ -58,7 +71,7 @@ class ContactServiceTest {
     @Test
     void create_savesAndReturnsViewOfValidContact() {
         stubSaveAssignsIds();
-        when(contacts.existsByEmail("a@b.com")).thenReturn(false);
+        when(contacts.existsByWorkspaceAndEmail(WS, "a@b.com")).thenReturn(false);
 
         ContactView view = service.create(new ContactRequest("a@b.com", "Ahrim", "Jang", Map.of("plan", "pro")));
 
@@ -79,7 +92,7 @@ class ContactServiceTest {
 
     @Test
     void create_rejectsExistingEmail() {
-        when(contacts.existsByEmail("dup@b.com")).thenReturn(true);
+        when(contacts.existsByWorkspaceAndEmail(WS, "dup@b.com")).thenReturn(true);
 
         assertThatThrownBy(() -> service.create(new ContactRequest("dup@b.com", null, null, null)))
                 .isInstanceOf(IllegalStateException.class);
@@ -89,6 +102,7 @@ class ContactServiceTest {
     @Test
     void update_renamesButKeepsTheEmail() {
         Contact existing = Contact.of("a@b.com", "Old", "Name", Map.of());
+        existing.setWorkspaceId(WS);
         existing.setId(7L);
         when(contacts.findById(7L)).thenReturn(Optional.of(existing));
         when(contacts.save(any(Contact.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -104,6 +118,7 @@ class ContactServiceTest {
     @Test
     void update_blankNamesBecomeNull() {
         Contact existing = Contact.of("a@b.com", "Old", "Name", Map.of());
+        existing.setWorkspaceId(WS);
         existing.setId(7L);
         when(contacts.findById(7L)).thenReturn(Optional.of(existing));
         when(contacts.save(any(Contact.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -127,9 +142,10 @@ class ContactServiceTest {
     void importCsv_countsNewAsImportedAndDuplicateOrInvalidAsSkipped() {
         stubSaveAssignsIds();
         Contact existing = Contact.of("dup@x.com", "Old", "Timer", null);
+        existing.setWorkspaceId(WS);
         existing.setId(1L);
-        when(contacts.findByEmail(anyString())).thenReturn(Optional.empty());
-        when(contacts.findByEmail("dup@x.com")).thenReturn(Optional.of(existing));
+        when(contacts.findByWorkspaceAndEmail(eq(WS), anyString())).thenReturn(Optional.empty());
+        when(contacts.findByWorkspaceAndEmail(WS, "dup@x.com")).thenReturn(Optional.of(existing));
 
         String csv = """
                 new1@x.com,First,One
@@ -147,11 +163,17 @@ class ContactServiceTest {
 
     @Test
     void importCsv_withListId_addsEveryValidLineIncludingDuplicatesToList() {
+        io.github.ahrimjang.mail.core.domain.ContactList target =
+                io.github.ahrimjang.mail.core.domain.ContactList.of("타깃", null);
+        target.setId(42L);
+        target.setWorkspaceId(WS);
+        when(lists.findById(42L)).thenReturn(Optional.of(target));
         stubSaveAssignsIds();
         Contact existing = Contact.of("dup@x.com", null, null, null);
+        existing.setWorkspaceId(WS);
         existing.setId(7L);
-        when(contacts.findByEmail(anyString())).thenReturn(Optional.empty());
-        when(contacts.findByEmail("dup@x.com")).thenReturn(Optional.of(existing));
+        when(contacts.findByWorkspaceAndEmail(eq(WS), anyString())).thenReturn(Optional.empty());
+        when(contacts.findByWorkspaceAndEmail(WS, "dup@x.com")).thenReturn(Optional.of(existing));
 
         String csv = """
                 new1@x.com,First,One
@@ -169,7 +191,7 @@ class ContactServiceTest {
     @Test
     void importCsv_withoutListId_neverTouchesListMembership() {
         stubSaveAssignsIds();
-        when(contacts.findByEmail(anyString())).thenReturn(Optional.empty());
+        when(contacts.findByWorkspaceAndEmail(eq(WS), anyString())).thenReturn(Optional.empty());
 
         service.importCsv("only@x.com,Only,One", null);
 
@@ -179,7 +201,7 @@ class ContactServiceTest {
     @Test
     void importCsv_lineWithOnlyEmailStillImports() {
         stubSaveAssignsIds();
-        when(contacts.findByEmail("bare@x.com")).thenReturn(Optional.empty());
+        when(contacts.findByWorkspaceAndEmail(WS, "bare@x.com")).thenReturn(Optional.empty());
 
         ImportResult result = service.importCsv("bare@x.com", null);
 

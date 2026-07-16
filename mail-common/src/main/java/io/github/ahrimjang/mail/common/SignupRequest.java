@@ -10,6 +10,7 @@ package io.github.ahrimjang.mail.common;
 public record SignupRequest(
         String email,
         String password,
-        String displayName
+        String displayName,
+        String companyName
 ) {
 }

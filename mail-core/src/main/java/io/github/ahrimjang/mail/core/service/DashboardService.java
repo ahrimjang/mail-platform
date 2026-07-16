@@ -2,6 +2,7 @@ package io.github.ahrimjang.mail.core.service;
 
 import io.github.ahrimjang.mail.common.DashboardDay;
 import io.github.ahrimjang.mail.common.DashboardView;
+import io.github.ahrimjang.mail.core.port.WorkspaceContext;
 import io.github.ahrimjang.mail.core.port.ContactRepository;
 import io.github.ahrimjang.mail.core.port.EmailEventRepository;
 import io.github.ahrimjang.mail.core.port.MailMessageRepository;
@@ -38,10 +39,15 @@ public class DashboardService {
     private final ContactRepository contacts;
     private final SuppressionRepository suppressions;
 
+    /** Who is acting, for which tenant — resolved by the API adapter per request. */
+    private final WorkspaceContext ctx;
+
     public DashboardService(MailMessageRepository messages,
                             EmailEventRepository events,
                             ContactRepository contacts,
-                            SuppressionRepository suppressions) {
+                            SuppressionRepository suppressions,
+                           WorkspaceContext ctx) {
+        this.ctx = ctx;
         this.messages = messages;
         this.events = events;
         this.contacts = contacts;
@@ -66,7 +72,7 @@ public class DashboardService {
             byDay.put(first.plusDays(i), new long[4]);
         }
 
-        for (MailMessageRepository.DailyOutcome o : messages.aggregateDailyOutcomes(since, zone)) {
+        for (MailMessageRepository.DailyOutcome o : messages.aggregateDailyOutcomes(ctx.currentWorkspaceId(), since, zone)) {
             long[] acc = byDay.get(o.day());
             if (acc == null) {
                 continue; // clock skew around the window edge — not worth failing over
@@ -78,7 +84,7 @@ public class DashboardService {
             }
         }
 
-        for (EmailEventRepository.DailyEngagement e : events.aggregateDailyEngagement(since, zone)) {
+        for (EmailEventRepository.DailyEngagement e : events.aggregateDailyEngagement(ctx.currentWorkspaceId(), since, zone)) {
             long[] acc = byDay.get(e.day());
             if (acc == null) {
                 continue;
@@ -94,6 +100,7 @@ public class DashboardService {
         byDay.forEach((day, acc) ->
                 daily.add(new DashboardDay(day, acc[SENT], acc[FAILED], acc[OPENED], acc[CLICKED])));
 
-        return new DashboardView(contacts.count(), suppressions.count(), daily);
+        return new DashboardView(contacts.countByWorkspace(ctx.currentWorkspaceId()),
+                suppressions.countByWorkspace(ctx.currentWorkspaceId()), daily);
     }
 }

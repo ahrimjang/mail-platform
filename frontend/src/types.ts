@@ -234,3 +234,22 @@ export interface ContactEngagementView {
   opened: number;
   clicked: number;
 }
+
+// ---- 워크스페이스 (SaaS 테넌트) ----
+
+export interface WorkspaceView {
+  id: number;
+  name: string;
+  smtpProvider: string;    // MAILHOG | AWS_SES | SENDGRID | CUSTOM_SMTP
+  storageProvider: string; // LOCAL | AWS_S3 | NCP_OBJECT_STORAGE
+  createdAt: string;
+  memberCount: number;
+}
+
+export interface WorkspaceUserView {
+  id: number;
+  email: string;
+  displayName: string | null;
+  role: string; // ADMIN | OPERATOR
+  createdAt: string;
+}

@@ -26,15 +26,16 @@ export default function Signup() {
       const res = await fetch("/api/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // workspace is UI-only for now; the API stores displayName.
-        body: JSON.stringify({ email, password, displayName: name }),
+        // A signup registers the company: the workspace becomes the tenant and
+        // this account runs it as ADMIN.
+        body: JSON.stringify({ email, password, displayName: name, companyName: workspace }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError(data.error ?? "계정 생성에 실패했습니다.");
         return;
       }
-      login(data.token, data.email);
+      login(data.token, data.email, data.role, data.workspaceName);
       nav("/", { replace: true });
     } catch {
       setError("계정 생성에 실패했습니다.");
@@ -60,7 +61,7 @@ export default function Signup() {
               <input className="op-input" value={name} onChange={(e) => setName(e.target.value)} placeholder="박지민" autoFocus />
             </label>
             <label className="op-field" style={{ marginBottom: 0 }}>
-              <span className="op-flabel">워크스페이스</span>
+              <span className="op-flabel">회사 (워크스페이스)</span>
               <input className="op-input" value={workspace} onChange={(e) => setWorkspace(e.target.value)} placeholder="Acme" />
             </label>
           </div>

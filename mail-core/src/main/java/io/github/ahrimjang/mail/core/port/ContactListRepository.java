@@ -14,7 +14,7 @@ public interface ContactListRepository {
 
     Optional<ContactList> findById(Long id);
 
-    List<ContactList> findAll();
+    List<ContactList> findByWorkspace(Long workspaceId);
 
     void deleteById(Long id);
 

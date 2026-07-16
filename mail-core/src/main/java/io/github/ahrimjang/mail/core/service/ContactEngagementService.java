@@ -1,6 +1,7 @@
 package io.github.ahrimjang.mail.core.service;
 
 import io.github.ahrimjang.mail.common.ContactEngagementView;
+import io.github.ahrimjang.mail.core.port.WorkspaceContext;
 import io.github.ahrimjang.mail.core.port.ContactRepository;
 import io.github.ahrimjang.mail.core.port.EmailEventRepository;
 import io.github.ahrimjang.mail.core.port.MailMessageRepository;
@@ -26,9 +27,14 @@ public class ContactEngagementService {
     private final MailMessageRepository messages;
     private final EmailEventRepository events;
 
+    /** Who is acting, for which tenant — resolved by the API adapter per request. */
+    private final WorkspaceContext ctx;
+
     public ContactEngagementService(ContactRepository contacts,
                                     MailMessageRepository messages,
-                                    EmailEventRepository events) {
+                                    EmailEventRepository events,
+                           WorkspaceContext ctx) {
+        this.ctx = ctx;
         this.contacts = contacts;
         this.messages = messages;
         this.events = events;
@@ -62,7 +68,11 @@ public class ContactEngagementService {
                         EmailEventRepository.ContactEngagement::contactId,
                         Function.identity()));
 
-        return (listId == null ? contacts.findAll() : contacts.findByListId(listId)).stream()
+        // Scoped to the acting tenant: the by-list branch filters on the contact's
+        // own workspace, so a foreign listId simply previews as empty.
+        Long workspaceId = ctx.currentWorkspaceId();
+        return (listId == null ? contacts.findByWorkspace(workspaceId) : contacts.findByListId(listId)).stream()
+                .filter(c -> workspaceId.equals(c.getWorkspaceId()))
                 .map(c -> {
                     long sent = sentByContact.getOrDefault(c.getId(), 0L);
                     EmailEventRepository.ContactEngagement engaged = engagedByContact.get(c.getId());

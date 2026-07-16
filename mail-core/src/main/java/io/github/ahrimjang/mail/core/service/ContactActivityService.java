@@ -8,6 +8,7 @@ import io.github.ahrimjang.mail.core.domain.Campaign;
 import io.github.ahrimjang.mail.core.domain.Contact;
 import io.github.ahrimjang.mail.core.domain.ContactList;
 import io.github.ahrimjang.mail.core.domain.MailMessage;
+import io.github.ahrimjang.mail.core.port.WorkspaceContext;
 import io.github.ahrimjang.mail.core.port.CampaignRepository;
 import io.github.ahrimjang.mail.core.port.ContactListRepository;
 import io.github.ahrimjang.mail.core.port.ContactRepository;
@@ -44,13 +45,18 @@ public class ContactActivityService {
     private final ContactListRepository lists;
     private final CampaignRepository campaigns;
 
+    /** Who is acting, for which tenant — resolved by the API adapter per request. */
+    private final WorkspaceContext ctx;
+
     public ContactActivityService(ContactRepository contacts,
                                   MailMessageRepository messages,
                                   EmailEventRepository events,
                                   SuppressionRepository suppressions,
                                   ListUnsubscribeRepository listUnsubscribes,
                                   ContactListRepository lists,
-                                  CampaignRepository campaigns) {
+                                  CampaignRepository campaigns,
+                           WorkspaceContext ctx) {
+        this.ctx = ctx;
         this.contacts = contacts;
         this.messages = messages;
         this.events = events;
@@ -90,7 +96,7 @@ public class ContactActivityService {
             }
         }
 
-        suppressions.findByEmail(contact.getEmail())
+        suppressions.findByWorkspaceAndEmail(contact.getWorkspaceId(), contact.getEmail())
                 .ifPresent(s -> rows.add(new Row("UNSUBSCRIBED", s.getCreatedAt(), s.getReason(), null)));
 
         for (ListUnsubscribeRepository.OptOut optOut : listUnsubscribes.findByContact(contactId)) {
@@ -147,6 +153,7 @@ public class ContactActivityService {
 
     private Contact requireContact(Long contactId) {
         return contacts.findById(contactId)
+                .filter(c -> c.getWorkspaceId().equals(ctx.currentWorkspaceId()))
                 .orElseThrow(() -> new NoSuchElementException("contact not found: " + contactId));
     }
 

@@ -34,8 +34,8 @@ public class JpaCampaignRepository implements CampaignRepository {
     }
 
     @Override
-    public List<Campaign> findAll() {
-        return jpa.findAll().stream().map(this::toDomain).toList();
+    public List<Campaign> findByWorkspace(Long workspaceId) {
+        return jpa.findByWorkspaceId(workspaceId).stream().map(this::toDomain).toList();
     }
 
     @Override
@@ -110,12 +110,14 @@ public class JpaCampaignRepository implements CampaignRepository {
                 c.getAbSubjectB(), c.getAbBodyB(), c.getAbSplitPercent(),
                 c.getAbTestPercent(), c.getAbEvalMetric(), c.getAbEvalWaitMinutes(),
                 c.getAbEvaluateAt(), c.getAbWinner());
+        entity.setWorkspaceId(c.getWorkspaceId());
         return entity;
     }
 
     private Campaign toDomain(CampaignEntity e) {
         Campaign c = new Campaign();
         c.setId(e.getId());
+        c.setWorkspaceId(e.getWorkspaceId());
         c.setName(e.getName());
         c.setDescription(e.getDescription());
         c.setSubject(e.getSubject());

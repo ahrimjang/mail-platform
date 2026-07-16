@@ -32,8 +32,8 @@ public class JpaTemplateRepository implements TemplateRepository {
     }
 
     @Override
-    public List<Template> findAll() {
-        return jpa.findAll().stream().map(this::toDomain).toList();
+    public List<Template> findVisibleToWorkspace(Long workspaceId) {
+        return jpa.findVisibleToWorkspace(workspaceId).stream().map(this::toDomain).toList();
     }
 
     @Override
@@ -47,13 +47,16 @@ public class JpaTemplateRepository implements TemplateRepository {
     }
 
     private TemplateEntity toEntity(Template t) {
-        return new TemplateEntity(t.getId(), t.getName(), t.getSubject(), t.getHtmlBody(),
+        TemplateEntity entity = new TemplateEntity(t.getId(), t.getName(), t.getSubject(), t.getHtmlBody(),
                 t.getCreatedAt(), t.getUpdatedAt(), t.getBuiltinKey());
+        entity.setWorkspaceId(t.getWorkspaceId());
+        return entity;
     }
 
     private Template toDomain(TemplateEntity e) {
         Template t = new Template();
         t.setId(e.getId());
+        t.setWorkspaceId(e.getWorkspaceId());
         t.setName(e.getName());
         t.setSubject(e.getSubject());
         t.setHtmlBody(e.getHtmlBody());

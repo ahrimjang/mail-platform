@@ -35,8 +35,8 @@ public class JpaEmailEventRepository implements EmailEventRepository {
     }
 
     @Override
-    public java.util.List<DailyEngagement> aggregateDailyEngagement(java.time.Instant since, java.time.ZoneId zone) {
-        return jpa.aggregateDailyEngagement(since, zone.getId()).stream()
+    public java.util.List<DailyEngagement> aggregateDailyEngagement(Long workspaceId, java.time.Instant since, java.time.ZoneId zone) {
+        return jpa.aggregateDailyEngagement(workspaceId, since, zone.getId()).stream()
                 .map(row -> new DailyEngagement(
                         ((java.sql.Date) row[0]).toLocalDate(),
                         EventType.valueOf((String) row[1]),
@@ -45,8 +45,8 @@ public class JpaEmailEventRepository implements EmailEventRepository {
     }
 
     @Override
-    public java.util.List<LinkClicks> topClickedLinks(java.time.Instant since, int limit) {
-        return jpa.topClickedLinks(since, org.springframework.data.domain.PageRequest.of(0, limit)).stream()
+    public java.util.List<LinkClicks> topClickedLinks(Long workspaceId, java.time.Instant since, int limit) {
+        return jpa.topClickedLinks(workspaceId, since, org.springframework.data.domain.PageRequest.of(0, limit)).stream()
                 .map(row -> new LinkClicks(
                         (String) row[0],
                         ((Number) row[1]).longValue(),
@@ -66,8 +66,8 @@ public class JpaEmailEventRepository implements EmailEventRepository {
     }
 
     @Override
-    public java.util.List<HeatmapCell> aggregateOpenHeatmap(java.time.Instant since, java.time.ZoneId zone) {
-        return jpa.aggregateOpenHeatmap(since, zone.getId()).stream()
+    public java.util.List<HeatmapCell> aggregateOpenHeatmap(Long workspaceId, java.time.Instant since, java.time.ZoneId zone) {
+        return jpa.aggregateOpenHeatmap(workspaceId, since, zone.getId()).stream()
                 .map(row -> new HeatmapCell(
                         ((Number) row[0]).intValue(),
                         ((Number) row[1]).intValue(),

@@ -9,4 +9,8 @@ public interface UserJpaRepository extends JpaRepository<UserEntity, Long> {
     Optional<UserEntity> findByEmail(String email);
 
     boolean existsByEmail(String email);
+
+    java.util.List<UserEntity> findByWorkspaceIdOrderByCreatedAtAsc(Long workspaceId);
+
+    long countByWorkspaceId(Long workspaceId);
 }

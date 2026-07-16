@@ -64,12 +64,6 @@ public class ContactController {
         return contacts.list();
     }
 
-    @PostMapping
-    public ResponseEntity<ContactView> create(@RequestBody ContactRequest request) {
-        ContactView view = contacts.create(request);
-        return ResponseEntity.status(HttpStatus.CREATED).body(view);
-    }
-
     /** Rename a contact (email stays — it is the identity suppressions key on). */
     @PutMapping("/{id}")
     public ContactView update(@PathVariable Long id, @RequestBody UpdateContactRequest request) {

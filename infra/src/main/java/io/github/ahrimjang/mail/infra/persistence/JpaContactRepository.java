@@ -42,23 +42,23 @@ public class JpaContactRepository implements ContactRepository {
     }
 
     @Override
-    public Optional<Contact> findByEmail(String email) {
-        return jpa.findByEmail(email).map(this::toDomain);
+    public Optional<Contact> findByWorkspaceAndEmail(Long workspaceId, String email) {
+        return jpa.findByWorkspaceIdAndEmail(workspaceId, email).map(this::toDomain);
     }
 
     @Override
-    public boolean existsByEmail(String email) {
-        return jpa.existsByEmail(email);
+    public boolean existsByWorkspaceAndEmail(Long workspaceId, String email) {
+        return jpa.existsByWorkspaceIdAndEmail(workspaceId, email);
     }
 
     @Override
-    public List<Contact> findAll() {
-        return jpa.findAll().stream().map(this::toDomain).toList();
+    public List<Contact> findByWorkspace(Long workspaceId) {
+        return jpa.findByWorkspaceIdOrderById(workspaceId).stream().map(this::toDomain).toList();
     }
 
     @Override
-    public long count() {
-        return jpa.count();
+    public long countByWorkspace(Long workspaceId) {
+        return jpa.countByWorkspaceId(workspaceId);
     }
 
     @Override
@@ -85,13 +85,16 @@ public class JpaContactRepository implements ContactRepository {
     }
 
     private ContactEntity toEntity(Contact c) {
-        return new ContactEntity(c.getId(), c.getEmail(), c.getFirstName(), c.getLastName(),
+        ContactEntity entity = new ContactEntity(c.getId(), c.getEmail(), c.getFirstName(), c.getLastName(),
                 writeAttributes(c.getAttributes()), c.getCreatedAt());
+        entity.setWorkspaceId(c.getWorkspaceId());
+        return entity;
     }
 
     private Contact toDomain(ContactEntity e) {
         Contact c = new Contact();
         c.setId(e.getId());
+        c.setWorkspaceId(e.getWorkspaceId());
         c.setEmail(e.getEmail());
         c.setFirstName(e.getFirstName());
         c.setLastName(e.getLastName());

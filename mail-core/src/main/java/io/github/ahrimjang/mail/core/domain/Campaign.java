@@ -15,6 +15,8 @@ import java.time.Instant;
 public class Campaign {
 
     private Long id;
+    // Owning tenant — every campaign lives inside exactly one workspace.
+    private Long workspaceId;
     // Console display name (null = fall back to subject) and free-form note.
     private String name;
     private String description;
@@ -70,6 +72,14 @@ public class Campaign {
 
     public Long getId() {
         return id;
+    }
+
+    public Long getWorkspaceId() {
+        return workspaceId;
+    }
+
+    public void setWorkspaceId(Long workspaceId) {
+        this.workspaceId = workspaceId;
     }
 
 

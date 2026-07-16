@@ -26,7 +26,7 @@ export default function Login() {
         setError(data.error ?? "로그인에 실패했습니다.");
         return;
       }
-      login(data.token, data.email);
+      login(data.token, data.email, data.role, data.workspaceName);
       nav("/", { replace: true });
     } catch {
       setError("로그인에 실패했습니다.");

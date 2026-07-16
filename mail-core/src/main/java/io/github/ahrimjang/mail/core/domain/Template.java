@@ -10,6 +10,8 @@ import java.time.Instant;
 public class Template {
 
     private Long id;
+    // Owning tenant; null = built-in template, readable by every workspace.
+    private Long workspaceId;
     private String name;
     private String subject;
     private String htmlBody;
@@ -35,6 +37,15 @@ public class Template {
     public Long getId() {
         return id;
     }
+
+    public Long getWorkspaceId() {
+        return workspaceId;
+    }
+
+    public void setWorkspaceId(Long workspaceId) {
+        this.workspaceId = workspaceId;
+    }
+
 
     public void setId(Long id) {
         this.id = id;

@@ -19,8 +19,10 @@ public interface ListUnsubscribeJpaRepository extends JpaRepository<ListUnsubscr
     @Transactional
     int deleteByListIdAndContactId(Long listId, Long contactId);
 
-    @Query("select u.listId, count(u) from ListUnsubscribeEntity u group by u.listId order by count(u) desc")
-    List<Object[]> countByList();
+    @Query("select u.listId, count(u) from ListUnsubscribeEntity u, ContactListEntity l "
+            + "where l.id = u.listId and l.workspaceId = ?1 "
+            + "group by u.listId order by count(u) desc")
+    List<Object[]> countByList(Long workspaceId);
 
     /** Full opt-out rows of one contact, newest first (the activity timeline needs reason + time). */
     List<ListUnsubscribeEntity> findByContactIdOrderByCreatedAtDesc(Long contactId);

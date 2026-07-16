@@ -7,7 +7,7 @@ import { useAuth } from "../outpace/auth";
 export default function AppShell() {
   const nav = useNavigate();
   const { pathname } = useLocation();
-  const { email, logout } = useAuth();
+  const { email, role, workspaceName, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [search, setSearch] = useState("");
   const menuRef = useRef<HTMLDivElement>(null);
@@ -26,6 +26,7 @@ export default function AppShell() {
   const isRcp = pathname.startsWith("/recipients");
   const isList = pathname.startsWith("/lists");
   const isAnal = pathname.startsWith("/analytics");
+  const isAdminPage = pathname.startsWith("/settings");
   const avatar = (email?.trim()?.[0] ?? "U").toUpperCase();
 
   return (
@@ -43,6 +44,9 @@ export default function AppShell() {
             <button className={`op-navlink${isRcp ? " active" : ""}`} onClick={() => nav("/recipients")}>수신자</button>
             <button className={`op-navlink${isList ? " active" : ""}`} onClick={() => nav("/lists")}>리스트</button>
             <button className={`op-navlink${isAnal ? " active" : ""}`} onClick={() => nav("/analytics")}>분석</button>
+            {role === "ADMIN" && (
+              <button className={`op-navlink${isAdminPage ? " active" : ""}`} onClick={() => nav("/settings")}>관리</button>
+            )}
           </nav>
         </div>
         <div className="op-topnav-right">
@@ -75,7 +79,11 @@ export default function AppShell() {
             <div className="op-avatar" onClick={() => setMenuOpen((o) => !o)}>{avatar}</div>
             {menuOpen && (
               <div className="op-menu">
-                <div className="op-menu-email">{email}</div>
+                <div className="op-menu-email">
+                  {workspaceName && <b style={{ color: "var(--op-ink-2)", display: "block" }}>{workspaceName}</b>}
+                  {email}
+                  {role && <span style={{ display: "block", marginTop: 2 }}>{role === "ADMIN" ? "관리자" : "운영자"}</span>}
+                </div>
                 <button onClick={() => { setMenuOpen(false); logout(); nav("/login"); }}>로그아웃</button>
               </div>
             )}

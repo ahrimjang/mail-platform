@@ -7,16 +7,19 @@ import java.util.Optional;
 
 public interface SuppressionJpaRepository extends JpaRepository<SuppressionEntity, Long> {
 
-    boolean existsByEmail(String email);
+    boolean existsByWorkspaceIdAndEmail(Long workspaceId, String email);
 
-    Optional<SuppressionEntity> findByEmail(String email);
+    Optional<SuppressionEntity> findByWorkspaceIdAndEmail(Long workspaceId, String email);
 
-    void deleteByEmail(String email);
+    void deleteByWorkspaceIdAndEmail(Long workspaceId, String email);
 
-    @Query("select s.reason, count(s) from SuppressionEntity s group by s.reason order by count(s) desc")
-    java.util.List<Object[]> countByReason();
+    long countByWorkspaceId(Long workspaceId);
 
-    @Query("select s.reason, count(s) from SuppressionEntity s where s.createdAt >= ?1 "
+    @Query("select s.reason, count(s) from SuppressionEntity s where s.workspaceId = ?1 "
             + "group by s.reason order by count(s) desc")
-    java.util.List<Object[]> countByReasonSince(java.time.Instant since);
+    java.util.List<Object[]> countByReason(Long workspaceId);
+
+    @Query("select s.reason, count(s) from SuppressionEntity s where s.workspaceId = ?1 and s.createdAt >= ?2 "
+            + "group by s.reason order by count(s) desc")
+    java.util.List<Object[]> countByReasonSince(Long workspaceId, java.time.Instant since);
 }

@@ -26,20 +26,23 @@ public interface EmailEventJpaRepository extends JpaRepository<EmailEventEntity,
                    e.type as type,
                    count(distinct e.message_id) as cnt
             from email_events e
-            where e.occurred_at >= :since
+            join campaigns c on c.id = e.campaign_id
+            where c.workspace_id = :workspaceId and e.occurred_at >= :since
             group by d, e.type
             order by d
             """, nativeQuery = true)
     java.util.List<Object[]> aggregateDailyEngagement(
+            @org.springframework.data.repository.query.Param("workspaceId") Long workspaceId,
             @org.springframework.data.repository.query.Param("since") java.time.Instant since,
             @org.springframework.data.repository.query.Param("zone") String zone);
 
     /** Ranked tracked URLs: raw clicks + distinct clicking messages, biggest first. */
-    @Query("select e.url, count(e), count(distinct e.messageId) from EmailEventEntity e "
-            + "where e.type = io.github.ahrimjang.mail.common.EventType.CLICK "
-            + "and e.url is not null and e.occurredAt >= ?1 "
+    @Query("select e.url, count(e), count(distinct e.messageId) from EmailEventEntity e, CampaignEntity c "
+            + "where c.id = e.campaignId and c.workspaceId = ?1 "
+            + "and e.type = io.github.ahrimjang.mail.common.EventType.CLICK "
+            + "and e.url is not null and e.occurredAt >= ?2 "
             + "group by e.url order by count(e) desc")
-    java.util.List<Object[]> topClickedLinks(java.time.Instant since, Pageable pageable);
+    java.util.List<Object[]> topClickedLinks(Long workspaceId, java.time.Instant since, Pageable pageable);
 
     /**
      * Open heatmap buckets: ISO weekday + local hour of day, distinct messages.
@@ -50,10 +53,12 @@ public interface EmailEventJpaRepository extends JpaRepository<EmailEventEntity,
                    cast(extract(hour from e.occurred_at at time zone :zone) as int) as hr,
                    count(distinct e.message_id) as cnt
             from email_events e
-            where e.type = 'OPEN' and e.occurred_at >= :since
+            join campaigns c on c.id = e.campaign_id
+            where c.workspace_id = :workspaceId and e.type = 'OPEN' and e.occurred_at >= :since
             group by dw, hr
             """, nativeQuery = true)
     java.util.List<Object[]> aggregateOpenHeatmap(
+            @org.springframework.data.repository.query.Param("workspaceId") Long workspaceId,
             @org.springframework.data.repository.query.Param("since") java.time.Instant since,
             @org.springframework.data.repository.query.Param("zone") String zone);
 

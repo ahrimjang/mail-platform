@@ -4,8 +4,10 @@ import io.github.ahrimjang.mail.common.BounceNotification;
 import io.github.ahrimjang.mail.common.BounceType;
 import io.github.ahrimjang.mail.common.EventType;
 import io.github.ahrimjang.mail.common.MessageStatus;
+import io.github.ahrimjang.mail.core.domain.Campaign;
 import io.github.ahrimjang.mail.core.domain.EmailEvent;
 import io.github.ahrimjang.mail.core.domain.Suppression;
+import io.github.ahrimjang.mail.core.port.CampaignRepository;
 import io.github.ahrimjang.mail.core.port.EmailEventPublisher;
 import io.github.ahrimjang.mail.core.port.MailMessageRepository;
 import io.github.ahrimjang.mail.core.port.SuppressionRepository;
@@ -27,13 +29,16 @@ public class BounceService {
 
     private final SuppressionRepository suppressions;
     private final MailMessageRepository messages;
+    private final CampaignRepository campaigns;
     private final EmailEventPublisher events;
 
     public BounceService(SuppressionRepository suppressions,
                          MailMessageRepository messages,
+                         CampaignRepository campaigns,
                          EmailEventPublisher events) {
         this.suppressions = suppressions;
         this.messages = messages;
+        this.campaigns = campaigns;
         this.events = events;
     }
 
@@ -48,9 +53,19 @@ public class BounceService {
                 }
             });
         }
-        // 2) email-based suppression for permanent problems (always; save is idempotent via existsByEmail)
+        // 2) email-based suppression for permanent problems. The suppression list
+        // is per tenant, so the notification must be attributable: the message
+        // correlation resolves the campaign's workspace. Without it we drop the
+        // suppression rather than poison every tenant's list.
         if (n.type() == BounceType.HARD_BOUNCE || n.type() == BounceType.COMPLAINT) {
-            suppressions.save(Suppression.of(n.email(), n.type().name().toLowerCase()));
+            Long workspaceId = n.messageId() == null ? null
+                    : messages.findById(n.messageId())
+                            .flatMap(m -> campaigns.findById(m.getCampaignId()))
+                            .map(Campaign::getWorkspaceId)
+                            .orElse(null);
+            if (workspaceId != null) {
+                suppressions.save(Suppression.of(workspaceId, n.email(), n.type().name().toLowerCase()));
+            }
         }
         // SOFT_BOUNCE: transient — do nothing (retryable)
     }

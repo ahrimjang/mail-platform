@@ -19,7 +19,7 @@ public interface CampaignRepository {
     /** Remove a campaign row entirely — only sensible for DRAFTs (no messages yet). */
     void deleteById(Long id);
 
-    List<Campaign> findAll();
+    List<Campaign> findByWorkspace(Long workspaceId);
 
     void updateStatus(Long id, CampaignStatus status);
 

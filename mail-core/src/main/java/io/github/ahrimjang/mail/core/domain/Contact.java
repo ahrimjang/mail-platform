@@ -12,6 +12,7 @@ import java.util.Map;
 public class Contact {
 
     private Long id;
+    private Long workspaceId; // owning tenant
     private String email;
     private String firstName;
     private String lastName;
@@ -51,6 +52,15 @@ public class Contact {
     public Long getId() {
         return id;
     }
+
+    public Long getWorkspaceId() {
+        return workspaceId;
+    }
+
+    public void setWorkspaceId(Long workspaceId) {
+        this.workspaceId = workspaceId;
+    }
+
 
     public void setId(Long id) {
         this.id = id;

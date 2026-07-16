@@ -11,6 +11,9 @@ import java.util.List;
 
 public interface CampaignJpaRepository extends JpaRepository<CampaignEntity, Long> {
 
+    java.util.List<CampaignEntity> findByWorkspaceId(Long workspaceId);
+
+
     /** Scheduled campaigns that are due but not yet released to the queue (canceled ones excluded). */
     @Query("select c from CampaignEntity c where c.enqueuedAt is null and c.scheduledAt <= :now "
             + "and c.status = io.github.ahrimjang.mail.common.CampaignStatus.QUEUED")

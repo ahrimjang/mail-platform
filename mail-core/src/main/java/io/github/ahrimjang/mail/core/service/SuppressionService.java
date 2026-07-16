@@ -6,6 +6,7 @@ import io.github.ahrimjang.mail.core.domain.Contact;
 import io.github.ahrimjang.mail.core.domain.ContactList;
 import io.github.ahrimjang.mail.core.domain.MailMessage;
 import io.github.ahrimjang.mail.core.domain.Suppression;
+import io.github.ahrimjang.mail.core.port.WorkspaceContext;
 import io.github.ahrimjang.mail.core.port.CampaignRepository;
 import io.github.ahrimjang.mail.core.port.ContactListRepository;
 import io.github.ahrimjang.mail.core.port.ContactRepository;
@@ -40,12 +41,17 @@ public class SuppressionService {
     private final ContactListRepository lists;
     private final ListUnsubscribeRepository listUnsubscribes;
 
+    /** Who is acting, for which tenant — resolved by the API adapter per request. */
+    private final WorkspaceContext ctx;
+
     public SuppressionService(MailMessageRepository messages,
                               SuppressionRepository suppressions,
                               ContactRepository contacts,
                               CampaignRepository campaigns,
                               ContactListRepository lists,
-                              ListUnsubscribeRepository listUnsubscribes) {
+                              ListUnsubscribeRepository listUnsubscribes,
+                           WorkspaceContext ctx) {
+        this.ctx = ctx;
         this.messages = messages;
         this.suppressions = suppressions;
         this.contacts = contacts;
@@ -133,20 +139,24 @@ public class SuppressionService {
         listUnsubscribes.save(listId, contactId, MANUAL_REASON);
     }
 
-    /** Suppress the address behind an unsubscribe token, if the token resolves. */
+    /**
+     * Suppress the address behind an unsubscribe token, if the token resolves.
+     * A public path — the tenant comes from the campaign the mail belonged to.
+     */
     public void suppressByUnsubToken(String token) {
-        messages.findByUnsubToken(token)
-                .ifPresent(m -> suppressions.save(Suppression.of(m.getRecipient(), "unsubscribe")));
+        messages.findByUnsubToken(token).ifPresent(m ->
+                campaigns.findById(m.getCampaignId()).ifPresent(c ->
+                        suppressions.save(Suppression.of(c.getWorkspaceId(), m.getRecipient(), "unsubscribe"))));
     }
 
-    public boolean isSuppressed(String email) {
-        return suppressions.existsByEmail(email);
+    public boolean isSuppressed(Long workspaceId, String email) {
+        return suppressions.existsByWorkspaceAndEmail(workspaceId, email);
     }
 
     /** Subscription state of the given contact, derived from the suppression list. */
     public SubscriptionView subscriptionOf(Long contactId) {
         Contact contact = requireContact(contactId);
-        return toView(suppressions.findByEmail(contact.getEmail()));
+        return toView(suppressions.findByWorkspaceAndEmail(contact.getWorkspaceId(), contact.getEmail()));
     }
 
     /**
@@ -157,15 +167,17 @@ public class SuppressionService {
     public SubscriptionView updateSubscription(Long contactId, boolean suppressed) {
         Contact contact = requireContact(contactId);
         if (suppressed) {
-            suppressions.save(Suppression.of(contact.getEmail(), MANUAL_REASON));
+            suppressions.save(Suppression.of(contact.getWorkspaceId(), contact.getEmail(), MANUAL_REASON));
         } else {
-            suppressions.deleteByEmail(contact.getEmail());
+            suppressions.deleteByWorkspaceAndEmail(contact.getWorkspaceId(), contact.getEmail());
         }
-        return toView(suppressions.findByEmail(contact.getEmail()));
+        return toView(suppressions.findByWorkspaceAndEmail(contact.getWorkspaceId(), contact.getEmail()));
     }
 
     private Contact requireContact(Long contactId) {
+        // Console path: a contact of another tenant reads as absent, not forbidden.
         return contacts.findById(contactId)
+                .filter(c -> c.getWorkspaceId().equals(ctx.currentWorkspaceId()))
                 .orElseThrow(() -> new NoSuchElementException("contact not found: " + contactId));
     }
 

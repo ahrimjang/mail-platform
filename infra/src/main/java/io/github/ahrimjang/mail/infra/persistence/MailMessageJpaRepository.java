@@ -105,12 +105,15 @@ public interface MailMessageJpaRepository extends JpaRepository<MailMessageEntit
                    m.status as status,
                    count(*) as cnt
             from mail_messages m
-            where m.updated_at >= :since
+            join campaigns c on c.id = m.campaign_id
+            where c.workspace_id = :workspaceId
+              and m.updated_at >= :since
               and m.status in ('SENT', 'FAILED', 'BOUNCED')
             group by d, m.status
             order by d
             """, nativeQuery = true)
-    java.util.List<Object[]> aggregateDailyOutcomes(@Param("since") Instant since, @Param("zone") String zone);
+    java.util.List<Object[]> aggregateDailyOutcomes(@Param("workspaceId") Long workspaceId,
+                                                    @Param("since") Instant since, @Param("zone") String zone);
 
     /**
      * Single conditional UPDATE — the row-level lock Postgres takes while evaluating

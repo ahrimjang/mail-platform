@@ -14,7 +14,8 @@ public interface TemplateRepository {
 
     Optional<Template> findById(Long id);
 
-    List<Template> findAll();
+    /** Templates this workspace can use: its own plus the global built-ins. */
+    List<Template> findVisibleToWorkspace(Long workspaceId);
 
     void deleteById(Long id);
 

@@ -4,6 +4,7 @@ import io.github.ahrimjang.mail.common.AuthResponse;
 import io.github.ahrimjang.mail.common.LoginRequest;
 import io.github.ahrimjang.mail.common.SignupRequest;
 import io.github.ahrimjang.mail.core.domain.User;
+import io.github.ahrimjang.mail.core.port.WorkspaceContext;
 import io.github.ahrimjang.mail.core.port.PasswordHasher;
 import io.github.ahrimjang.mail.core.port.TokenService;
 import io.github.ahrimjang.mail.core.port.UserRepository;
@@ -26,6 +27,17 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class AuthServiceTest {
 
+    /** The acting tenant every scoped call resolves to in these tests. */
+    private static final long WS = 7L;
+
+    @Mock
+    private WorkspaceContext ctx;
+
+    @BeforeEach
+    void stubWorkspaceContext() {
+        org.mockito.Mockito.lenient().when(ctx.currentWorkspaceId()).thenReturn(WS);
+    }
+
     @Mock
     private UserRepository users;
 
@@ -35,11 +47,26 @@ class AuthServiceTest {
     @Mock
     private TokenService tokens;
 
+    @Mock
+    private io.github.ahrimjang.mail.core.port.WorkspaceRepository workspaces;
+
     private AuthService service;
 
     @BeforeEach
     void setUp() {
-        service = new AuthService(users, hasher, tokens);
+        service = new AuthService(users, workspaces, hasher, tokens);
+    }
+
+    @BeforeEach
+    void stubWorkspaceSave() {
+        org.mockito.Mockito.lenient().when(workspaces.save(org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(inv -> {
+                    io.github.ahrimjang.mail.core.domain.Workspace w = inv.getArgument(0);
+                    w.setId(WS);
+                    return w;
+                });
+        org.mockito.Mockito.lenient().when(workspaces.findById(org.mockito.ArgumentMatchers.anyLong()))
+                .thenReturn(java.util.Optional.empty());
     }
 
     @Test
@@ -49,30 +76,30 @@ class AuthServiceTest {
         when(users.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
         when(tokens.issue(any(User.class))).thenReturn("jwt-token");
 
-        AuthResponse response = service.signup(new SignupRequest("new@x.com", "raw-pw", "New User"));
+        AuthResponse response = service.signup(new SignupRequest("new@x.com", "raw-pw", "New User", null));
 
         verify(hasher).hash("raw-pw");
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
         verify(users).save(captor.capture());
         assertThat(captor.getValue().getEmail()).isEqualTo("new@x.com");
         assertThat(captor.getValue().getPasswordHash()).isEqualTo("hashed-pw");
-        assertThat(response).isEqualTo(new AuthResponse("jwt-token", "new@x.com", "New User"));
+        assertThat(response).isEqualTo(new AuthResponse("jwt-token", "new@x.com", "New User", "new 워크스페이스", "ADMIN"));
     }
 
     @Test
     void signup_rejectsDuplicateEmail() {
         when(users.existsByEmail("dup@x.com")).thenReturn(true);
 
-        assertThatThrownBy(() -> service.signup(new SignupRequest("dup@x.com", "pw", "Dup")))
+        assertThatThrownBy(() -> service.signup(new SignupRequest("dup@x.com", "pw", "Dup", null)))
                 .isInstanceOf(IllegalStateException.class);
         verify(users, never()).save(any());
     }
 
     @Test
     void signup_rejectsBlankEmailOrPassword() {
-        assertThatThrownBy(() -> service.signup(new SignupRequest(" ", "pw", "X")))
+        assertThatThrownBy(() -> service.signup(new SignupRequest(" ", "pw", "X", null)))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> service.signup(new SignupRequest("a@x.com", null, "X")))
+        assertThatThrownBy(() -> service.signup(new SignupRequest("a@x.com", null, "X", null)))
                 .isInstanceOf(IllegalArgumentException.class);
         verify(users, never()).save(any());
     }
@@ -86,7 +113,7 @@ class AuthServiceTest {
 
         AuthResponse response = service.login(new LoginRequest("me@x.com", "raw-pw"));
 
-        assertThat(response).isEqualTo(new AuthResponse("jwt-token", "me@x.com", "Me"));
+        assertThat(response).isEqualTo(new AuthResponse("jwt-token", "me@x.com", "Me", null, null));
     }
 
     @Test

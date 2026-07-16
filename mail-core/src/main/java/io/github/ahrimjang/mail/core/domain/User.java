@@ -8,6 +8,8 @@ import java.time.Instant;
 public class User {
 
     private Long id;
+    private Long workspaceId; // the workspace this account belongs to
+    private String role;   // ADMIN (runs the workspace) or OPERATOR (runs campaigns)
     private String email;
     private String passwordHash;
     private String displayName;
@@ -29,6 +31,23 @@ public class User {
     public Long getId() {
         return id;
     }
+
+    public Long getWorkspaceId() {
+        return workspaceId;
+    }
+
+    public void setWorkspaceId(Long workspaceId) {
+        this.workspaceId = workspaceId;
+    }
+
+    public String getRole() {
+        return role;
+    }
+
+    public void setRole(String role) {
+        this.role = role;
+    }
+
 
     public void setId(Long id) {
         this.id = id;

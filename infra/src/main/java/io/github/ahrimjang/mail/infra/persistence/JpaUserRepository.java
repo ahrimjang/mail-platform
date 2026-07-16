@@ -35,13 +35,33 @@ public class JpaUserRepository implements UserRepository {
         return jpa.existsByEmail(email);
     }
 
+    @Override
+    public java.util.List<User> findByWorkspaceId(Long workspaceId) {
+        return jpa.findByWorkspaceIdOrderByCreatedAtAsc(workspaceId).stream().map(this::toDomain).toList();
+    }
+
+    @Override
+    public Optional<User> findById(Long id) {
+        return jpa.findById(id).map(this::toDomain);
+    }
+
+    @Override
+    public long countByWorkspaceId(Long workspaceId) {
+        return jpa.countByWorkspaceId(workspaceId);
+    }
+
     private UserEntity toEntity(User u) {
-        return new UserEntity(u.getId(), u.getEmail(), u.getPasswordHash(), u.getDisplayName(), u.getCreatedAt());
+        UserEntity entity = new UserEntity(u.getId(), u.getEmail(), u.getPasswordHash(), u.getDisplayName(), u.getCreatedAt());
+        entity.setWorkspaceId(u.getWorkspaceId());
+        entity.setRole(u.getRole());
+        return entity;
     }
 
     private User toDomain(UserEntity e) {
         User u = new User();
         u.setId(e.getId());
+        u.setWorkspaceId(e.getWorkspaceId());
+        u.setRole(e.getRole());
         u.setEmail(e.getEmail());
         u.setPasswordHash(e.getPasswordHash());
         u.setDisplayName(e.getDisplayName());

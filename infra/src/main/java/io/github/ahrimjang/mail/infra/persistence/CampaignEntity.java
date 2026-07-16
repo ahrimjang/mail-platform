@@ -20,6 +20,11 @@ public class CampaignEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /** Owning tenant. */
+    @Column(name = "workspace_id")
+    private Long workspaceId;
+
+
     /** Console display name; null = fall back to the subject. */
     private String name;
 
@@ -151,6 +156,14 @@ public class CampaignEntity {
 
     public Long getId() {
         return id;
+    }
+
+    public Long getWorkspaceId() {
+        return workspaceId;
+    }
+
+    public void setWorkspaceId(Long workspaceId) {
+        this.workspaceId = workspaceId;
     }
 
 

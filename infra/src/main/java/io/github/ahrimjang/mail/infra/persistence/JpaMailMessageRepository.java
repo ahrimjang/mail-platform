@@ -113,8 +113,8 @@ public class JpaMailMessageRepository implements MailMessageRepository {
     }
 
     @Override
-    public List<DailyOutcome> aggregateDailyOutcomes(Instant since, java.time.ZoneId zone) {
-        return jpa.aggregateDailyOutcomes(since, zone.getId()).stream()
+    public List<DailyOutcome> aggregateDailyOutcomes(Long workspaceId, Instant since, java.time.ZoneId zone) {
+        return jpa.aggregateDailyOutcomes(workspaceId, since, zone.getId()).stream()
                 .map(row -> new DailyOutcome(
                         ((java.sql.Date) row[0]).toLocalDate(),
                         MessageStatus.valueOf((String) row[1]),

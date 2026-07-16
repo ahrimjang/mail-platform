@@ -9,10 +9,13 @@ import java.util.Optional;
 
 public interface ContactJpaRepository extends JpaRepository<ContactEntity, Long> {
 
-    Optional<ContactEntity> findByEmail(String email);
+    Optional<ContactEntity> findByWorkspaceIdAndEmail(Long workspaceId, String email);
 
-    boolean existsByEmail(String email);
+    boolean existsByWorkspaceIdAndEmail(Long workspaceId, String email);
 
+    List<ContactEntity> findByWorkspaceIdOrderById(Long workspaceId);
+
+    long countByWorkspaceId(Long workspaceId);
     @Query("select c from ContactEntity c, ListMembershipEntity m where m.listId = ?1 and m.contactId = c.id order by c.id")
     List<ContactEntity> findByListId(Long listId);
 

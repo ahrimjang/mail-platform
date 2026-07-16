@@ -9,6 +9,7 @@ import io.github.ahrimjang.mail.core.domain.Campaign;
 import io.github.ahrimjang.mail.core.domain.MailMessage;
 import io.github.ahrimjang.mail.core.domain.Template;
 import io.github.ahrimjang.mail.core.domain.ContactList;
+import io.github.ahrimjang.mail.core.port.WorkspaceContext;
 import io.github.ahrimjang.mail.core.port.CampaignRepository;
 import io.github.ahrimjang.mail.core.port.ContactListRepository;
 import io.github.ahrimjang.mail.core.port.ContactRepository;
@@ -17,6 +18,7 @@ import io.github.ahrimjang.mail.core.port.MailMessageRepository;
 import io.github.ahrimjang.mail.core.port.MailMessageRepository.MessageCounts;
 import io.github.ahrimjang.mail.core.port.MailQueue;
 import io.github.ahrimjang.mail.core.port.TemplateRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -44,6 +46,17 @@ import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class CampaignServiceTest {
+
+    /** The acting tenant every scoped call resolves to in these tests. */
+    private static final long WS = 7L;
+
+    @Mock
+    private WorkspaceContext ctx;
+
+    @BeforeEach
+    void stubWorkspaceContext() {
+        org.mockito.Mockito.lenient().when(ctx.currentWorkspaceId()).thenReturn(WS);
+    }
 
     private static final long CAMPAIGN_ID = 42L;
 
@@ -180,10 +193,19 @@ class CampaignServiceTest {
     }
 
 
+    /** The campaign's target list, owned by the acting tenant. */
+    private void stubOwnedList(long listId) {
+        ContactList list = ContactList.of("타깃", null);
+        list.setId(listId);
+        list.setWorkspaceId(WS);
+        org.mockito.Mockito.lenient().when(lists.findById(listId)).thenReturn(Optional.of(list));
+    }
+
     @Test
     void create_withListId_defersRecipientExpansionToAFanoutJob() {
         // List campaigns are O(1) at create time: no members are loaded and no
         // messages are saved — the worker expands them off a single fan-out job.
+        stubOwnedList(5L);
         when(contacts.countByListId(5L)).thenReturn(2L);
         stubCampaignSaveAssigningId();
         stubViewCounts(0, 0);
@@ -198,6 +220,7 @@ class CampaignServiceTest {
 
     @Test
     void create_withEmptyList_throwsIllegalArgument() {
+        stubOwnedList(5L);
         stubCampaignSaveAssigningId();
         when(contacts.countByListId(5L)).thenReturn(0L);
 
@@ -227,6 +250,7 @@ class CampaignServiceTest {
     @Test
     void recentMessages_mapsRowsAndCapsLimit() {
         Campaign existing = Campaign.draft("Hello", "<p>Hi</p>");
+        existing.setWorkspaceId(WS);
         existing.setId(CAMPAIGN_ID);
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(existing));
         MailMessage m = MailMessage.queued(CAMPAIGN_ID, "a@example.com");
@@ -247,6 +271,7 @@ class CampaignServiceTest {
     @Test
     void sendLog_mapsBucketsAndClampsParams() {
         Campaign existing = Campaign.draft("Hello", "<p>Hi</p>");
+        existing.setWorkspaceId(WS);
         existing.setId(CAMPAIGN_ID);
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(existing));
         Instant bucket = Instant.parse("2026-07-07T12:00:00Z");
@@ -348,6 +373,7 @@ class CampaignServiceTest {
         template.setId(7L);
         when(templates.findById(7L)).thenReturn(Optional.of(template));
         ContactList list = ContactList.of("뉴스레터 구독자", null);
+        list.setWorkspaceId(WS);
         list.setId(5L);
         when(lists.findById(5L)).thenReturn(Optional.of(list));
         when(contacts.countByListId(5L)).thenReturn(1L);
@@ -370,6 +396,7 @@ class CampaignServiceTest {
     @Test
     void view_ofDeletedTemplateSource_keepsIdButLeavesNameNull() {
         Campaign existing = Campaign.draft("Hello", "<p>Hi</p>");
+        existing.setWorkspaceId(WS);
         existing.setId(CAMPAIGN_ID);
         existing.setTemplateId(7L);
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(existing));
@@ -385,6 +412,7 @@ class CampaignServiceTest {
     @Test
     void cancelSchedule_winningClaim_cancelsPendingMessagesAndReturnsCanceledView() {
         Campaign scheduled = Campaign.draft("Hello", "<p>Hi</p>");
+        scheduled.setWorkspaceId(WS);
         scheduled.setId(CAMPAIGN_ID);
         scheduled.setStatus(CampaignStatus.QUEUED);
         when(campaigns.findById(CAMPAIGN_ID)).thenAnswer(inv -> {
@@ -405,6 +433,7 @@ class CampaignServiceTest {
     @Test
     void cancelSchedule_lostClaim_throwsIllegalStateWithoutTouchingMessages() {
         Campaign released = Campaign.draft("Hello", "<p>Hi</p>");
+        released.setWorkspaceId(WS);
         released.setId(CAMPAIGN_ID);
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(released));
         // the scheduler's claimForEnqueue got there first
@@ -430,6 +459,7 @@ class CampaignServiceTest {
     @Test
     void content_returnsTheSnapshottedSubjectAndBody() {
         Campaign existing = Campaign.draft("Hello {{name}}", "<p>Hi {{name}}</p>");
+        existing.setWorkspaceId(WS);
         existing.setId(CAMPAIGN_ID);
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(existing));
 
@@ -518,6 +548,7 @@ class CampaignServiceTest {
     @Test
     void view_ofAbCampaign_carriesPerVariantDeliveryAndEngagementStats() {
         Campaign existing = Campaign.draft("Hello", "<p>Hi</p>");
+        existing.setWorkspaceId(WS);
         existing.setId(CAMPAIGN_ID);
         existing.setAbSubjectB("Hello B");
         existing.setAbSplitPercent(50);
@@ -541,6 +572,7 @@ class CampaignServiceTest {
     @Test
     void view_ofPlainCampaign_hasNullVariants() {
         Campaign existing = Campaign.draft("Hello", "<p>Hi</p>");
+        existing.setWorkspaceId(WS);
         existing.setId(CAMPAIGN_ID);
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(existing));
         stubViewCounts(1, 0);
@@ -711,6 +743,7 @@ class CampaignServiceTest {
     @Test
     void deleteDraft_refusesToDeleteALaunchedCampaign() {
         Campaign launched = Campaign.draft("s", "b");
+        launched.setWorkspaceId(WS);
         launched.setId(CAMPAIGN_ID);
         launched.setStatus(CampaignStatus.QUEUED);
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(launched));

@@ -6,6 +6,7 @@ import io.github.ahrimjang.mail.common.AudienceHealthView.ReasonCount;
 import io.github.ahrimjang.mail.common.LinkClicksView;
 import io.github.ahrimjang.mail.common.OpenHeatmapCell;
 import io.github.ahrimjang.mail.core.domain.ContactList;
+import io.github.ahrimjang.mail.core.port.WorkspaceContext;
 import io.github.ahrimjang.mail.core.port.ContactListRepository;
 import io.github.ahrimjang.mail.core.port.EmailEventRepository;
 import io.github.ahrimjang.mail.core.port.ListUnsubscribeRepository;
@@ -37,10 +38,15 @@ public class AnalyticsService {
     private final ListUnsubscribeRepository listUnsubscribes;
     private final ContactListRepository lists;
 
+    /** Who is acting, for which tenant — resolved by the API adapter per request. */
+    private final WorkspaceContext ctx;
+
     public AnalyticsService(EmailEventRepository events,
                             SuppressionRepository suppressions,
                             ListUnsubscribeRepository listUnsubscribes,
-                            ContactListRepository lists) {
+                            ContactListRepository lists,
+                           WorkspaceContext ctx) {
+        this.ctx = ctx;
         this.events = events;
         this.suppressions = suppressions;
         this.listUnsubscribes = listUnsubscribes;
@@ -50,7 +56,7 @@ public class AnalyticsService {
     /** Most-clicked tracked links in the last {@code days}, best first. */
     public List<LinkClicksView> topLinks(int days, int limit) {
         Instant since = Instant.now().minus(Duration.ofDays(clamp(days, 1, MAX_DAYS)));
-        return events.topClickedLinks(since, clamp(limit, 1, MAX_LINKS)).stream()
+        return events.topClickedLinks(ctx.currentWorkspaceId(), since, clamp(limit, 1, MAX_LINKS)).stream()
                 .map(l -> new LinkClicksView(l.url(), l.clicks(), l.uniqueMessages()))
                 .toList();
     }
@@ -62,15 +68,15 @@ public class AnalyticsService {
         // Merge the all-time and in-period breakdowns onto one reason list,
         // keeping the all-time (largest-first) ordering.
         Map<String, long[]> byReason = new LinkedHashMap<>();
-        suppressions.countByReason()
+        suppressions.countByReason(ctx.currentWorkspaceId())
                 .forEach(r -> byReason.put(r.reason(), new long[]{r.count(), 0}));
-        suppressions.countByReasonSince(since)
+        suppressions.countByReasonSince(ctx.currentWorkspaceId(), since)
                 .forEach(r -> byReason.computeIfAbsent(r.reason(), k -> new long[]{0, 0})[1] = r.count());
         List<ReasonCount> reasons = byReason.entrySet().stream()
                 .map(e -> new ReasonCount(e.getKey(), e.getValue()[0], e.getValue()[1]))
                 .toList();
 
-        List<ListOptOut> optOuts = listUnsubscribes.countByList().stream()
+        List<ListOptOut> optOuts = listUnsubscribes.countByList(ctx.currentWorkspaceId()).stream()
                 .map(c -> new ListOptOut(
                         c.listId(),
                         lists.findById(c.listId()).map(ContactList::getName).orElse("(삭제된 리스트)"),
@@ -83,7 +89,7 @@ public class AnalyticsService {
     /** Opens by (weekday, hour) of the local calendar — when recipients actually read. */
     public List<OpenHeatmapCell> openHeatmap(int days) {
         Instant since = Instant.now().minus(Duration.ofDays(clamp(days, 1, MAX_DAYS)));
-        return events.aggregateOpenHeatmap(since, ZoneId.systemDefault()).stream()
+        return events.aggregateOpenHeatmap(ctx.currentWorkspaceId(), since, ZoneId.systemDefault()).stream()
                 .map(c -> new OpenHeatmapCell(c.dayOfWeek(), c.hour(), c.opens()))
                 .toList();
     }

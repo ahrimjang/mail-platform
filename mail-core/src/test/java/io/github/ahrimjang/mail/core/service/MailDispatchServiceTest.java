@@ -5,6 +5,7 @@ import io.github.ahrimjang.mail.core.domain.Campaign;
 import io.github.ahrimjang.mail.core.domain.Contact;
 import io.github.ahrimjang.mail.core.domain.MailMessage;
 import io.github.ahrimjang.mail.core.domain.Suppression;
+import io.github.ahrimjang.mail.core.port.WorkspaceContext;
 import io.github.ahrimjang.mail.core.port.CampaignRepository;
 import io.github.ahrimjang.mail.core.port.ContactRepository;
 import io.github.ahrimjang.mail.core.port.MailMessageRepository;
@@ -33,6 +34,17 @@ import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class MailDispatchServiceTest {
+
+    /** The acting tenant every scoped call resolves to in these tests. */
+    private static final long WS = 7L;
+
+    @Mock
+    private WorkspaceContext ctx;
+
+    @BeforeEach
+    void stubWorkspaceContext() {
+        org.mockito.Mockito.lenient().when(ctx.currentWorkspaceId()).thenReturn(WS);
+    }
 
     private static final String BASE_URL = "http://localhost:8080";
     private static final Long MESSAGE_ID = 42L;
@@ -67,6 +79,7 @@ class MailDispatchServiceTest {
 
     private Campaign campaign(String subject, String body) {
         Campaign campaign = Campaign.draft(subject, body);
+        campaign.setWorkspaceId(WS);
         campaign.setId(CAMPAIGN_ID);
         return campaign;
     }
@@ -102,7 +115,7 @@ class MailDispatchServiceTest {
         when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(true);
         when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(message));
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(campaign("subject", "body")));
-        when(suppressions.existsByEmail(RECIPIENT)).thenReturn(true);
+        when(suppressions.existsByWorkspaceAndEmail(WS, RECIPIENT)).thenReturn(true);
         when(messages.hasPendingOrSending(CAMPAIGN_ID)).thenReturn(true);
 
         service.dispatchOne(MESSAGE_ID);
@@ -119,7 +132,7 @@ class MailDispatchServiceTest {
         when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(true);
         when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(message));
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(campaign("Hello", "<p>Body</p>")));
-        when(suppressions.existsByEmail(RECIPIENT)).thenReturn(false);
+        when(suppressions.existsByWorkspaceAndEmail(WS, RECIPIENT)).thenReturn(false);
         when(messages.hasPendingOrSending(CAMPAIGN_ID)).thenReturn(true);
 
         service.dispatchOne(MESSAGE_ID);
@@ -148,7 +161,7 @@ class MailDispatchServiceTest {
         withSender.setSenderName("Acme 팀");
         withSender.setSenderEmail("hello@acme.io");
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(withSender));
-        when(suppressions.existsByEmail(RECIPIENT)).thenReturn(false);
+        when(suppressions.existsByWorkspaceAndEmail(WS, RECIPIENT)).thenReturn(false);
         when(messages.hasPendingOrSending(CAMPAIGN_ID)).thenReturn(true);
 
         service.dispatchOne(MESSAGE_ID);
@@ -165,7 +178,7 @@ class MailDispatchServiceTest {
         when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(message));
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(
                 Optional.of(campaign("Hi {{firstName}}", "<p>Dear {{firstName}}</p>")));
-        when(suppressions.existsByEmail(RECIPIENT)).thenReturn(false);
+        when(suppressions.existsByWorkspaceAndEmail(WS, RECIPIENT)).thenReturn(false);
         when(contacts.findById(contactId)).thenReturn(
                 Optional.of(Contact.of(RECIPIENT, "Ahrim", "Jang", Map.of())));
         when(messages.hasPendingOrSending(CAMPAIGN_ID)).thenReturn(true);
@@ -186,7 +199,7 @@ class MailDispatchServiceTest {
         when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(message));
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(
                 Optional.of(campaign("Welcome", "<p>Sent to {{email}}</p>")));
-        when(suppressions.existsByEmail(RECIPIENT)).thenReturn(false);
+        when(suppressions.existsByWorkspaceAndEmail(WS, RECIPIENT)).thenReturn(false);
         when(messages.hasPendingOrSending(CAMPAIGN_ID)).thenReturn(true);
 
         service.dispatchOne(MESSAGE_ID);
@@ -205,7 +218,7 @@ class MailDispatchServiceTest {
         when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(message));
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(
                 Optional.of(campaign("Deals", "<a href=\"https://example.com/deal\">deal</a>")));
-        when(suppressions.existsByEmail(RECIPIENT)).thenReturn(false);
+        when(suppressions.existsByWorkspaceAndEmail(WS, RECIPIENT)).thenReturn(false);
         when(messages.hasPendingOrSending(CAMPAIGN_ID)).thenReturn(true);
 
         service.dispatchOne(MESSAGE_ID);
@@ -231,7 +244,7 @@ class MailDispatchServiceTest {
         abCampaign.setAbBodyB("<p>Body B</p>");
         abCampaign.setAbSplitPercent(50);
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(abCampaign));
-        when(suppressions.existsByEmail(RECIPIENT)).thenReturn(false);
+        when(suppressions.existsByWorkspaceAndEmail(WS, RECIPIENT)).thenReturn(false);
         when(messages.hasPendingOrSending(CAMPAIGN_ID)).thenReturn(true);
 
         service.dispatchOne(MESSAGE_ID);
@@ -254,7 +267,7 @@ class MailDispatchServiceTest {
         abCampaign.setAbSubjectB("Hello B");
         abCampaign.setAbSplitPercent(50);
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(abCampaign));
-        when(suppressions.existsByEmail(RECIPIENT)).thenReturn(false);
+        when(suppressions.existsByWorkspaceAndEmail(WS, RECIPIENT)).thenReturn(false);
         when(messages.hasPendingOrSending(CAMPAIGN_ID)).thenReturn(true);
 
         service.dispatchOne(MESSAGE_ID);
@@ -277,7 +290,7 @@ class MailDispatchServiceTest {
         abCampaign.setAbBodyB("<p>Body B</p>");
         abCampaign.setAbSplitPercent(50);
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(abCampaign));
-        when(suppressions.existsByEmail(RECIPIENT)).thenReturn(false);
+        when(suppressions.existsByWorkspaceAndEmail(WS, RECIPIENT)).thenReturn(false);
         when(messages.hasPendingOrSending(CAMPAIGN_ID)).thenReturn(true);
 
         service.dispatchOne(MESSAGE_ID);
@@ -304,7 +317,7 @@ class MailDispatchServiceTest {
         abCampaign.setAbTestPercent(20);
         abCampaign.setAbWinner("B");
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(abCampaign));
-        when(suppressions.existsByEmail(RECIPIENT)).thenReturn(false);
+        when(suppressions.existsByWorkspaceAndEmail(WS, RECIPIENT)).thenReturn(false);
         when(messages.hasPendingOrSending(CAMPAIGN_ID)).thenReturn(true);
 
         service.dispatchOne(MESSAGE_ID);
@@ -327,7 +340,7 @@ class MailDispatchServiceTest {
         abCampaign.setAbBodyB("<p>Body B</p>");
         abCampaign.setAbSplitPercent(50);
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(abCampaign));
-        when(suppressions.existsByEmail(RECIPIENT)).thenReturn(false);
+        when(suppressions.existsByWorkspaceAndEmail(WS, RECIPIENT)).thenReturn(false);
         when(messages.hasPendingOrSending(CAMPAIGN_ID)).thenReturn(true);
 
         service.dispatchOne(MESSAGE_ID);
@@ -346,7 +359,7 @@ class MailDispatchServiceTest {
         when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(true);
         when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(message));
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(campaign("subject", "body")));
-        when(suppressions.existsByEmail(RECIPIENT)).thenReturn(false);
+        when(suppressions.existsByWorkspaceAndEmail(WS, RECIPIENT)).thenReturn(false);
         when(messages.hasPendingOrSending(CAMPAIGN_ID)).thenReturn(true);
         doThrow(new MailSender.MailSendException("mailbox unavailable"))
                 .when(sender).send(anyString(), anyString(), anyString(), anyString(), any(), any());
@@ -370,7 +383,7 @@ class MailDispatchServiceTest {
         when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(true);
         when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(message));
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(campaign("subject", "body")));
-        when(suppressions.existsByEmail(RECIPIENT)).thenReturn(false);
+        when(suppressions.existsByWorkspaceAndEmail(WS, RECIPIENT)).thenReturn(false);
         when(messages.hasPendingOrSending(CAMPAIGN_ID)).thenReturn(false);
 
         service.dispatchOne(MESSAGE_ID);
@@ -384,7 +397,7 @@ class MailDispatchServiceTest {
         when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(true);
         when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(message));
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(campaign("subject", "body")));
-        when(suppressions.existsByEmail(RECIPIENT)).thenReturn(false);
+        when(suppressions.existsByWorkspaceAndEmail(WS, RECIPIENT)).thenReturn(false);
         // pending drained but one message is claimed (SENDING) by a concurrent consumer
         when(messages.hasPendingOrSending(CAMPAIGN_ID)).thenReturn(true);
 

@@ -91,7 +91,7 @@ public class MailDispatchService {
             return;
         }
         markSending(campaign);
-        if (suppressions.existsByEmail(message.getRecipient())) {
+        if (suppressions.existsByWorkspaceAndEmail(campaign.getWorkspaceId(), message.getRecipient())) {
             message.markSuppressed();
             messages.save(message);
             completeIfDrained(campaign.getId());
@@ -133,7 +133,7 @@ public class MailDispatchService {
             log.error("send failed: campaign={} recipient={}",
                     campaign.getId(), message.getRecipient(), e);
             message.markBounced(e.getMessage());
-            suppressions.save(Suppression.of(message.getRecipient(), "bounce"));
+            suppressions.save(Suppression.of(campaign.getWorkspaceId(), message.getRecipient(), "bounce"));
         }
         messages.save(message);
         completeIfDrained(campaign.getId());

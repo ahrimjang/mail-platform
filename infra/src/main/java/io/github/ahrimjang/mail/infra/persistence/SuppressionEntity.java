@@ -17,6 +17,11 @@ public class SuppressionEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /** Owning tenant. */
+    @Column(name = "workspace_id")
+    private Long workspaceId;
+
+
     @Column(nullable = false, unique = true)
     private String email;
 
@@ -38,6 +43,15 @@ public class SuppressionEntity {
     public Long getId() {
         return id;
     }
+
+    public Long getWorkspaceId() {
+        return workspaceId;
+    }
+
+    public void setWorkspaceId(Long workspaceId) {
+        this.workspaceId = workspaceId;
+    }
+
 
     public String getEmail() {
         return email;

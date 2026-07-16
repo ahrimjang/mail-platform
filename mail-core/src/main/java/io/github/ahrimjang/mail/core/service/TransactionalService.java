@@ -5,6 +5,7 @@ import io.github.ahrimjang.mail.common.TransactionalRequest;
 import io.github.ahrimjang.mail.core.domain.Campaign;
 import io.github.ahrimjang.mail.core.domain.MailMessage;
 import io.github.ahrimjang.mail.core.domain.Template;
+import io.github.ahrimjang.mail.core.port.WorkspaceContext;
 import io.github.ahrimjang.mail.core.port.CampaignRepository;
 import io.github.ahrimjang.mail.core.port.MailMessageRepository;
 import io.github.ahrimjang.mail.core.port.MailQueue;
@@ -31,8 +32,13 @@ public class TransactionalService {
     private final MailQueue mailQueue;
     private final TemplateRenderer renderer;
 
+    /** Who is acting, for which tenant — resolved by the API adapter per request. */
+    private final WorkspaceContext ctx;
+
     public TransactionalService(TemplateRepository templates, CampaignRepository campaigns,
-                                MailMessageRepository messages, MailQueue mailQueue, TemplateRenderer renderer) {
+                                MailMessageRepository messages, MailQueue mailQueue, TemplateRenderer renderer,
+                           WorkspaceContext ctx) {
+        this.ctx = ctx;
         this.templates = templates;
         this.campaigns = campaigns;
         this.messages = messages;
@@ -49,12 +55,14 @@ public class TransactionalService {
             throw new IllegalArgumentException("valid recipient is required");
         }
         Template template = templates.findById(request.templateId())
+                .filter(t -> t.getWorkspaceId() == null || t.getWorkspaceId().equals(ctx.currentWorkspaceId()))
                 .orElseThrow(() -> new NoSuchElementException("template not found: " + request.templateId()));
         Map<String, String> vars = request.variables() == null ? Map.of() : request.variables();
 
         Campaign campaign = Campaign.draft(
                 renderer.render(template.getSubject(), vars),
                 renderer.render(template.getHtmlBody(), vars));
+        campaign.setWorkspaceId(ctx.currentWorkspaceId());
         campaign.setStatus(CampaignStatus.QUEUED);
         campaign.setEnqueuedAt(java.time.Instant.now()); // transactional sends are always immediate
         campaign.setTemplateId(template.getId());

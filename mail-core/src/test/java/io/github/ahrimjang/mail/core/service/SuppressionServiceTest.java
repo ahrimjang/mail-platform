@@ -6,6 +6,7 @@ import io.github.ahrimjang.mail.core.domain.Contact;
 import io.github.ahrimjang.mail.core.domain.ContactList;
 import io.github.ahrimjang.mail.core.domain.MailMessage;
 import io.github.ahrimjang.mail.core.domain.Suppression;
+import io.github.ahrimjang.mail.core.port.WorkspaceContext;
 import io.github.ahrimjang.mail.core.port.CampaignRepository;
 import io.github.ahrimjang.mail.core.port.ContactListRepository;
 import io.github.ahrimjang.mail.core.port.ContactRepository;
@@ -33,6 +34,17 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class SuppressionServiceTest {
 
+    /** The acting tenant every scoped call resolves to in these tests. */
+    private static final long WS = 7L;
+
+    @Mock
+    private WorkspaceContext ctx;
+
+    @BeforeEach
+    void stubWorkspaceContext() {
+        org.mockito.Mockito.lenient().when(ctx.currentWorkspaceId()).thenReturn(WS);
+    }
+
     @Mock
     private MailMessageRepository messages;
 
@@ -55,11 +67,12 @@ class SuppressionServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new SuppressionService(messages, suppressions, contacts, campaigns, lists, listUnsubscribes);
+        service = new SuppressionService(messages, suppressions, contacts, campaigns, lists, listUnsubscribes, ctx);
     }
 
     private Contact contactWithId(Long id, String email) {
         Contact c = Contact.of(email, null, null, Map.of());
+        c.setWorkspaceId(WS);
         c.setId(id);
         return c;
     }
@@ -68,9 +81,11 @@ class SuppressionServiceTest {
     private MailMessage listCampaignMessage() {
         MailMessage message = MailMessage.queued(10L, "member@x.com", 77L);
         Campaign campaign = Campaign.draft("s", "b");
+        campaign.setWorkspaceId(WS);
         campaign.setId(10L);
         campaign.setListId(5L);
         ContactList list = ContactList.of("뉴스레터", null);
+        list.setWorkspaceId(WS);
         list.setId(5L);
         when(campaigns.findById(10L)).thenReturn(Optional.of(campaign));
         when(lists.findById(5L)).thenReturn(Optional.of(list));
@@ -141,6 +156,7 @@ class SuppressionServiceTest {
     void optOutOfList_recordsManualReasonForOperatorAction() {
         when(contacts.findById(7L)).thenReturn(Optional.of(contactWithId(7L, "member@x.com")));
         ContactList list = ContactList.of("뉴스레터", null);
+        list.setWorkspaceId(WS);
         list.setId(5L);
         when(lists.findById(5L)).thenReturn(Optional.of(list));
 
@@ -165,11 +181,16 @@ class SuppressionServiceTest {
     void suppressByUnsubToken_knownTokenSuppressesRecipientWithUnsubscribeReason() {
         MailMessage message = MailMessage.queued(1L, "leaver@x.com");
         when(messages.findByUnsubToken("tok")).thenReturn(Optional.of(message));
+        Campaign sender = Campaign.draft("s", "b");
+        sender.setWorkspaceId(WS);
+        sender.setId(1L);
+        when(campaigns.findById(1L)).thenReturn(Optional.of(sender));
 
         service.suppressByUnsubToken("tok");
 
         ArgumentCaptor<Suppression> captor = ArgumentCaptor.forClass(Suppression.class);
         verify(suppressions).save(captor.capture());
+        assertThat(captor.getValue().getWorkspaceId()).isEqualTo(WS);
         assertThat(captor.getValue().getEmail()).isEqualTo("leaver@x.com");
         assertThat(captor.getValue().getReason()).isEqualTo("unsubscribe");
     }
@@ -185,18 +206,18 @@ class SuppressionServiceTest {
 
     @Test
     void isSuppressed_delegatesToRepository() {
-        when(suppressions.existsByEmail("gone@x.com")).thenReturn(true);
-        when(suppressions.existsByEmail("here@x.com")).thenReturn(false);
+        when(suppressions.existsByWorkspaceAndEmail(WS, "gone@x.com")).thenReturn(true);
+        when(suppressions.existsByWorkspaceAndEmail(WS, "here@x.com")).thenReturn(false);
 
-        assertThat(service.isSuppressed("gone@x.com")).isTrue();
-        assertThat(service.isSuppressed("here@x.com")).isFalse();
+        assertThat(service.isSuppressed(WS, "gone@x.com")).isTrue();
+        assertThat(service.isSuppressed(WS, "here@x.com")).isFalse();
     }
 
     @Test
     void subscriptionOf_suppressedContactReturnsReasonAndSince() {
         when(contacts.findById(7L)).thenReturn(Optional.of(contactWithId(7L, "gone@x.com")));
-        Suppression suppression = Suppression.of("gone@x.com", "unsubscribe");
-        when(suppressions.findByEmail("gone@x.com")).thenReturn(Optional.of(suppression));
+        Suppression suppression = Suppression.of(WS, "gone@x.com", "unsubscribe");
+        when(suppressions.findByWorkspaceAndEmail(WS, "gone@x.com")).thenReturn(Optional.of(suppression));
 
         SubscriptionView view = service.subscriptionOf(7L);
 
@@ -208,7 +229,7 @@ class SuppressionServiceTest {
     @Test
     void subscriptionOf_unsuppressedContactReturnsFalseWithNullFields() {
         when(contacts.findById(7L)).thenReturn(Optional.of(contactWithId(7L, "here@x.com")));
-        when(suppressions.findByEmail("here@x.com")).thenReturn(Optional.empty());
+        when(suppressions.findByWorkspaceAndEmail(WS, "here@x.com")).thenReturn(Optional.empty());
 
         SubscriptionView view = service.subscriptionOf(7L);
 
@@ -229,8 +250,8 @@ class SuppressionServiceTest {
     @Test
     void updateSubscription_trueRegistersManualSuppression() {
         when(contacts.findById(7L)).thenReturn(Optional.of(contactWithId(7L, "target@x.com")));
-        Suppression stored = Suppression.of("target@x.com", "manual");
-        when(suppressions.findByEmail("target@x.com")).thenReturn(Optional.of(stored));
+        Suppression stored = Suppression.of(WS, "target@x.com", "manual");
+        when(suppressions.findByWorkspaceAndEmail(WS, "target@x.com")).thenReturn(Optional.of(stored));
 
         SubscriptionView view = service.updateSubscription(7L, true);
 
@@ -245,11 +266,11 @@ class SuppressionServiceTest {
     @Test
     void updateSubscription_falseDeletesSuppression() {
         when(contacts.findById(7L)).thenReturn(Optional.of(contactWithId(7L, "back@x.com")));
-        when(suppressions.findByEmail("back@x.com")).thenReturn(Optional.empty());
+        when(suppressions.findByWorkspaceAndEmail(WS, "back@x.com")).thenReturn(Optional.empty());
 
         SubscriptionView view = service.updateSubscription(7L, false);
 
-        verify(suppressions).deleteByEmail("back@x.com");
+        verify(suppressions).deleteByWorkspaceAndEmail(WS, "back@x.com");
         verify(suppressions, never()).save(any());
         assertThat(view.suppressed()).isFalse();
     }
@@ -262,6 +283,6 @@ class SuppressionServiceTest {
                 .isInstanceOf(NoSuchElementException.class)
                 .hasMessageContaining("contact not found: 99");
         verify(suppressions, never()).save(any());
-        verify(suppressions, never()).deleteByEmail(any());
+        verify(suppressions, never()).deleteByWorkspaceAndEmail(org.mockito.ArgumentMatchers.anyLong(), any());
     }
 }

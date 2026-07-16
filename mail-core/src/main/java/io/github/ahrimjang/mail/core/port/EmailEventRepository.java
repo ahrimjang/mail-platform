@@ -22,7 +22,7 @@ public interface EmailEventRepository {
      * in {@code zone}: distinct messages per (day, event type). Distinct counting
      * keeps the numbers duplicate-tolerant (the projection is at-least-once).
      */
-    java.util.List<DailyEngagement> aggregateDailyEngagement(java.time.Instant since, java.time.ZoneId zone);
+    java.util.List<DailyEngagement> aggregateDailyEngagement(Long workspaceId, java.time.Instant since, java.time.ZoneId zone);
 
     /** One (day, type) distinct-message count of the daily engagement aggregation. */
     record DailyEngagement(java.time.LocalDate day, EventType type, long distinctMessages) {
@@ -32,7 +32,7 @@ public interface EmailEventRepository {
      * Most-clicked tracked URLs since {@code since}, best first — the analytics
      * link ranking. Untracked events (null url) are excluded.
      */
-    java.util.List<LinkClicks> topClickedLinks(java.time.Instant since, int limit);
+    java.util.List<LinkClicks> topClickedLinks(Long workspaceId, java.time.Instant since, int limit);
 
     /** One ranked link: raw click count plus distinct clicking messages. */
     record LinkClicks(String url, long clicks, long uniqueMessages) {
@@ -45,7 +45,7 @@ public interface EmailEventRepository {
      * Opens bucketed by (ISO weekday, local hour) since {@code since} — the
      * "when do people read" heatmap. Distinct messages per bucket.
      */
-    java.util.List<HeatmapCell> aggregateOpenHeatmap(java.time.Instant since, java.time.ZoneId zone);
+    java.util.List<HeatmapCell> aggregateOpenHeatmap(Long workspaceId, java.time.Instant since, java.time.ZoneId zone);
 
     /** One heatmap bucket: ISO weekday (1=Mon..7=Sun), hour 0..23, distinct opens. */
     record HeatmapCell(int dayOfWeek, int hour, long opens) {

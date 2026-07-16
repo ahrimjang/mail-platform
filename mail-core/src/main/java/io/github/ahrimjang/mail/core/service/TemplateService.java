@@ -4,6 +4,7 @@ import io.github.ahrimjang.mail.common.RenderedTemplate;
 import io.github.ahrimjang.mail.common.TemplateRequest;
 import io.github.ahrimjang.mail.common.TemplateView;
 import io.github.ahrimjang.mail.core.domain.Template;
+import io.github.ahrimjang.mail.core.port.WorkspaceContext;
 import io.github.ahrimjang.mail.core.port.TemplateRepository;
 import org.springframework.stereotype.Service;
 
@@ -25,15 +26,21 @@ public class TemplateService {
     private final TemplateRepository templates;
     private final TemplateRenderer renderer;
 
-    public TemplateService(TemplateRepository templates, TemplateRenderer renderer) {
+    /** Who is acting, for which tenant — resolved by the API adapter per request. */
+    private final WorkspaceContext ctx;
+
+    public TemplateService(TemplateRepository templates, TemplateRenderer renderer,
+                           WorkspaceContext ctx) {
+        this.ctx = ctx;
         this.templates = templates;
         this.renderer = renderer;
     }
 
     public TemplateView create(TemplateRequest request) {
         validate(request);
-        Template saved = templates.save(Template.create(request.name(), request.subject(), request.htmlBody()));
-        return toView(saved);
+        Template template = Template.create(request.name(), request.subject(), request.htmlBody());
+        template.setWorkspaceId(ctx.currentWorkspaceId());
+        return toView(templates.save(template));
     }
 
     public TemplateView update(Long id, TemplateRequest request) {
@@ -51,7 +58,7 @@ public class TemplateService {
     }
 
     public List<TemplateView> list() {
-        return templates.findAll().stream()
+        return templates.findVisibleToWorkspace(ctx.currentWorkspaceId()).stream()
                 .map(this::toView)
                 .toList();
     }
@@ -114,6 +121,8 @@ public class TemplateService {
 
     private Template load(Long id) {
         return templates.findById(id)
+                // Built-ins (workspace null) are shared; user templates only within their tenant.
+                .filter(t -> t.getWorkspaceId() == null || t.getWorkspaceId().equals(ctx.currentWorkspaceId()))
                 .orElseThrow(() -> new NoSuchElementException("template not found: " + id));
     }
 

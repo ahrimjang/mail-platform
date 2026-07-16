@@ -9,6 +9,7 @@ import io.github.ahrimjang.mail.core.domain.Contact;
 import io.github.ahrimjang.mail.core.domain.ContactList;
 import io.github.ahrimjang.mail.core.domain.MailMessage;
 import io.github.ahrimjang.mail.core.domain.Suppression;
+import io.github.ahrimjang.mail.core.port.WorkspaceContext;
 import io.github.ahrimjang.mail.core.port.CampaignRepository;
 import io.github.ahrimjang.mail.core.port.ContactListRepository;
 import io.github.ahrimjang.mail.core.port.ContactRepository;
@@ -38,6 +39,17 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class ContactActivityServiceTest {
 
+    /** The acting tenant every scoped call resolves to in these tests. */
+    private static final long WS = 7L;
+
+    @Mock
+    private WorkspaceContext ctx;
+
+    @BeforeEach
+    void stubWorkspaceContext() {
+        org.mockito.Mockito.lenient().when(ctx.currentWorkspaceId()).thenReturn(WS);
+    }
+
     private static final Instant T0 = Instant.parse("2026-07-01T00:00:00Z");
 
     @Mock
@@ -66,11 +78,12 @@ class ContactActivityServiceTest {
     @BeforeEach
     void setUp() {
         service = new ContactActivityService(
-                contacts, messages, events, suppressions, listUnsubscribes, lists, campaigns);
+                contacts, messages, events, suppressions, listUnsubscribes, lists, campaigns, ctx);
     }
 
     private Contact contactAt(Instant createdAt) {
         Contact c = Contact.of("member@x.com", null, null, Map.of());
+        c.setWorkspaceId(WS);
         c.setId(77L);
         c.setCreatedAt(createdAt);
         return c;
@@ -86,6 +99,7 @@ class ContactActivityServiceTest {
 
     private Campaign campaign(Long id, String name, String subject) {
         Campaign c = Campaign.draft(subject, "b");
+        c.setWorkspaceId(WS);
         c.setId(id);
         c.setName(name);
         return c;
@@ -104,11 +118,12 @@ class ContactActivityServiceTest {
         when(events.findRecentByContact(eq(77L), anyInt())).thenReturn(List.of(
                 new EmailEventRepository.ContactEvent(EventType.OPEN, null, T0.plusSeconds(400), 10L),
                 new EmailEventRepository.ContactEvent(EventType.CLICK, "https://x.com/p", T0.plusSeconds(500), 10L)));
-        when(suppressions.findByEmail("member@x.com"))
+        when(suppressions.findByWorkspaceAndEmail(WS, "member@x.com"))
                 .thenReturn(Optional.of(suppressionAt("unsubscribe", T0.plusSeconds(600))));
         when(listUnsubscribes.findByContact(77L)).thenReturn(List.of(
                 new ListUnsubscribeRepository.OptOut(5L, "unsubscribe", T0.plusSeconds(700))));
         ContactList list = ContactList.of("뉴스레터", null);
+        list.setWorkspaceId(WS);
         list.setId(5L);
         when(lists.findById(5L)).thenReturn(Optional.of(list));
         when(campaigns.findById(10L)).thenReturn(Optional.of(campaign(10L, "7월 캠페인", "s")));
@@ -205,7 +220,7 @@ class ContactActivityServiceTest {
     }
 
     private static Suppression suppressionAt(String reason, Instant createdAt) {
-        Suppression s = Suppression.of("member@x.com", reason);
+        Suppression s = Suppression.of(WS, "member@x.com", reason);
         s.setCreatedAt(createdAt);
         return s;
     }

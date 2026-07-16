@@ -6,6 +6,7 @@ import io.github.ahrimjang.mail.common.TransactionalRequest;
 import io.github.ahrimjang.mail.core.domain.Campaign;
 import io.github.ahrimjang.mail.core.domain.MailMessage;
 import io.github.ahrimjang.mail.core.domain.Template;
+import io.github.ahrimjang.mail.core.port.WorkspaceContext;
 import io.github.ahrimjang.mail.core.port.CampaignRepository;
 import io.github.ahrimjang.mail.core.port.MailMessageRepository;
 import io.github.ahrimjang.mail.core.port.MailQueue;
@@ -34,6 +35,17 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class TransactionalServiceTest {
 
+    /** The acting tenant every scoped call resolves to in these tests. */
+    private static final long WS = 7L;
+
+    @Mock
+    private WorkspaceContext ctx;
+
+    @BeforeEach
+    void stubWorkspaceContext() {
+        org.mockito.Mockito.lenient().when(ctx.currentWorkspaceId()).thenReturn(WS);
+    }
+
     private static final long CAMPAIGN_ID = 42L;
     private static final long MESSAGE_ID = 100L;
 
@@ -51,7 +63,7 @@ class TransactionalServiceTest {
     @BeforeEach
     void setUp() {
         // Real renderer on purpose: the contract under test includes actual {{var}} substitution.
-        service = new TransactionalService(templates, campaigns, messages, mailQueue, new TemplateRenderer());
+        service = new TransactionalService(templates, campaigns, messages, mailQueue, new TemplateRenderer(), ctx);
     }
 
     private void stubPersistenceAssigningIds() {

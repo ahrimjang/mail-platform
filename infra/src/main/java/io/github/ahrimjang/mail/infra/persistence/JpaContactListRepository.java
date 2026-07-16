@@ -35,8 +35,8 @@ public class JpaContactListRepository implements ContactListRepository {
     }
 
     @Override
-    public List<ContactList> findAll() {
-        return jpa.findAll().stream().map(this::toDomain).toList();
+    public List<ContactList> findByWorkspace(Long workspaceId) {
+        return jpa.findByWorkspaceIdOrderById(workspaceId).stream().map(this::toDomain).toList();
     }
 
     @Override
@@ -93,12 +93,15 @@ public class JpaContactListRepository implements ContactListRepository {
     }
 
     private ContactListEntity toEntity(ContactList l) {
-        return new ContactListEntity(l.getId(), l.getName(), l.getDescription(), l.getCreatedAt());
+        ContactListEntity entity = new ContactListEntity(l.getId(), l.getName(), l.getDescription(), l.getCreatedAt());
+        entity.setWorkspaceId(l.getWorkspaceId());
+        return entity;
     }
 
     private ContactList toDomain(ContactListEntity e) {
         ContactList l = new ContactList();
         l.setId(e.getId());
+        l.setWorkspaceId(e.getWorkspaceId());
         l.setName(e.getName());
         l.setDescription(e.getDescription());
         l.setCreatedAt(e.getCreatedAt());

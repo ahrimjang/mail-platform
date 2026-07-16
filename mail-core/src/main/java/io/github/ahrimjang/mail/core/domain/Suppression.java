@@ -8,6 +8,7 @@ import java.time.Instant;
  */
 public class Suppression {
 
+    private Long workspaceId; // the do-not-send decision is per tenant
     private String email;
     private String reason;
     private Instant createdAt;
@@ -16,12 +17,22 @@ public class Suppression {
     }
 
     /** Factory for a newly suppressed address. */
-    public static Suppression of(String email, String reason) {
+    public static Suppression of(Long workspaceId, String email, String reason) {
         Suppression s = new Suppression();
+        s.setWorkspaceId(workspaceId);
         s.email = email;
         s.reason = reason;
         s.createdAt = Instant.now();
         return s;
+    }
+
+
+    public Long getWorkspaceId() {
+        return workspaceId;
+    }
+
+    public void setWorkspaceId(Long workspaceId) {
+        this.workspaceId = workspaceId;
     }
 
     public String getEmail() {

@@ -22,7 +22,7 @@ public interface ListUnsubscribeRepository {
     void delete(Long listId, Long contactId);
 
     /** Opt-out counts per list, largest first (analytics audience health). */
-    List<ListCount> countByList();
+    List<ListCount> countByList(Long workspaceId);
 
     /** One list's opt-out count. */
     record ListCount(Long listId, long count) {

@@ -10,6 +10,8 @@ package io.github.ahrimjang.mail.common;
 public record AuthResponse(
         String token,
         String email,
-        String displayName
+        String displayName,
+        String workspaceName,
+        String role
 ) {
 }
