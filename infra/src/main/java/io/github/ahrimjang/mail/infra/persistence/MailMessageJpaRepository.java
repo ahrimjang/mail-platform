@@ -67,6 +67,13 @@ public interface MailMessageJpaRepository extends JpaRepository<MailMessageEntit
     java.util.List<MailMessageEntity> findRecentByContact(@Param("contactId") Long contactId,
                                                           org.springframework.data.domain.Pageable pageable);
 
+    /** Usage meter: SENT mail of one workspace since an instant (joined through campaigns). */
+    @Query("select count(m) from MailMessageEntity m, CampaignEntity c "
+            + "where c.id = m.campaignId and c.workspaceId = :ws "
+            + "and m.status = io.github.ahrimjang.mail.common.MessageStatus.SENT "
+            + "and m.updatedAt >= :since")
+    long countSentByWorkspaceSince(@Param("ws") Long workspaceId, @Param("since") Instant since);
+
     /** Delivered-mail count per contact (only list-campaign sends carry a contactId). */
     @Query("select m.contactId, count(m) from MailMessageEntity m "
             + "where m.contactId is not null and m.status = io.github.ahrimjang.mail.common.MessageStatus.SENT "

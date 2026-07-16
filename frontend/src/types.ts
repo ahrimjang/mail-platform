@@ -266,6 +266,7 @@ export interface WorkspaceView {
   storageProvider: string; // LOCAL | AWS_S3 | NCP_OBJECT_STORAGE
   createdAt: string;
   memberCount: number;
+  monthlySent: number; // SENT this calendar month — the usage a plan would bill against
 }
 
 export interface WorkspaceUserView {

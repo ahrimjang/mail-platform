@@ -9,6 +9,7 @@ public record WorkspaceView(
         String smtpProvider,
         String storageProvider,
         Instant createdAt,
-        long memberCount
+        long memberCount,
+        long monthlySent
 ) {
 }

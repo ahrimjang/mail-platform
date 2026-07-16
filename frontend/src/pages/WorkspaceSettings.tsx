@@ -203,6 +203,20 @@ export default function WorkspaceSettings() {
       </div>
 
       <div className="op-form-card">
+        <h3 className="op-sect-title">사용량</h3>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 14, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 32, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>
+            {(workspace?.monthlySent ?? 0).toLocaleString()}
+          </span>
+          <span style={{ fontSize: 13.5, color: "var(--op-muted)" }}>이번 달 발송 성공 (매월 1일 기준 집계)</span>
+        </div>
+        <p style={{ margin: "12px 0 0", fontSize: 12.5, color: "var(--op-faint)", lineHeight: 1.6 }}>
+          플랜·쿼터 산정의 기준 수치예요. BYO 커넥터를 연결하면 발송 인프라 비용 자체는 회사 계정에
+          직접 청구되고, 플랫폼 요금은 이 사용량 구간으로 계산됩니다.
+        </p>
+      </div>
+
+      <div className="op-form-card">
         <h3 className="op-sect-title">인프라 설정 (BYO)</h3>
         <p style={{ margin: "0 0 16px", fontSize: 13, color: "var(--op-muted)", lineHeight: 1.6 }}>
           발송·저장처럼 비용이 큰 인프라는 <b>회사 소유 계정을 연결</b>해 비용이 회사에 직접 청구되게 합니다.

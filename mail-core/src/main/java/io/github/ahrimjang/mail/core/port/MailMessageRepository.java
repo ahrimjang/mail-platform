@@ -73,6 +73,9 @@ public interface MailMessageRepository {
     /** This contact's deliveries, newest first. */
     List<MailMessage> findRecentByContact(Long contactId, int limit);
 
+    /** Delivered (SENT) mail this workspace produced since {@code since} — the usage meter. */
+    long countSentByWorkspaceSince(Long workspaceId, java.time.Instant since);
+
     /** Delivered (SENT) mail count per contact; contacts with none are absent. */
     List<ContactSentCount> countSentByContact();
 

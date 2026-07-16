@@ -39,6 +39,8 @@ class WorkspaceServiceTest {
     @Mock
     private UserRepository users;
     @Mock
+    private io.github.ahrimjang.mail.core.port.MailMessageRepository messages;
+    @Mock
     private PasswordHasher hasher;
     @Mock
     private WorkspaceContext ctx;
@@ -50,6 +52,8 @@ class WorkspaceServiceTest {
     void stubContext() {
         lenient().when(ctx.currentWorkspaceId()).thenReturn(WS);
         lenient().when(ctx.isAdmin()).thenReturn(true);
+        lenient().when(messages.countSentByWorkspaceSince(org.mockito.ArgumentMatchers.eq(WS), any()))
+                .thenReturn(1234L);
     }
 
     private static User member(long id, String email, String role) {
@@ -93,6 +97,8 @@ class WorkspaceServiceTest {
         assertThat(view.name()).isEqualTo("에이컴퍼니");
         assertThat(view.smtpProvider()).isEqualTo("AWS_SES");
         assertThat(view.storageProvider()).isEqualTo("AWS_S3");
+        // the usage meter rides along on every view — the number a plan bills against
+        assertThat(view.monthlySent()).isEqualTo(1234L);
     }
 
     @Test

@@ -7,6 +7,7 @@ import io.github.ahrimjang.mail.common.WorkspaceUserView;
 import io.github.ahrimjang.mail.common.WorkspaceView;
 import io.github.ahrimjang.mail.core.domain.User;
 import io.github.ahrimjang.mail.core.domain.Workspace;
+import io.github.ahrimjang.mail.core.port.MailMessageRepository;
 import io.github.ahrimjang.mail.core.port.PasswordHasher;
 import io.github.ahrimjang.mail.core.port.UserRepository;
 import io.github.ahrimjang.mail.core.port.WorkspaceContext;
@@ -27,13 +28,16 @@ public class WorkspaceService {
 
     private final WorkspaceRepository workspaces;
     private final UserRepository users;
+    private final MailMessageRepository messages;
     private final PasswordHasher hasher;
     private final WorkspaceContext ctx;
 
     public WorkspaceService(WorkspaceRepository workspaces, UserRepository users,
+                            MailMessageRepository messages,
                             PasswordHasher hasher, WorkspaceContext ctx) {
         this.workspaces = workspaces;
         this.users = users;
+        this.messages = messages;
         this.hasher = hasher;
         this.ctx = ctx;
     }
@@ -130,7 +134,19 @@ public class WorkspaceService {
 
     private WorkspaceView toView(Workspace w) {
         return new WorkspaceView(w.getId(), w.getName(), w.getSmtpProvider(), w.getStorageProvider(),
-                w.getCreatedAt(), users.countByWorkspaceId(w.getId()));
+                w.getCreatedAt(), users.countByWorkspaceId(w.getId()), monthlySent(w.getId()));
+    }
+
+    /**
+     * Usage meter: SENT mail this calendar month (local zone) — the number a
+     * plan/quota would bill against. Computed on read; a count over an indexed
+     * join is cheap at this scale and always current.
+     */
+    private long monthlySent(Long workspaceId) {
+        java.time.ZoneId zone = java.time.ZoneId.systemDefault();
+        java.time.Instant monthStart = java.time.LocalDate.now(zone)
+                .withDayOfMonth(1).atStartOfDay(zone).toInstant();
+        return messages.countSentByWorkspaceSince(workspaceId, monthStart);
     }
 
     private static WorkspaceUserView toUserView(User u) {

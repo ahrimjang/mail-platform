@@ -95,6 +95,11 @@ public class JpaMailMessageRepository implements MailMessageRepository {
     }
 
     @Override
+    public long countSentByWorkspaceSince(Long workspaceId, java.time.Instant since) {
+        return jpa.countSentByWorkspaceSince(workspaceId, since);
+    }
+
+    @Override
     public List<ContactSentCount> countSentByContact() {
         return jpa.countSentByContact().stream()
                 .map(row -> new ContactSentCount((Long) row[0], ((Number) row[1]).longValue()))
