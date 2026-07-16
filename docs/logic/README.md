@@ -20,11 +20,16 @@
 | [04-tracking-analytics.md](04-tracking-analytics.md) | 오픈/클릭 추적 — 1x1 픽셀, 클릭 리다이렉트, **Kafka `mail.events` 스트림 → worker 프로젝션** → distinct 집계 기반 캠페인 지표 + **링크별 클릭 랭킹, 실행 구간(completed_at), 분석 대시보드**(퍼널/건강도/히트맵) |
 | [05-bounce-webhook.md](05-bounce-webhook.md) | 바운스 웹훅 — `POST /api/webhooks/generic` 수신 → 억제 반영 + `X-Mail-Message-Id` correlation, BOUNCE 이벤트도 Kafka로 |
 | [06-templates-personalization.md](06-templates-personalization.md) | 템플릿 CRUD와 `{{변수}}` 렌더러 — 캠페인 스냅샷/트랜잭셔널 즉시 렌더, **에디터 3종의 마커 영속화와 이미지 업로드** |
-| [07-contacts-lists.md](07-contacts-lists.md) | 연락처(속성 JSON)·리스트·CSV 임포트 — 리스트 팬아웃 개인화 + **구독 상태 관리(전역/리스트 단위)와 수신자 상세**(활동 타임라인·구독 상태 모달) |
+| [07-contacts-lists.md](07-contacts-lists.md) | 연락처(속성 JSON)·리스트·CSV 임포트 — 리스트 팬아웃 개인화 + **구독 상태 관리(전역/리스트 단위)·수신자 상세·동의 기록·페이지드 테이블**(배치 병합) |
 | [08-unit-tests.md](08-unit-tests.md) | 단위 테스트 가이드 — mail-core 전 테스트를 메소드별로 해설 (무엇을, 어떻게 검증하는가) |
 | [09-ab-testing.md](09-ab-testing.md) | A/B 테스트 — 해시 기반 결정적 분배, 홀드아웃(미발행 PENDING), **승자 자동발송**(원자적 claim)과 변형별 지표 |
+| [10-multitenancy.md](10-multitenancy.md) | 멀티테넌시 — 가입=워크스페이스, ADMIN/OPERATOR 역할, **루트 엔티티 격리**(by-id 404), 공개 경로 토큰 역해석, `WorkspaceContext` 포트, BYO 커넥터 |
 
 읽는 순서는 번호 순서가 곧 기능이 쌓인 순서입니다.
+
+> 참고: V16 멀티테넌시 전환으로 일부 포트 메소드가 워크스페이스 스코프 이름으로 바뀌었습니다
+> (`findByEmail` → `findByWorkspaceAndEmail`, `findAll` → `findByWorkspace` 등). 01~09 문서의
+> 오래된 인용에 남은 옛 이름은 [10-multitenancy.md](10-multitenancy.md)의 규칙으로 읽으면 됩니다.
 
 ## 함께 보면 좋은 문서
 

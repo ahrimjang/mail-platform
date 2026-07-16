@@ -129,12 +129,19 @@ public class ContactList {
                 skipped++;
                 continue;
             }
-            Optional<Contact> existing = contacts.findByEmail(email);
-            Contact contact = existing.orElseGet(() -> contacts.save(Contact.of(
-                    email,
-                    parts.length > 1 ? parts[1].trim() : null,
-                    parts.length > 2 ? parts[2].trim() : null,
-                    new HashMap<>())));
+            Optional<Contact> existing = contacts.findByWorkspaceAndEmail(workspaceId, email);
+            Contact contact = existing.orElseGet(() -> {
+                Contact fresh = Contact.of(
+                        email,
+                        parts.length > 1 ? parts[1].trim() : null,
+                        parts.length > 2 ? parts[2].trim() : null,
+                        new HashMap<>());
+                fresh.setWorkspaceId(workspaceId);
+                // Consent provenance: this address arrived through a bulk import.
+                fresh.setConsentSource("CSV_IMPORT");
+                fresh.setConsentedAt(java.time.Instant.now());
+                return contacts.save(fresh);
+            });
             if (existing.isPresent()) {
                 skipped++;
             } else {
@@ -509,6 +516,31 @@ mail-core는 순수하게 남습니다.
                 .orElseThrow(() -> new NoSuchElementException("list not found: " + listId));
         listUnsubscribes.save(listId, contactId, MANUAL_REASON);
     }
+```
+
+### 3-12. 동의 기록과 페이지드 테이블
+
+**동의 출처(V17)** — 주소가 어떤 경로로 들어왔는지(`consent_source`: MANUAL=운영자 직접
+등록, CSV_IMPORT=일괄 임포트)와 시각(`consented_at`)을 생성 시점에 자동 스탬프한다.
+스팸 규제 대응의 최소 단위("언제, 어디서 동의했나")다. 추적 도입 이전의 레거시 행은
+null로 남고, 콘솔은 날짜를 지어내는 대신 "기록 없음"이라고 말한다.
+
+**페이지드 수신자 테이블** — 원래 화면은 연락처 전량 로드 + 연락처당 3콜(구독/멤버십/
+옵트아웃)이라 13명에 41요청이었다. `GET /api/contacts/page`는 검색·리스트·구독·참여도
+필터를 DB에서 처리하고, 페이지의 행들을 **배치 3쿼리**(멤버십 `IN`, 옵트아웃 `IN`,
+억제 이메일 `IN`)로 사전 병합해 내려준다 — 페이지당 1콜. 참여도 조건만은 비율이
+집계 계산값이라([02 문서 3-6b](02-campaign-queue-rabbitmq.md) 참조) 랭킹 매치를 먼저
+구해 그 순서로 메모리 페이징한다.
+
+`mail-core/src/main/java/io/github/ahrimjang/mail/core/service/ContactService.java`
+```java
+    /** Three batch lookups turn a page of contacts into ready-to-render rows. */
+    private List<ContactPageView.ContactRowView> enrich(Long workspaceId, List<Contact> pageRows) {
+        List<Long> ids = pageRows.stream().map(Contact::getId).toList();
+        ...
+        lists.findMembershipsByContactIds(ids) ...
+        listUnsubscribes.findByContactIds(ids) ...
+        suppressions.findSuppressedEmails(workspaceId, ...) ...
 ```
 
 ## 4. 설계 포인트 — 왜 이렇게
