@@ -13,6 +13,9 @@ public interface SuppressionRepository {
 
     boolean existsByWorkspaceAndEmail(Long workspaceId, String email);
 
+    /** Which of the given addresses are suppressed in this workspace (batch check). */
+    java.util.List<String> findSuppressedEmails(Long workspaceId, java.util.List<String> emails);
+
     Optional<Suppression> findByWorkspaceAndEmail(Long workspaceId, String email);
 
     /** Remove the address from the suppression list; a no-op if not present. */

@@ -26,4 +26,6 @@ public interface ListUnsubscribeJpaRepository extends JpaRepository<ListUnsubscr
 
     /** Full opt-out rows of one contact, newest first (the activity timeline needs reason + time). */
     List<ListUnsubscribeEntity> findByContactIdOrderByCreatedAtDesc(Long contactId);
+
+    List<ListUnsubscribeEntity> findByContactIdIn(java.util.Collection<Long> contactIds);
 }

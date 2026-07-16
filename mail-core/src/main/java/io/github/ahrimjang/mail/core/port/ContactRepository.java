@@ -19,6 +19,18 @@ public interface ContactRepository {
     boolean existsByWorkspaceAndEmail(Long workspaceId, String email);
 
     List<Contact> findByWorkspace(Long workspaceId);
+
+    /**
+     * One page of a workspace's contacts, filtered in the database: {@code q}
+     * matches email/name (null = all), {@code listId} keeps members of that
+     * list, {@code suppressed} keeps (true) or drops (false) suppressed
+     * addresses (null = both). Ordered by id.
+     */
+    List<Contact> search(Long workspaceId, String q, Long listId, Boolean suppressed, int offset, int limit);
+
+    /** Row count the same search would produce without paging. */
+    long countSearch(Long workspaceId, String q, Long listId, Boolean suppressed);
+
     /** Total number of contacts (dashboard audience size). */
     long countByWorkspace(Long workspaceId);
 

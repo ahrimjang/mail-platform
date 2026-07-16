@@ -18,6 +18,10 @@ public class Contact {
     private String lastName;
     private Map<String, String> attributes;
     private Instant createdAt;
+    // Consent provenance: how the address entered the system (MANUAL/CSV_IMPORT)
+    // and when. Null on rows collected before consent tracking — "no record".
+    private String consentSource;
+    private Instant consentedAt;
 
     public Contact() {
     }
@@ -51,6 +55,22 @@ public class Contact {
 
     public Long getId() {
         return id;
+    }
+
+    public String getConsentSource() {
+        return consentSource;
+    }
+
+    public void setConsentSource(String consentSource) {
+        this.consentSource = consentSource;
+    }
+
+    public Instant getConsentedAt() {
+        return consentedAt;
+    }
+
+    public void setConsentedAt(Instant consentedAt) {
+        this.consentedAt = consentedAt;
     }
 
     public Long getWorkspaceId() {

@@ -57,6 +57,18 @@ public class JpaContactRepository implements ContactRepository {
     }
 
     @Override
+    public List<Contact> search(Long workspaceId, String q, Long listId, Boolean suppressed, int offset, int limit) {
+        return jpa.search(workspaceId, q == null ? "" : q, listId, suppressed,
+                        org.springframework.data.domain.PageRequest.of(offset / Math.max(1, limit), limit))
+                .stream().map(this::toDomain).toList();
+    }
+
+    @Override
+    public long countSearch(Long workspaceId, String q, Long listId, Boolean suppressed) {
+        return jpa.countSearch(workspaceId, q == null ? "" : q, listId, suppressed);
+    }
+
+    @Override
     public long countByWorkspace(Long workspaceId) {
         return jpa.countByWorkspaceId(workspaceId);
     }
@@ -88,6 +100,8 @@ public class JpaContactRepository implements ContactRepository {
         ContactEntity entity = new ContactEntity(c.getId(), c.getEmail(), c.getFirstName(), c.getLastName(),
                 writeAttributes(c.getAttributes()), c.getCreatedAt());
         entity.setWorkspaceId(c.getWorkspaceId());
+        entity.setConsentSource(c.getConsentSource());
+        entity.setConsentedAt(c.getConsentedAt());
         return entity;
     }
 
@@ -95,6 +109,8 @@ public class JpaContactRepository implements ContactRepository {
         Contact c = new Contact();
         c.setId(e.getId());
         c.setWorkspaceId(e.getWorkspaceId());
+        c.setConsentSource(e.getConsentSource());
+        c.setConsentedAt(e.getConsentedAt());
         c.setEmail(e.getEmail());
         c.setFirstName(e.getFirstName());
         c.setLastName(e.getLastName());

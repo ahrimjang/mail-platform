@@ -72,4 +72,12 @@ public class JpaSuppressionRepository implements SuppressionRepository {
                 .map(row -> new ReasonCount((String) row[0], ((Number) row[1]).longValue()))
                 .toList();
     }
+
+    @Override
+    public java.util.List<String> findSuppressedEmails(Long workspaceId, java.util.List<String> emails) {
+        if (emails.isEmpty()) {
+            return java.util.List.of();
+        }
+        return jpa.findSuppressedEmails(workspaceId, emails);
+    }
 }

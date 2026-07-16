@@ -96,7 +96,9 @@ public class ContactListService {
                         c.getFirstName(),
                         c.getLastName(),
                         c.getAttributes(),
-                        c.getCreatedAt()))
+                        c.getCreatedAt(),
+                        c.getConsentSource(),
+                        c.getConsentedAt()))
                 .toList();
     }
 

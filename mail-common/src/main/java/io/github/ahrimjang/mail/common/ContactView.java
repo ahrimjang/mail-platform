@@ -19,6 +19,8 @@ public record ContactView(
         String firstName,
         String lastName,
         Map<String, String> attributes,
-        Instant createdAt
+        Instant createdAt,
+        String consentSource,
+        Instant consentedAt
 ) {
 }

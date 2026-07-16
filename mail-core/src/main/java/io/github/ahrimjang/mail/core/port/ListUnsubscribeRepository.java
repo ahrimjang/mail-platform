@@ -28,6 +28,13 @@ public interface ListUnsubscribeRepository {
     record ListCount(Long listId, long count) {
     }
 
+    /** Opt-outs of many contacts at once (one query per page, not per row). */
+    java.util.List<ContactOptOut> findByContactIds(java.util.List<Long> contactIds);
+
+    /** One opt-out edge. */
+    record ContactOptOut(Long contactId, Long listId) {
+    }
+
     /** This contact's opt-outs with their reason and time (activity timeline). */
     List<OptOut> findByContact(Long contactId);
 

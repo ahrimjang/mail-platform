@@ -15,6 +15,9 @@ public interface SuppressionJpaRepository extends JpaRepository<SuppressionEntit
 
     long countByWorkspaceId(Long workspaceId);
 
+    @Query("select s.email from SuppressionEntity s where s.workspaceId = ?1 and s.email in ?2")
+    java.util.List<String> findSuppressedEmails(Long workspaceId, java.util.Collection<String> emails);
+
     @Query("select s.reason, count(s) from SuppressionEntity s where s.workspaceId = ?1 "
             + "group by s.reason order by count(s) desc")
     java.util.List<Object[]> countByReason(Long workspaceId);

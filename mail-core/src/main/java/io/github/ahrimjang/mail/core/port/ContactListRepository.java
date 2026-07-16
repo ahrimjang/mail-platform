@@ -21,6 +21,13 @@ public interface ContactListRepository {
     /** Add a contact to a list; a no-op if the membership already exists. */
     void addMember(Long listId, Long contactId);
 
+    /** Memberships of many contacts at once (one query per page, not per row). */
+    List<Membership> findMembershipsByContactIds(List<Long> contactIds);
+
+    /** One membership edge. */
+    record Membership(Long contactId, Long listId) {
+    }
+
     /** Remove a contact from a list; a no-op if not a member. */
     void removeMember(Long listId, Long contactId);
 

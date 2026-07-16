@@ -51,11 +51,18 @@ class ContactServiceTest {
     @Mock
     private ContactListRepository lists;
 
+    @Mock
+    private io.github.ahrimjang.mail.core.port.SuppressionRepository suppressions;
+    @Mock
+    private io.github.ahrimjang.mail.core.port.ListUnsubscribeRepository listUnsubscribes;
+    @Mock
+    private ContactEngagementService engagement;
+
     private ContactService service;
 
     @BeforeEach
     void setUp() {
-        service = new ContactService(contacts, lists, ctx);
+        service = new ContactService(contacts, lists, suppressions, listUnsubscribes, engagement, ctx);
     }
 
     /** Makes save(...) behave like a real repository: assigns an id and returns the entity. */
@@ -211,5 +218,57 @@ class ContactServiceTest {
         assertThat(captor.getValue().getEmail()).isEqualTo("bare@x.com");
         assertThat(captor.getValue().getFirstName()).isNull();
         assertThat(captor.getValue().getLastName()).isNull();
+    }
+
+    @Test
+    void create_stampsManualConsentProvenance() {
+        stubSaveAssignsIds();
+
+        service.create(new ContactRequest("new@x.com", null, null, null));
+
+        org.mockito.ArgumentCaptor<Contact> captor = org.mockito.ArgumentCaptor.forClass(Contact.class);
+        verify(contacts).save(captor.capture());
+        assertThat(captor.getValue().getConsentSource()).isEqualTo("MANUAL");
+        assertThat(captor.getValue().getConsentedAt()).isNotNull();
+    }
+
+    @Test
+    void importCsv_stampsCsvImportConsentProvenance() {
+        stubSaveAssignsIds();
+        when(contacts.findByWorkspaceAndEmail(eq(WS), anyString())).thenReturn(Optional.empty());
+
+        service.importCsv("fresh@x.com,F,One", null);
+
+        org.mockito.ArgumentCaptor<Contact> captor = org.mockito.ArgumentCaptor.forClass(Contact.class);
+        verify(contacts).save(captor.capture());
+        assertThat(captor.getValue().getConsentSource()).isEqualTo("CSV_IMPORT");
+        assertThat(captor.getValue().getConsentedAt()).isNotNull();
+    }
+
+    @Test
+    void page_enrichesRowsWithBatchLookupsInsteadOfPerRowCalls() {
+        Contact a = Contact.of("a@x.com", null, null, null);
+        a.setWorkspaceId(WS);
+        a.setId(1L);
+        Contact b = Contact.of("b@x.com", null, null, null);
+        b.setWorkspaceId(WS);
+        b.setId(2L);
+        when(contacts.search(WS, null, null, null, 0, 25)).thenReturn(List.of(a, b));
+        when(contacts.countSearch(WS, null, null, null)).thenReturn(2L);
+        when(lists.findMembershipsByContactIds(List.of(1L, 2L)))
+                .thenReturn(List.of(new io.github.ahrimjang.mail.core.port.ContactListRepository.Membership(1L, 5L)));
+        when(listUnsubscribes.findByContactIds(List.of(1L, 2L)))
+                .thenReturn(List.of(new io.github.ahrimjang.mail.core.port.ListUnsubscribeRepository.ContactOptOut(1L, 5L)));
+        when(suppressions.findSuppressedEmails(WS, List.of("a@x.com", "b@x.com")))
+                .thenReturn(List.of("b@x.com"));
+
+        var page = service.page(null, null, null, null, null, 0, 25);
+
+        assertThat(page.total()).isEqualTo(2);
+        assertThat(page.rows()).hasSize(2);
+        assertThat(page.rows().get(0).listIds()).containsExactly(5L);
+        assertThat(page.rows().get(0).optOutListIds()).containsExactly(5L);
+        assertThat(page.rows().get(0).suppressed()).isFalse();
+        assertThat(page.rows().get(1).suppressed()).isTrue();
     }
 }

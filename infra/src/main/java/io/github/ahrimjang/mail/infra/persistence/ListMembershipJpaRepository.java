@@ -6,6 +6,9 @@ import java.util.List;
 
 public interface ListMembershipJpaRepository extends JpaRepository<ListMembershipEntity, Long> {
 
+    java.util.List<ListMembershipEntity> findByContactIdIn(java.util.Collection<Long> contactIds);
+
+
     boolean existsByListIdAndContactId(Long listId, Long contactId);
 
     List<ListMembershipEntity> findByContactIdOrderByListId(Long contactId);

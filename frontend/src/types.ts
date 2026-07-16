@@ -138,6 +138,27 @@ export interface ContactView {
   lastName: string | null;
   attributes: Record<string, string>;
   createdAt: string;
+  consentSource: string | null; // MANUAL | CSV_IMPORT; null = no record (legacy)
+  consentedAt: string | null;
+}
+
+// One pre-enriched recipients-table row (no per-contact follow-up calls).
+export interface ContactRowView {
+  id: number;
+  email: string;
+  firstName: string | null;
+  lastName: string | null;
+  createdAt: string;
+  consentSource: string | null;
+  consentedAt: string | null;
+  suppressed: boolean;
+  listIds: number[];
+  optOutListIds: number[];
+}
+
+export interface ContactPageView {
+  rows: ContactRowView[];
+  total: number;
 }
 
 export interface ContactListView {

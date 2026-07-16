@@ -36,6 +36,13 @@ public class ContactEntity {
     @Column(nullable = false)
     private Instant createdAt;
 
+    /** How the address entered the system (MANUAL/CSV_IMPORT); null = no record. */
+    @Column(length = 32)
+    private String consentSource;
+
+    /** When consent was recorded; null = no record (pre-tracking rows). */
+    private Instant consentedAt;
+
     protected ContactEntity() {
     }
 
@@ -51,6 +58,22 @@ public class ContactEntity {
 
     public Long getId() {
         return id;
+    }
+
+    public String getConsentSource() {
+        return consentSource;
+    }
+
+    public void setConsentSource(String consentSource) {
+        this.consentSource = consentSource;
+    }
+
+    public Instant getConsentedAt() {
+        return consentedAt;
+    }
+
+    public void setConsentedAt(Instant consentedAt) {
+        this.consentedAt = consentedAt;
     }
 
     public Long getWorkspaceId() {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import Portal from "../components/Portal";
@@ -8,6 +8,8 @@ import type {
   ContactEngagementView,
   ContactListView,
   ContactMessageView,
+  ContactPageView,
+  ContactRowView,
   ContactView,
   ImportResult,
   MessageStatus,
@@ -24,6 +26,15 @@ function dateOf(iso: string | null): string {
   return iso ? new Date(iso).toLocaleDateString("ko-KR") : "-";
 }
 
+/* Consent provenance label; null = collected before consent tracking existed. */
+function consentLabel(source: string | null): string {
+  switch (source) {
+    case "MANUAL": return "관리자 직접 등록";
+    case "CSV_IMPORT": return "CSV 임포트";
+    default: return "기록 없음 (동의 추적 도입 이전)";
+  }
+}
+
 /* Engagement filter presets: threshold percentages over delivered mail. */
 const ENG_FILTERS: Record<string, { label: string; minOpenPercent: number; minClickPercent: number }> = {
   open25: { label: "오픈율 25% 이상", minOpenPercent: 25, minClickPercent: 0 },
@@ -37,13 +48,6 @@ const ENG_FILTERS: Record<string, { label: string; minOpenPercent: number; minCl
 /* Rounded percentage 0..100, mirroring the server's filter math. */
 function pctOfEng(part: number, whole: number): number {
   return whole === 0 ? 0 : Math.round((part / whole) * 100);
-}
-
-function engMatches(e: ContactEngagementView | undefined, key: string): boolean {
-  const f = ENG_FILTERS[key];
-  if (!f) return true;
-  if (!e || e.sent === 0) return false; // no deliveries — no rate to compare
-  return pctOfEng(e.opened, e.sent) >= f.minOpenPercent && pctOfEng(e.clicked, e.sent) >= f.minClickPercent;
 }
 
 /* Badge tone + Korean label per activity timeline row type. */
@@ -362,6 +366,10 @@ function ContactDrawer({ contact, lists, sub, memberIds, optOutIds, onClose, onC
             <div className="st">기본 정보</div>
             <div className="op-drawer-kv"><span className="k">이메일</span><span className="v">{contact.email}</span></div>
             <p className="op-sub-note" style={{ marginTop: 0, marginBottom: 10 }}>이메일은 변경할 수 없어요.</p>
+              <span className="op-hint" style={{ display: "block", marginTop: 4 }}>
+                수신 동의: {consentLabel(contact.consentSource)}
+                {contact.consentedAt ? ` · ${new Date(contact.consentedAt).toLocaleDateString("ko-KR")}` : ""}
+              </span>
             <div className="op-grid2">
               <label className="op-field">
                 <span className="op-flabel">이름</span>
@@ -513,117 +521,79 @@ function ContactDrawer({ contact, lists, sub, memberIds, optOutIds, onClose, onC
 
 export default function Recipients() {
   const nav = useNavigate();
-  const [contacts, setContacts] = useState<ContactView[]>([]);
+  const PAGE_SIZE = 25;
+  const [rows, setRows] = useState<ContactRowView[]>([]);
+  const [total, setTotal] = useState(0);
+  const [offset, setOffset] = useState(0);
   const [lists, setLists] = useState<ContactListView[]>([]);
-  const [subs, setSubs] = useState<Record<number, SubscriptionView>>({});
-  const [memberships, setMemberships] = useState<Record<number, number[]>>({});
-  // Lists each contact opted out of via the unsubscribe page (membership stays).
-  const [optOuts, setOptOuts] = useState<Record<number, number[]>>({});
   const [loaded, setLoaded] = useState(false);
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  // Table filters: free-text search, list membership, subscription state.
+  // Server-side filters: every change refetches the page from /api/contacts/page.
   const [query, setQuery] = useState("");
-  const [listFilter, setListFilter] = useState<string>("all"); // "all" | "none" | list id
+  const [listFilter, setListFilter] = useState<string>("all"); // "all" | list id
   const [subFilter, setSubFilter] = useState<"all" | "active" | "suppressed">("all");
   const [engFilter, setEngFilter] = useState<string>("all"); // "all" | ENG_FILTERS key
   const [engagement, setEngagement] = useState<Record<number, ContactEngagementView>>({});
 
-  const refresh = useCallback(async () => {
+  const fetchPage = useCallback(async (nextOffset: number) => {
     try {
-      const [cRes, lRes, eRes] = await Promise.all([
-        api("/api/contacts"), api("/api/lists"), api("/api/contacts/engagement"),
-      ]);
-      const nextContacts: ContactView[] = cRes.ok ? await cRes.json() : [];
-      const nextLists: ContactListView[] = lRes.ok ? await lRes.json() : [];
-      setContacts(nextContacts);
-      setLists(nextLists);
-      if (eRes.ok) {
-        const rows: ContactEngagementView[] = await eRes.json();
-        setEngagement(Object.fromEntries(rows.map((r) => [r.contactId, r])));
+      const eng = ENG_FILTERS[engFilter];
+      const params = new URLSearchParams({
+        q: query.trim(),
+        subscribed: subFilter,
+        offset: String(nextOffset),
+        limit: String(PAGE_SIZE),
+      });
+      if (listFilter !== "all") params.set("listId", listFilter);
+      if (eng && eng.minOpenPercent > 0) params.set("minOpenPercent", String(eng.minOpenPercent));
+      if (eng && eng.minClickPercent > 0) params.set("minClickPercent", String(eng.minClickPercent));
+      const res = await api(`/api/contacts/page?${params}`);
+      if (res.ok) {
+        const page: ContactPageView = await res.json();
+        setRows(page.rows);
+        setTotal(page.total);
+        setOffset(nextOffset);
       }
-
-      // One parallel pass for per-contact subscription + memberships (POC scale).
-      const details = await Promise.all(nextContacts.map(async (c) => {
-        try {
-          const [sRes, mRes, uRes] = await Promise.all([
-            api(`/api/contacts/${c.id}/subscription`),
-            api(`/api/contacts/${c.id}/lists`),
-            api(`/api/contacts/${c.id}/list-unsubscribes`),
-          ]);
-          return {
-            id: c.id,
-            sub: sRes.ok ? ((await sRes.json()) as SubscriptionView) : null,
-            listIds: mRes.ok ? ((await mRes.json()) as number[]) : null,
-            optOutIds: uRes.ok ? ((await uRes.json()) as number[]) : null,
-          };
-        } catch {
-          return { id: c.id, sub: null, listIds: null, optOutIds: null };
-        }
-      }));
-      const nextSubs: Record<number, SubscriptionView> = {};
-      const nextMemberships: Record<number, number[]> = {};
-      const nextOptOuts: Record<number, number[]> = {};
-      for (const d of details) {
-        if (d.sub) nextSubs[d.id] = d.sub;
-        if (d.listIds) nextMemberships[d.id] = d.listIds;
-        if (d.optOutIds) nextOptOuts[d.id] = d.optOutIds;
-      }
-      setSubs(nextSubs);
-      setMemberships(nextMemberships);
-      setOptOuts(nextOptOuts);
     } catch {
       /* transient / unauthorized handled by api() */
     } finally {
       setLoaded(true);
     }
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, listFilter, subFilter, engFilter]);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  // Lists + engagement column data load once; the page reloads on filter changes
+  // (typing is debounced so a keystroke doesn't fire a request each).
+  useEffect(() => {
+    api("/api/lists").then(async (r) => { if (r.ok) setLists(await r.json()); }).catch(() => {});
+    api("/api/contacts/engagement")
+      .then(async (r) => {
+        if (!r.ok) return;
+        const engRows: ContactEngagementView[] = await r.json();
+        setEngagement(Object.fromEntries(engRows.map((e) => [e.contactId, e])));
+      })
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
+    const timer = window.setTimeout(() => { fetchPage(0); }, query ? 300 : 0);
+    return () => clearTimeout(timer);
+  }, [fetchPage, query]);
+
+  const refresh = useCallback(() => fetchPage(offset), [fetchPage, offset]);
 
   const listName = (id: number) => lists.find((l) => l.id === id)?.name ?? `#${id}`;
-  const selected = contacts.find((c) => c.id === selectedId) ?? null;
-
-  const visible = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const filtered = contacts.filter((c) => {
-      if (q) {
-        const name = [c.lastName, c.firstName].filter(Boolean).join("");
-        if (!c.email.toLowerCase().includes(q) && !name.toLowerCase().includes(q)) return false;
-      }
-      if (listFilter !== "all") {
-        const ids = memberships[c.id] ?? [];
-        if (listFilter === "none" ? ids.length > 0 : !ids.includes(Number(listFilter))) return false;
-      }
-      if (subFilter !== "all") {
-        const sub = subs[c.id];
-        if (!sub) return false;
-        if (subFilter === "suppressed" ? !sub.suppressed : sub.suppressed) return false;
-      }
-      if (engFilter !== "all" && !engMatches(engagement[c.id], engFilter)) return false;
-      return true;
-    });
-    if (engFilter !== "all") {
-      // Most engaged first while the filter is on (same order the server ranks by).
-      filtered.sort((a, b) => {
-        const ea = engagement[a.id], eb = engagement[b.id];
-        const key = (e: ContactEngagementView | undefined) => e && e.sent > 0
-          ? [pctOfEng(e.clicked, e.sent), pctOfEng(e.opened, e.sent), e.sent] : [0, 0, 0];
-        const ka = key(ea), kb = key(eb);
-        return kb[0] - ka[0] || kb[1] - ka[1] || kb[2] - ka[2];
-      });
-    }
-    return filtered;
-  }, [contacts, query, listFilter, subFilter, engFilter, memberships, subs, engagement]);
+  const selected = rows.find((r) => r.id === selectedId) ?? null;
   const filtering = query.trim() !== "" || listFilter !== "all" || subFilter !== "all" || engFilter !== "all";
+  const pageEnd = Math.min(offset + rows.length, total);
 
   return (
     <div className="op-container op-fade">
       <div className="op-pagehead">
         <div>
           <h2>수신자</h2>
-          <p>{loaded ? `총 ${contacts.length.toLocaleString()}명의 수신자를 관리하고 있어요.` : "수신자를 불러오는 중이에요."}</p>
+          <p>{loaded ? `총 ${total.toLocaleString()}명의 수신자를 관리하고 있어요.` : "수신자를 불러오는 중이에요."}</p>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           <button className="op-btn op-btn-sm op-btn-ghost" onClick={() => setImporting(true)}>CSV 가져오기</button>
@@ -643,7 +613,6 @@ export default function Recipients() {
         />
         <select className="op-input" style={{ maxWidth: 210 }} value={listFilter} onChange={(e) => setListFilter(e.target.value)}>
           <option value="all">모든 리스트</option>
-          <option value="none">리스트 없음</option>
           {lists.map((l) => <option key={l.id} value={l.id}>{l.name} ({l.memberCount}명)</option>)}
         </select>
         <select className="op-input" style={{ maxWidth: 150 }} value={subFilter} onChange={(e) => setSubFilter(e.target.value as typeof subFilter)}>
@@ -657,7 +626,7 @@ export default function Recipients() {
         </select>
         {filtering && (
           <span className="faint" style={{ fontSize: 13 }}>
-            {visible.length}명 표시 · <button className="op-linkbtn" style={{ fontSize: 13 }}
+            {total.toLocaleString()}명 매치 · <button className="op-linkbtn" style={{ fontSize: 13 }}
               onClick={() => { setQuery(""); setListFilter("all"); setSubFilter("all"); setEngFilter("all"); }}>필터 초기화</button>
           </span>
         )}
@@ -671,7 +640,7 @@ export default function Recipients() {
           <span>구독 상태</span>
           <span>생성일</span>
         </div>
-        {visible.map((c) => (
+        {rows.map((c) => (
           <div
             key={c.id}
             className="op-trow clickable"
@@ -680,10 +649,10 @@ export default function Recipients() {
           >
             <span className="strong" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.email}</span>
             <span className="op-cell-chips">
-              {(memberships[c.id] ?? []).map((id) => {
+              {c.listIds.map((id) => {
                 // Chip doubles as a shortcut to the list's row on the 리스트 page;
                 // an opted-out list stays a member (operator grouping) but greys out.
-                const opted = (optOuts[c.id] ?? []).includes(id);
+                const opted = c.optOutListIds.includes(id);
                 return (
                   <span
                     key={id}
@@ -695,7 +664,7 @@ export default function Recipients() {
                   </span>
                 );
               })}
-              {(memberships[c.id] ?? []).length === 0 && <span className="faint">-</span>}
+              {c.listIds.length === 0 && <span className="faint">-</span>}
             </span>
             {(() => {
               const e = engagement[c.id];
@@ -707,18 +676,26 @@ export default function Recipients() {
                 <span className="faint" title="아직 발송된 메일이 없어요">-</span>
               );
             })()}
-            <span><SubBadge sub={subs[c.id]} /></span>
+            <span><SubBadge sub={{ suppressed: c.suppressed, reason: null, since: null }} /></span>
             <span className="faint">{dateOf(c.createdAt)}</span>
           </div>
         ))}
-        {loaded && contacts.length === 0 && (
+        {loaded && total === 0 && (
           <div className="op-list-row">
-            <span className="meta">아직 수신자가 없어요. 오른쪽 위 버튼으로 추가하거나 CSV를 가져와 보세요.</span>
+            <span className="meta">
+              {filtering ? "조건에 맞는 수신자가 없습니다." : "아직 수신자가 없어요. 오른쪽 위 버튼으로 추가하거나 CSV를 가져와 보세요."}
+            </span>
           </div>
         )}
-        {loaded && contacts.length > 0 && visible.length === 0 && (
-          <div className="op-list-row">
-            <span className="meta">조건에 맞는 수신자가 없습니다.</span>
+        {total > 0 && (
+          <div className="op-list-row" style={{ justifyContent: "space-between" }}>
+            <span className="meta">{(offset + 1).toLocaleString()}–{pageEnd.toLocaleString()} / {total.toLocaleString()}명</span>
+            <span style={{ display: "flex", gap: 8 }}>
+              <button className="op-btn op-btn-sm op-btn-ghost" style={{ height: 34, padding: "0 14px", fontSize: 13 }}
+                disabled={offset === 0} onClick={() => fetchPage(Math.max(0, offset - PAGE_SIZE))}>이전</button>
+              <button className="op-btn op-btn-sm op-btn-ghost" style={{ height: 34, padding: "0 14px", fontSize: 13 }}
+                disabled={pageEnd >= total} onClick={() => fetchPage(offset + PAGE_SIZE)}>다음</button>
+            </span>
           </div>
         )}
       </div>
@@ -728,18 +705,34 @@ export default function Recipients() {
       {selected && (
         <ContactDrawer
           key={selected.id}
-          contact={selected}
+          contact={{
+            id: selected.id,
+            email: selected.email,
+            firstName: selected.firstName,
+            lastName: selected.lastName,
+            attributes: {},
+            createdAt: selected.createdAt,
+            consentSource: selected.consentSource,
+            consentedAt: selected.consentedAt,
+          }}
           lists={lists}
-          sub={subs[selected.id]}
-          memberIds={memberships[selected.id] ?? []}
-          optOutIds={optOuts[selected.id] ?? []}
+          sub={{ suppressed: selected.suppressed, reason: null, since: null }}
+          memberIds={selected.listIds}
+          optOutIds={selected.optOutListIds}
           onClose={() => setSelectedId(null)}
-          onOptOutsChanged={(ids) => setOptOuts((prev) => ({ ...prev, [selected.id]: ids }))}
-          onContactChanged={(updated) => setContacts((prev) => prev.map((c) => (c.id === updated.id ? updated : c)))}
+          onOptOutsChanged={(ids) => setRows((prev) => prev.map((r) => (r.id === selected.id ? { ...r, optOutListIds: ids } : r)))}
+          onContactChanged={(updated) => setRows((prev) => prev.map((r) =>
+            r.id === updated.id ? { ...r, firstName: updated.firstName, lastName: updated.lastName } : r))}
           onChanged={(sub, listIds) => {
-            if (sub) setSubs((prev) => ({ ...prev, [selected.id]: sub }));
+            setRows((prev) => prev.map((r) => {
+              if (r.id !== selected.id) return r;
+              return {
+                ...r,
+                suppressed: sub ? sub.suppressed : r.suppressed,
+                listIds: listIds ?? r.listIds,
+              };
+            }));
             if (listIds) {
-              setMemberships((prev) => ({ ...prev, [selected.id]: listIds }));
               // Member counts changed — refetch lists only.
               api("/api/lists").then(async (r) => { if (r.ok) setLists(await r.json()); }).catch(() => {});
             }

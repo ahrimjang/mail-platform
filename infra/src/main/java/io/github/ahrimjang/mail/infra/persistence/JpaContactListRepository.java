@@ -92,6 +92,16 @@ public class JpaContactListRepository implements ContactListRepository {
         }
     }
 
+    @Override
+    public java.util.List<Membership> findMembershipsByContactIds(java.util.List<Long> contactIds) {
+        if (contactIds.isEmpty()) {
+            return java.util.List.of();
+        }
+        return memberships.findByContactIdIn(contactIds).stream()
+                .map(m -> new Membership(m.getContactId(), m.getListId()))
+                .toList();
+    }
+
     private ContactListEntity toEntity(ContactList l) {
         ContactListEntity entity = new ContactListEntity(l.getId(), l.getName(), l.getDescription(), l.getCreatedAt());
         entity.setWorkspaceId(l.getWorkspaceId());

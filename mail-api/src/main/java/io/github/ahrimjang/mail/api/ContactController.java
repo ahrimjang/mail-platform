@@ -2,6 +2,7 @@ package io.github.ahrimjang.mail.api;
 
 import io.github.ahrimjang.mail.common.ContactActivityView;
 import io.github.ahrimjang.mail.common.ContactEngagementView;
+import io.github.ahrimjang.mail.common.ContactPageView;
 import io.github.ahrimjang.mail.common.ContactMessageView;
 import io.github.ahrimjang.mail.common.ContactRequest;
 import io.github.ahrimjang.mail.common.ContactView;
@@ -62,6 +63,30 @@ public class ContactController {
     @GetMapping
     public List<ContactView> list() {
         return contacts.list();
+    }
+
+    /** Paged, pre-enriched recipients table — one request per page, not per row. */
+    @GetMapping("/page")
+    public ContactPageView page(@RequestParam(defaultValue = "") String q,
+                                @RequestParam(required = false) Long listId,
+                                @RequestParam(defaultValue = "all") String subscribed,
+                                @RequestParam(required = false) Integer minOpenPercent,
+                                @RequestParam(required = false) Integer minClickPercent,
+                                @RequestParam(defaultValue = "0") int offset,
+                                @RequestParam(defaultValue = "25") int limit) {
+        Boolean subscribedFilter = switch (subscribed) {
+            case "active" -> Boolean.TRUE;
+            case "suppressed" -> Boolean.FALSE;
+            default -> null;
+        };
+        return contacts.page(q.isBlank() ? null : q.trim(), listId, subscribedFilter,
+                minOpenPercent, minClickPercent, offset, limit);
+    }
+
+    @PostMapping
+    public ResponseEntity<ContactView> create(@RequestBody ContactRequest request) {
+        ContactView view = contacts.create(request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(view);
     }
 
     /** Rename a contact (email stays — it is the identity suppressions key on). */
