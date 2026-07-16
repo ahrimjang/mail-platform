@@ -9,7 +9,7 @@
 
 ## 이 프로젝트는
 
-대용량 이메일 발송 플랫폼 POC(Notifuse 축소판). 핵심: **API는 큐에 적재 후 즉시 반환, 워커가 비동기로 드레인**. JWT 인증, RabbitMQ 발송 큐(DLQ), Kafka 참여 이벤트 스트림(`mail.events`), SMTP 발송(개발은 MailHog), 예약 발송·취소, A/B 테스트(해시 분배 + 승자 자동발송), 억제/수신거부(전역 + 리스트 단위 옵트아웃), 오픈/클릭 추적(캠페인별 링크 랭킹 + 실행 구간), 대시보드·분석 집계(퍼널/건강도/오픈 히트맵), 수신자 활동 타임라인, 바운스 웹훅, `{{변수}}` 템플릿(블록/텍스트/HTML 에디터 + DB 시딩 기본 템플릿), 트랜잭셔널 발송, 연락처/리스트(CSV). 로드맵: [docs/ROADMAP-scale.md](docs/ROADMAP-scale.md) · [docs/TODO-ses-sns.md](docs/TODO-ses-sns.md).
+대용량 이메일 발송 플랫폼 POC(Notifuse 축소판). 핵심: **API는 큐에 적재 후 즉시 반환, 워커가 비동기로 드레인**. JWT 인증, RabbitMQ 발송 큐(DLQ), Kafka 참여 이벤트 스트림(`mail.events`), SMTP 발송(개발은 MailHog), 예약 발송·취소, A/B 테스트(해시 분배 + 승자 자동발송), 참여도 세그먼트(리스트 캠페인을 오픈/클릭률로 좁혀 발송 — 팬아웃 시점 평가), 억제/수신거부(전역 + 리스트 단위 옵트아웃), 오픈/클릭 추적(캠페인별 링크 랭킹 + 실행 구간), 대시보드·분석 집계(퍼널/건강도/오픈 히트맵), 수신자 활동 타임라인, 바운스 웹훅, `{{변수}}` 템플릿(블록/텍스트/HTML 에디터 + DB 시딩 기본 템플릿), 트랜잭셔널 발송, 연락처/리스트(CSV). 로드맵: [docs/ROADMAP-scale.md](docs/ROADMAP-scale.md) · [docs/TODO-ses-sns.md](docs/TODO-ses-sns.md).
 
 ## 커맨드
 
@@ -22,7 +22,7 @@ docker compose up -d              # Postgres(5432) + RabbitMQ(5672/UI 15672) + K
 ./gradlew :mail-admin:bootRun     # 어드민 스켈레톤 :8081
 cd frontend && npm run dev        # Vite :5173, /api -> :8080 프록시
 
-./gradlew :mail-core:test         # 단위 테스트 (20클래스/163개, 순수 JUnit+Mockito — Spring 컨텍스트 없음)
+./gradlew :mail-core:test         # 단위 테스트 (21클래스/170개, 순수 JUnit+Mockito — Spring 컨텍스트 없음)
 cd frontend && npx tsc -b         # 프론트 타입체크
 ```
 

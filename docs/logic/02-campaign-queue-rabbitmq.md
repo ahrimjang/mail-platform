@@ -303,6 +303,32 @@ public class MailSendListener {
 
 상태 머신에 한 칸이 늘었습니다: 리스트 캠페인은 `QUEUED → EXPANDING → SENDING → COMPLETED`, 애드혹 캠페인은 팬아웃이 없으므로 그대로 `QUEUED → SENDING → COMPLETED`.
 
+### 3-6b. 참여도 세그먼트 — "이 리스트에서 오픈율 N% 이상만"
+
+리스트 캠페인은 참여도 조건(V13: `seg_min_open_percent`/`seg_min_click_percent`)을
+실을 수 있습니다. 조건은 저장만 해 두고 **팬아웃이 돌 때 평가**합니다 — 예약 캠페인이면
+릴리스 시점의 참여도로 거른다는 뜻이고, "누가 대상인가"가 작성 시점에 굳는 스냅샷
+방식(별도 리스트로 실체화)을 검토하다 폐기한 이유이기도 합니다: 타겟팅 개념이 리스트
+하나로 유지되고, 일회용 리스트가 쌓이지 않고, 옵트아웃 제외와 같은 자리에서 걸러집니다.
+
+`mail-core/src/main/java/io/github/ahrimjang/mail/core/service/CampaignFanoutService.java`
+```java
+        // Engagement segment: evaluated here (not at authoring) so a scheduled
+        // campaign filters on rates as of the release. Loaded once per fan-out.
+        EngagementFilter segment = EngagementFilter.of(campaign, messages, events);
+        ...
+            List<MailMessage> batch = page.stream()
+                    .filter(segment::test)
+                    .map(c -> { ... })
+```
+
+`EngagementFilter`는 수신자별 SENT 수와 distinct 오픈/클릭 수를 잡 시작 시 **한 번만**
+로드해 배치마다 인메모리로 판정합니다(조건 없는 캠페인은 집계를 아예 안 읽음). 발송
+이력이 없는 구독자는 비율의 분모가 없으므로 제외됩니다 — "검증된 독자에게만"이라는
+세그먼트 의미상 신규 멤버는 다음 일반 발송을 받은 뒤에야 들어올 수 있습니다. 생성 폼은
+같은 집계를 `GET /api/contacts/engagement?listId=`로 미리 조회해 "예상 대상자 N명 /
+전체 M명"을 보여줍니다.
+
 ### 3-7. 소비자 정책 — worker 설정
 
 `mail-worker/src/main/resources/application.yml`
