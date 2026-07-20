@@ -8,6 +8,7 @@ public record WorkspaceView(
         String name,
         String smtpProvider,
         String storageProvider,
+        Integer sendRatePerSec,
         Instant createdAt,
         long memberCount,
         long monthlySent

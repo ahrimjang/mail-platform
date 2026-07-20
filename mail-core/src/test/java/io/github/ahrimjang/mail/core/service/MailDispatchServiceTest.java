@@ -9,7 +9,9 @@ import io.github.ahrimjang.mail.core.port.WorkspaceContext;
 import io.github.ahrimjang.mail.core.port.CampaignRepository;
 import io.github.ahrimjang.mail.core.port.ContactRepository;
 import io.github.ahrimjang.mail.core.port.MailMessageRepository;
+import io.github.ahrimjang.mail.core.port.MailQueue;
 import io.github.ahrimjang.mail.core.port.MailSender;
+import io.github.ahrimjang.mail.core.port.SendRateLimiter;
 import io.github.ahrimjang.mail.core.port.SuppressionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -61,6 +63,10 @@ class MailDispatchServiceTest {
     private SuppressionRepository suppressions;
     @Mock
     private ContactRepository contacts;
+    @Mock
+    private SendRateLimiter rateLimiter;
+    @Mock
+    private MailQueue queue;
 
     private MailDispatchService service;
 
@@ -68,7 +74,9 @@ class MailDispatchServiceTest {
     void setUp() {
         // Real assembly collaborators keep the produced HTML realistic; only ports are mocked.
         service = new MailDispatchService(messages, campaigns, sender, suppressions,
-                new TrackingRewriter(), new TemplateRenderer(), contacts, BASE_URL);
+                new TrackingRewriter(), new TemplateRenderer(), contacts, rateLimiter, queue, BASE_URL);
+        // Most tests run with an unlimited workspace; the throttle tests override this.
+        org.mockito.Mockito.lenient().when(rateLimiter.tryAcquire(anyLong())).thenReturn(true);
     }
 
     private MailMessage queuedMessage(Long contactId) {
@@ -86,12 +94,46 @@ class MailDispatchServiceTest {
 
     @Test
     void dispatchOne_skipsWhenClaimLost() throws Exception {
+        MailMessage message = queuedMessage(null);
+        when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(message));
+        when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(campaign("subject", "body")));
         when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(false);
 
         service.dispatchOne(MESSAGE_ID);
 
-        verify(messages, never()).findById(anyLong());
+        verify(messages, never()).save(any());
         verify(sender, never()).send(anyString(), anyString(), anyString(), anyString(), any(), any());
+    }
+
+    @Test
+    void dispatchOne_throttledMessageIsParkedWithoutClaiming() {
+        // Over the workspace's rate: the message must stay PENDING (no claim —
+        // a claim would strand it in SENDING for the stale window) and come
+        // back through the delay queue instead.
+        MailMessage message = queuedMessage(null);
+        when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(message));
+        when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(campaign("subject", "body")));
+        when(rateLimiter.tryAcquire(WS)).thenReturn(false);
+
+        service.dispatchOne(MESSAGE_ID);
+
+        verify(queue).enqueueThrottled(MESSAGE_ID);
+        verify(messages, never()).claim(anyLong(), any());
+        verify(messages, never()).save(any());
+    }
+
+    @Test
+    void dispatchOne_finishedRedeliveryDoesNotSpendAToken() {
+        // A redelivered job whose message already finished must not consume
+        // rate budget another tenant-visible send could have used.
+        MailMessage message = queuedMessage(null);
+        message.markSent();
+        when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(message));
+
+        service.dispatchOne(MESSAGE_ID);
+
+        verify(rateLimiter, never()).tryAcquire(anyLong());
+        verify(messages, never()).claim(anyLong(), any());
     }
 
     @Test

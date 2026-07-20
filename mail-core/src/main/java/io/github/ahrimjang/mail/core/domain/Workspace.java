@@ -23,6 +23,8 @@ public class Workspace {
     private String name;
     private String smtpProvider;
     private String storageProvider;
+    /** Send throttle in msgs/sec; null = unlimited. */
+    private Integer sendRatePerSec;
     private Instant createdAt;
 
     public Workspace() {
@@ -68,6 +70,14 @@ public class Workspace {
 
     public void setStorageProvider(String storageProvider) {
         this.storageProvider = storageProvider;
+    }
+
+    public Integer getSendRatePerSec() {
+        return sendRatePerSec;
+    }
+
+    public void setSendRatePerSec(Integer sendRatePerSec) {
+        this.sendRatePerSec = sendRatePerSec;
     }
 
     public Instant getCreatedAt() {

@@ -60,9 +60,13 @@ public class WorkspaceService {
         if (!Workspace.STORAGE_PROVIDERS.contains(request.storageProvider())) {
             throw new IllegalArgumentException("unknown storage provider: " + request.storageProvider());
         }
+        if (request.sendRatePerSec() != null && request.sendRatePerSec() < 1) {
+            throw new IllegalArgumentException("send rate must be at least 1 msg/sec (empty = unlimited)");
+        }
         workspace.setName(request.name().trim());
         workspace.setSmtpProvider(request.smtpProvider());
         workspace.setStorageProvider(request.storageProvider());
+        workspace.setSendRatePerSec(request.sendRatePerSec());
         return toView(workspaces.save(workspace));
     }
 
@@ -134,7 +138,7 @@ public class WorkspaceService {
 
     private WorkspaceView toView(Workspace w) {
         return new WorkspaceView(w.getId(), w.getName(), w.getSmtpProvider(), w.getStorageProvider(),
-                w.getCreatedAt(), users.countByWorkspaceId(w.getId()), monthlySent(w.getId()));
+                w.getSendRatePerSec(), w.getCreatedAt(), users.countByWorkspaceId(w.getId()), monthlySent(w.getId()));
     }
 
     /**

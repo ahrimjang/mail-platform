@@ -28,4 +28,11 @@ public class RabbitMailQueue implements MailQueue {
         rabbitTemplate.convertAndSend(RabbitMailConfig.EXCHANGE, RabbitMailConfig.FANOUT_ROUTING_KEY,
                 new io.github.ahrimjang.mail.common.FanoutJob(campaignId));
     }
+
+    @Override
+    public void enqueueThrottled(Long messageId) {
+        // Lands in the TTL'd parking queue and dead-letters back to the send queue.
+        rabbitTemplate.convertAndSend(RabbitMailConfig.EXCHANGE, RabbitMailConfig.THROTTLE_ROUTING_KEY,
+                new SendJob(messageId));
+    }
 }

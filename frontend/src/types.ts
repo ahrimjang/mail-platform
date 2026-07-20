@@ -264,6 +264,7 @@ export interface WorkspaceView {
   name: string;
   smtpProvider: string;    // MAILHOG | AWS_SES | SENDGRID | CUSTOM_SMTP
   storageProvider: string; // LOCAL | AWS_S3 | NCP_OBJECT_STORAGE
+  sendRatePerSec: number | null; // send throttle (msgs/sec); null = unlimited
   createdAt: string;
   memberCount: number;
   monthlySent: number; // SENT this calendar month — the usage a plan would bill against

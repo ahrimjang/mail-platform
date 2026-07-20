@@ -13,4 +13,10 @@ public interface MailQueue {
 
     /** Enqueue a fan-out job so the worker expands a list campaign's recipients. */
     void enqueueFanout(Long campaignId);
+
+    /**
+     * Re-enqueue a throttled send job through a short delay, so a workspace at
+     * its rate cap retries pacing instead of hot-looping on the send queue.
+     */
+    void enqueueThrottled(Long messageId);
 }

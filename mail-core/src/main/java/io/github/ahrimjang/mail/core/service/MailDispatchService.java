@@ -3,10 +3,13 @@ package io.github.ahrimjang.mail.core.service;
 import io.github.ahrimjang.mail.core.domain.Campaign;
 import io.github.ahrimjang.mail.core.domain.Contact;
 import io.github.ahrimjang.mail.core.domain.MailMessage;
+import io.github.ahrimjang.mail.common.MessageStatus;
 import io.github.ahrimjang.mail.core.port.CampaignRepository;
 import io.github.ahrimjang.mail.core.port.ContactRepository;
 import io.github.ahrimjang.mail.core.port.MailMessageRepository;
+import io.github.ahrimjang.mail.core.port.MailQueue;
 import io.github.ahrimjang.mail.core.port.MailSender;
+import io.github.ahrimjang.mail.core.port.SendRateLimiter;
 import io.github.ahrimjang.mail.core.port.SuppressionRepository;
 import io.github.ahrimjang.mail.core.domain.Suppression;
 import org.slf4j.Logger;
@@ -33,6 +36,11 @@ import java.util.Map;
  * (PENDING -&gt; SENDING) — only one caller can win it. A claim stuck in SENDING
  * past its staleness window is reclaimable too, so a crashed consumer's message
  * is still recovered by the next redelivery instead of getting stuck forever.
+ *
+ * <p>Before the claim, the workspace's send throttle is consulted
+ * ({@link SendRateLimiter}): a throttled message is bounced to a short delay
+ * queue and comes back unclaimed, so one tenant at its rate cap never blocks
+ * other tenants' traffic on the shared queue.
  */
 @Service
 public class MailDispatchService {
@@ -49,6 +57,8 @@ public class MailDispatchService {
     private final TrackingRewriter trackingRewriter;
     private final TemplateRenderer templateRenderer;
     private final ContactRepository contacts;
+    private final SendRateLimiter rateLimiter;
+    private final MailQueue queue;
     private final String baseUrl;
 
     public MailDispatchService(MailMessageRepository messages,
@@ -58,6 +68,8 @@ public class MailDispatchService {
                                TrackingRewriter trackingRewriter,
                                TemplateRenderer templateRenderer,
                                ContactRepository contacts,
+                               SendRateLimiter rateLimiter,
+                               MailQueue queue,
                                @Value("${app.base-url:http://localhost:8080}") String baseUrl) {
         this.messages = messages;
         this.campaigns = campaigns;
@@ -66,6 +78,8 @@ public class MailDispatchService {
         this.trackingRewriter = trackingRewriter;
         this.templateRenderer = templateRenderer;
         this.contacts = contacts;
+        this.rateLimiter = rateLimiter;
+        this.queue = queue;
         this.baseUrl = baseUrl;
     }
 
@@ -76,15 +90,26 @@ public class MailDispatchService {
      * race (already claimed/processed elsewhere) is skipped without effect.
      */
     public void dispatchOne(Long messageId) {
-        if (!messages.claim(messageId, STALE_CLAIM_AFTER)) {
-            log.debug("skip: message {} already claimed/processed by another consumer", messageId);
-            return;
-        }
         MailMessage message = messages.findById(messageId).orElse(null);
         if (message == null) {
             return;
         }
+        if (message.getStatus() != MessageStatus.PENDING && message.getStatus() != MessageStatus.SENDING) {
+            // Redelivery of an already-finished message — don't spend a token on it.
+            return;
+        }
         Campaign campaign = campaigns.findById(message.getCampaignId()).orElse(null);
+        // Tenant throttle, checked BEFORE the claim: a throttled message must stay
+        // PENDING so its delayed redelivery claims it normally — claiming first
+        // would strand it in SENDING until the stale-claim window expires.
+        if (campaign != null && !rateLimiter.tryAcquire(campaign.getWorkspaceId())) {
+            queue.enqueueThrottled(messageId);
+            return;
+        }
+        if (!messages.claim(messageId, STALE_CLAIM_AFTER)) {
+            log.debug("skip: message {} already claimed/processed by another consumer", messageId);
+            return;
+        }
         if (campaign == null) {
             message.markFailed("campaign no longer exists");
             messages.save(message);

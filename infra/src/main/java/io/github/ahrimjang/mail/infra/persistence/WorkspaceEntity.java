@@ -28,17 +28,23 @@ public class WorkspaceEntity {
     @Column(nullable = false, length = 32)
     private String storageProvider;
 
+    /** Send throttle in msgs/sec; null = unlimited. */
+    @Column
+    private Integer sendRatePerSec;
+
     @Column(nullable = false)
     private Instant createdAt;
 
     protected WorkspaceEntity() {
     }
 
-    public WorkspaceEntity(Long id, String name, String smtpProvider, String storageProvider, Instant createdAt) {
+    public WorkspaceEntity(Long id, String name, String smtpProvider, String storageProvider,
+                           Integer sendRatePerSec, Instant createdAt) {
         this.id = id;
         this.name = name;
         this.smtpProvider = smtpProvider;
         this.storageProvider = storageProvider;
+        this.sendRatePerSec = sendRatePerSec;
         this.createdAt = createdAt;
     }
 
@@ -56,6 +62,10 @@ public class WorkspaceEntity {
 
     public String getStorageProvider() {
         return storageProvider;
+    }
+
+    public Integer getSendRatePerSec() {
+        return sendRatePerSec;
     }
 
     public Instant getCreatedAt() {

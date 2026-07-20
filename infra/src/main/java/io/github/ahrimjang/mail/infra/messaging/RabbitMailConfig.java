@@ -24,6 +24,13 @@ public class RabbitMailConfig {
     public static final String DLQ_ROUTING = "mail.send.dlq";
     public static final String FANOUT_QUEUE = "mail.fanout.queue";
     public static final String FANOUT_ROUTING_KEY = "mail.fanout";
+    public static final String THROTTLE_QUEUE = "mail.send.throttled";
+    public static final String THROTTLE_ROUTING_KEY = "mail.send.throttled";
+    /**
+     * How long a throttled job parks before re-entering the send queue. Fixed at
+     * declaration — RabbitMQ rejects re-declaring a queue with different args.
+     */
+    static final int THROTTLE_DELAY_MS = 1000;
 
     @Bean
     public DirectExchange mailExchange() {
@@ -54,6 +61,26 @@ public class RabbitMailConfig {
     @Bean
     public Binding fanoutBinding() {
         return BindingBuilder.bind(fanoutQueue()).to(mailExchange()).with(FANOUT_ROUTING_KEY);
+    }
+
+    /**
+     * Parking lot for throttled sends: no consumer — messages just sit out the
+     * per-queue TTL, then dead-letter straight back into the send queue. This
+     * paces a rate-capped tenant without a busy requeue loop, and without
+     * blocking consumer slots other tenants could be using.
+     */
+    @Bean
+    public Queue throttleQueue() {
+        return QueueBuilder.durable(THROTTLE_QUEUE)
+                .withArgument("x-message-ttl", THROTTLE_DELAY_MS)
+                .withArgument("x-dead-letter-exchange", EXCHANGE)
+                .withArgument("x-dead-letter-routing-key", ROUTING_KEY)
+                .build();
+    }
+
+    @Bean
+    public Binding throttleBinding() {
+        return BindingBuilder.bind(throttleQueue()).to(mailExchange()).with(THROTTLE_ROUTING_KEY);
     }
 
     @Bean

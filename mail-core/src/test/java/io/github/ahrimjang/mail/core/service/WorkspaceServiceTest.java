@@ -68,7 +68,7 @@ class WorkspaceServiceTest {
     void update_requiresTheAdminRole() {
         when(ctx.isAdmin()).thenReturn(false);
 
-        assertThatThrownBy(() -> service.update(new UpdateWorkspaceRequest("회사", "AWS_SES", "AWS_S3")))
+        assertThatThrownBy(() -> service.update(new UpdateWorkspaceRequest("회사", "AWS_SES", "AWS_S3", null)))
                 .isInstanceOf(ForbiddenException.class);
         verify(workspaces, never()).save(any());
     }
@@ -79,8 +79,20 @@ class WorkspaceServiceTest {
         ws.setId(WS);
         when(workspaces.findById(WS)).thenReturn(Optional.of(ws));
 
-        assertThatThrownBy(() -> service.update(new UpdateWorkspaceRequest("회사", "PIGEON_POST", "LOCAL")))
+        assertThatThrownBy(() -> service.update(new UpdateWorkspaceRequest("회사", "PIGEON_POST", "LOCAL", null)))
                 .isInstanceOf(IllegalArgumentException.class);
+        verify(workspaces, never()).save(any());
+    }
+
+    @Test
+    void update_rejectsANonPositiveSendRate() {
+        Workspace ws = Workspace.of("회사");
+        ws.setId(WS);
+        when(workspaces.findById(WS)).thenReturn(Optional.of(ws));
+
+        assertThatThrownBy(() -> service.update(new UpdateWorkspaceRequest("회사", "MAILHOG", "LOCAL", 0)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("send rate");
         verify(workspaces, never()).save(any());
     }
 
@@ -92,11 +104,13 @@ class WorkspaceServiceTest {
         when(workspaces.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(users.countByWorkspaceId(WS)).thenReturn(2L);
 
-        var view = service.update(new UpdateWorkspaceRequest("에이컴퍼니", "AWS_SES", "AWS_S3"));
+        var view = service.update(new UpdateWorkspaceRequest("에이컴퍼니", "AWS_SES", "AWS_S3", 14));
 
         assertThat(view.name()).isEqualTo("에이컴퍼니");
         assertThat(view.smtpProvider()).isEqualTo("AWS_SES");
         assertThat(view.storageProvider()).isEqualTo("AWS_S3");
+        // throttle rides along: match the BYO provider's per-second limit
+        assertThat(view.sendRatePerSec()).isEqualTo(14);
         // the usage meter rides along on every view — the number a plan bills against
         assertThat(view.monthlySent()).isEqualTo(1234L);
     }

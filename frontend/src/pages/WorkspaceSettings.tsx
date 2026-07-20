@@ -92,6 +92,7 @@ export default function WorkspaceSettings() {
   const [name, setName] = useState("");
   const [smtp, setSmtp] = useState("MAILHOG");
   const [storage, setStorage] = useState("LOCAL");
+  const [sendRate, setSendRate] = useState(""); // msgs/sec as text; "" = unlimited
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -106,6 +107,7 @@ export default function WorkspaceSettings() {
         setName(w.name);
         setSmtp(w.smtpProvider);
         setStorage(w.storageProvider);
+        setSendRate(w.sendRatePerSec == null ? "" : String(w.sendRatePerSec));
       }
       const uRes = await api("/api/workspace/users");
       if (uRes.ok) setMembers(await uRes.json());
@@ -118,9 +120,15 @@ export default function WorkspaceSettings() {
     setSaving(true);
     setError(null);
     try {
+      const rate = sendRate.trim() === "" ? null : Number(sendRate);
+      if (rate !== null && (!Number.isInteger(rate) || rate < 1)) {
+        setError("발송 속도 제한은 1 이상의 정수이거나 비워 두세요(무제한).");
+        setSaving(false);
+        return;
+      }
       const res = await api("/api/workspace", {
         method: "PUT",
-        body: JSON.stringify({ name: name.trim(), smtpProvider: smtp, storageProvider: storage }),
+        body: JSON.stringify({ name: name.trim(), smtpProvider: smtp, storageProvider: storage, sendRatePerSec: rate }),
       });
       if (res.ok) {
         setWorkspace(await res.json());
@@ -235,6 +243,26 @@ export default function WorkspaceSettings() {
               {STORAGE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </label>
+        </div>
+        <div className="op-grid2" style={{ marginTop: 16 }}>
+          <label className="op-field" style={{ marginBottom: 0 }}>
+            <span className="op-flabel">발송 속도 제한 (건/초)</span>
+            <input
+              className="op-input"
+              type="number"
+              min={1}
+              placeholder="비워 두면 무제한"
+              value={sendRate}
+              onChange={(e) => setSendRate(e.target.value)}
+            />
+          </label>
+          <div className="op-field" style={{ marginBottom: 0 }}>
+            <span className="op-flabel">&nbsp;</span>
+            <p style={{ margin: "12px 0 0", fontSize: 12.5, color: "var(--op-faint)", lineHeight: 1.6 }}>
+              연결한 발송 인프라의 초당 한도에 맞춰 두면, 대량 캠페인도 그 속도로 나눠 발송돼요.
+              제한에 걸린 메일은 실패가 아니라 잠시 대기 후 자동 재시도됩니다.
+            </p>
+          </div>
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12, marginTop: 18 }}>
           {savedAt && <span className="faint" style={{ fontSize: 12.5 }}>저장됨</span>}

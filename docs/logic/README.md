@@ -24,7 +24,7 @@
 | [08-unit-tests.md](08-unit-tests.md) | 단위 테스트 가이드 — mail-core 전 테스트를 메소드별로 해설 (무엇을, 어떻게 검증하는가) |
 | [09-ab-testing.md](09-ab-testing.md) | A/B 테스트 — 해시 기반 결정적 분배, 홀드아웃(미발행 PENDING), **승자 자동발송**(원자적 claim)과 변형별 지표 |
 | [10-multitenancy.md](10-multitenancy.md) | 멀티테넌시 — 가입=워크스페이스, ADMIN/OPERATOR 역할, **루트 엔티티 격리**(by-id 404), 공개 경로 토큰 역해석, `WorkspaceContext` 포트, BYO 커넥터 |
-
+| [11-send-throttling.md](11-send-throttling.md) | 테넌트별 발송 속도 제한 — **Postgres 토큰버킷**(원자적 조건부 UPDATE 재사용) + TTL 파킹 큐, claim 앞 토큰 확인, noisy neighbor 실측 |
 읽는 순서는 번호 순서가 곧 기능이 쌓인 순서입니다.
 
 > 참고: V16 멀티테넌시 전환으로 일부 포트 메소드가 워크스페이스 스코프 이름으로 바뀌었습니다
