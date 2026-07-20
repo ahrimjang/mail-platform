@@ -14,6 +14,8 @@
 #   RabbitMQ 관리 UI : http://localhost:15672   (guest / guest)
 #   Kafka            : localhost:9092  (mail.events 토픽 — 오픈/클릭/바운스 이벤트 스트림)
 #   MailHog 받은편지함: http://localhost:8025
+#   Prometheus       : http://localhost:9090  (api/worker/actuator + RabbitMQ 수집)
+#   Grafana          : http://localhost:3000  (익명 열람 — "메일 플랫폼" 대시보드 프로비저닝됨)
 
 services:
   postgres:
@@ -39,11 +41,14 @@ services:
     ports:
       - "5672:5672"      # AMQP — 앱(mail-api 발행 / mail-worker 소비)이 접속
       - "15672:15672"    # 관리 UI (웹)
+      - "15692:15692"    # rabbitmq_prometheus 플러그인 — Prometheus 가 큐 지표를 긁어감
     environment:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq   # durable 큐/메시지가 재시작 후에도 유지되도록
+      # 관리 UI + prometheus 플러그인 활성화 (이미지 기본은 management 만)
+      - ./monitoring/rabbitmq_enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
@@ -86,6 +91,34 @@ services:
       - "1025:1025"      # SMTP — mail-worker 의 SmtpMailSender 가 여기로 발송
       - "8025:8025"      # 웹 UI — 발송된 메일 확인
     # MailHog 는 메일을 메모리에 담는 개발용이라 별도 볼륨이 필요 없습니다.
+
+  # ── 메트릭 스택 (Micrometer → Prometheus → Grafana) ──────────────────
+  # 앱들은 /actuator/prometheus 로 지표를 내놓기만 하고(호스트에서 bootRun),
+  # 수집·저장·시각화는 전부 여기 두 컨테이너가 맡습니다.
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # 호스트에서 도는 api(:8080)/worker(:8082) 스크레이프용
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      # 개발 편의: 로그인 없이 열람 (운영에서는 반드시 제거)
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
 
 volumes:
   postgres-data:

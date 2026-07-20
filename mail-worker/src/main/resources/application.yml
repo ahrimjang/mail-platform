@@ -1,8 +1,6 @@
 spring:
   application:
     name: mail-worker
-  main:
-    web-application-type: none
   datasource:
     # Same shared Postgres instance as mail-api (see mail-api/application.yml).
     url: ${DB_URL:jdbc:postgresql://localhost:5432/maildb}
@@ -61,6 +59,23 @@ spring:
 mail:
   sender:
     type: ${MAIL_SENDER_TYPE:smtp}
+
+# The worker's only HTTP surface: /actuator/** for Prometheus scraping (it has
+# no business endpoints — those live in mail-api on :8080).
+server:
+  port: ${WORKER_METRICS_PORT:8082}
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  metrics:
+    tags:
+      application: mail-worker
+    distribution:
+      percentiles-histogram:
+        # SMTP latency histogram buckets so Grafana can plot p95 with histogram_quantile.
+        mail.smtp.send: true
 
 app:
   # Public base URL baked into tracking/unsubscribe links — MUST be the externally

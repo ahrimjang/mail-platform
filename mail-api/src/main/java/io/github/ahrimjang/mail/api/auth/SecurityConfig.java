@@ -31,6 +31,10 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/**", "/api/health", "/api/unsubscribe/**", "/api/track/**", "/api/webhooks/**").permitAll()
                         // uploaded template images: recipients' mail clients fetch these unauthenticated
                         .requestMatchers("/uploads/**").permitAll()
+                        // Prometheus scrape (health + metrics only — see management.endpoints
+                        // exposure). Production should firewall this path or move management
+                        // to a separate internal port.
+                        .requestMatchers("/actuator/**").permitAll()
                         .anyRequest().authenticated())
                 // Missing/expired JWT must read as 401 (unauthenticated), not Spring's
                 // default 403 — the frontend keys its "force re-login" behavior on 401.

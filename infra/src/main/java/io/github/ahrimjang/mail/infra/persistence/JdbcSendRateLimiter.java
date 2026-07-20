@@ -40,7 +40,11 @@ public class JdbcSendRateLimiter implements SendRateLimiter {
         if (rate == null) {
             return true;
         }
-        return acquireToken(workspaceId, rate);
+        boolean granted = acquireToken(workspaceId, rate);
+        // Denial rate on the dashboard = how hard tenants are pushing their caps.
+        io.micrometer.core.instrument.Metrics.counter("mail.throttle.acquire",
+                "granted", String.valueOf(granted)).increment();
+        return granted;
     }
 
     private boolean acquireToken(long workspaceId, int rate) {

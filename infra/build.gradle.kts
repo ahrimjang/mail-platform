@@ -18,6 +18,11 @@ dependencies {
     // Contact attribute map <-> JSON string column serialization.
     implementation("com.fasterxml.jackson.core:jackson-databind")
 
+    // Domain counters/timers in adapters (SMTP sends, throttle decisions). Recorded
+    // against the global registry — apps with actuator attach a real registry, apps
+    // without one make these no-ops.
+    implementation("io.micrometer:micrometer-core")
+
     // Auth adapters: password hashing + JWT.
     implementation("org.springframework.security:spring-security-crypto")
     implementation("io.jsonwebtoken:jjwt-api:0.12.6")

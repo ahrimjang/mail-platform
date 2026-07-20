@@ -40,6 +40,17 @@ spring:
 server:
   port: 8080
 
+# Prometheus scrape endpoint (/actuator/prometheus). The `application` tag keys
+# every metric to its app so api/worker series don't collide in Grafana.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  metrics:
+    tags:
+      application: mail-api
+
 app:
   jwt:
     # Dev-only fallback — production MUST set APP_JWT_SECRET (HS512 needs >= 64 bytes).

@@ -21,12 +21,14 @@ public class RabbitMailQueue implements MailQueue {
     @Override
     public void enqueue(Long messageId) {
         rabbitTemplate.convertAndSend(RabbitMailConfig.EXCHANGE, RabbitMailConfig.ROUTING_KEY, new SendJob(messageId));
+        count("send");
     }
 
     @Override
     public void enqueueFanout(Long campaignId) {
         rabbitTemplate.convertAndSend(RabbitMailConfig.EXCHANGE, RabbitMailConfig.FANOUT_ROUTING_KEY,
                 new io.github.ahrimjang.mail.common.FanoutJob(campaignId));
+        count("fanout");
     }
 
     @Override
@@ -34,5 +36,10 @@ public class RabbitMailQueue implements MailQueue {
         // Lands in the TTL'd parking queue and dead-letters back to the send queue.
         rabbitTemplate.convertAndSend(RabbitMailConfig.EXCHANGE, RabbitMailConfig.THROTTLE_ROUTING_KEY,
                 new SendJob(messageId));
+        count("throttled");
+    }
+
+    private static void count(String type) {
+        io.micrometer.core.instrument.Metrics.counter("mail.enqueue", "type", type).increment();
     }
 }

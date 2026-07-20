@@ -1,0 +1,92 @@
+{
+  "uid": "mail-platform",
+  "title": "메일 플랫폼 — 발송 파이프라인",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "5s",
+  "time": { "from": "now-15m", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "발송 처리량 (msg/s)",
+      "description": "SMTP 발송 성공률 — 워커의 실제 드레인 속도. 스로틀 실측(rate=5 → 5.2 msg/s)이 이 그래프로 보인다.",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "fillOpacity": 15 } }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(mail_smtp_send_seconds_count{outcome=\"ok\"}[1m]))", "legendFormat": "sent/s" },
+        { "refId": "B", "expr": "sum(rate(mail_smtp_send_seconds_count{outcome=\"error\"}[1m]))", "legendFormat": "error/s" }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "큐 깊이",
+      "description": "발송 큐 적체와 스로틀 파킹 큐(mail.send.throttled)의 출렁임. DLQ가 0이 아니면 조사 대상.",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "none", "custom": { "fillOpacity": 15 } }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "rabbitmq_detailed_queue_messages{queue=~\"mail\\\\..*\"}", "legendFormat": "{{queue}}" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "테넌트 스로틀 — 토큰 거부율과 재큐율",
+      "description": "거부(granted=false) = 한도 초과 시도. 재큐(throttled) = 1초 파킹 큐로 우회한 메시지. 두 선이 같이 움직이면 정상.",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "fillOpacity": 15 } }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(mail_throttle_acquire_total{granted=\"false\"}[1m]))", "legendFormat": "토큰 거부/s" },
+        { "refId": "B", "expr": "sum(rate(mail_throttle_acquire_total{granted=\"true\"}[1m]))", "legendFormat": "토큰 승인/s" },
+        { "refId": "C", "expr": "sum(rate(mail_enqueue_total{type=\"throttled\"}[1m]))", "legendFormat": "파킹 재큐/s" }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "SMTP 릴레이 지연",
+      "description": "발송 1건당 SMTP 왕복 시간. 릴레이(MailHog/SES)가 느려지면 여기서 먼저 보인다.",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "fillOpacity": 15 } }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "histogram_quantile(0.95, sum(rate(mail_smtp_send_seconds_bucket[5m])) by (le))", "legendFormat": "p95" },
+        { "refId": "B", "expr": "histogram_quantile(0.50, sum(rate(mail_smtp_send_seconds_bucket[5m])) by (le))", "legendFormat": "p50" }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "API 요청",
+      "description": "mail-api HTTP 처리율과 평균 지연.",
+      "gridPos": { "x": 0, "y": 16, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "ops", "custom": { "fillOpacity": 15 } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "평균 지연(s)" }, "properties": [ { "id": "unit", "value": "s" }, { "id": "custom.axisPlacement", "value": "right" } ] }
+        ]
+      },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(http_server_requests_seconds_count{application=\"mail-api\"}[1m]))", "legendFormat": "req/s" },
+        { "refId": "B", "expr": "sum(rate(http_server_requests_seconds_sum{application=\"mail-api\"}[1m])) / sum(rate(http_server_requests_seconds_count{application=\"mail-api\"}[1m]))", "legendFormat": "평균 지연(s)" }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "JVM 힙 사용량",
+      "description": "api/worker 각각의 힙 — 대량 팬아웃/발송 때 워커 쪽 곡선을 본다.",
+      "gridPos": { "x": 12, "y": 16, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "bytes", "custom": { "fillOpacity": 15 } }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "sum by (application) (jvm_memory_used_bytes{area=\"heap\"})", "legendFormat": "{{application}}" }
+      ]
+    }
+  ]
+}

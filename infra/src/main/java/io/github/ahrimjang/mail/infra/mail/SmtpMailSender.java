@@ -32,6 +32,10 @@ public class SmtpMailSender implements MailSender {
         if (recipient == null || !recipient.contains("@")) {
             throw new MailSendException("invalid recipient address: " + recipient);
         }
+        // Timed against the global registry: rate(count) is the platform's real
+        // send throughput, the histogram is SMTP relay latency.
+        io.micrometer.core.instrument.Timer.Sample sample =
+                io.micrometer.core.instrument.Timer.start(io.micrometer.core.instrument.Metrics.globalRegistry);
         MimeMessage msg = mailSender.createMimeMessage();
         try {
             MimeMessageHelper h = new MimeMessageHelper(msg, "UTF-8");
@@ -50,11 +54,19 @@ public class SmtpMailSender implements MailSender {
                 msg.setHeader("X-Mail-Message-Id", messageId);
             }
             mailSender.send(msg);
+            stop(sample, "ok");
         } catch (Exception e) {
+            stop(sample, "error");
             throw new MailSendException("failed to send to " + recipient + ": " + e.getMessage(), e);
         }
         log.info("[SMTP] -> {} | from={} | subject=\"{}\" | bodyChars={}",
                 recipient, senderEmail == null ? "(default)" : senderEmail,
                 subject, body == null ? 0 : body.length());
+    }
+
+    private static void stop(io.micrometer.core.instrument.Timer.Sample sample, String outcome) {
+        sample.stop(io.micrometer.core.instrument.Timer.builder("mail.smtp.send")
+                .tag("outcome", outcome)
+                .register(io.micrometer.core.instrument.Metrics.globalRegistry));
     }
 }

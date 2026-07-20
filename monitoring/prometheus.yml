@@ -1,0 +1,27 @@
+# Prometheus 수집 대상 — 앱은 호스트에서 돌므로(bootRun) host.docker.internal 로 나간다.
+global:
+  scrape_interval: 5s   # 데모용으로 촘촘하게 — 운영은 15s+ 권장
+
+scrape_configs:
+  - job_name: mail-api
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["host.docker.internal:8080"]
+
+  - job_name: mail-worker
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["host.docker.internal:8082"]
+
+  # RabbitMQ 기본(집계) 메트릭 — rabbitmq_prometheus 플러그인 (:15692)
+  - job_name: rabbitmq
+    static_configs:
+      - targets: ["rabbitmq:15692"]
+
+  # 큐별 상세 메트릭(mail.send.queue 깊이 등) — detailed 엔드포인트는 per-object 라벨을 준다
+  - job_name: rabbitmq-queues
+    metrics_path: /metrics/detailed
+    params:
+      family: [queue_coarse_metrics]
+    static_configs:
+      - targets: ["rabbitmq:15692"]
