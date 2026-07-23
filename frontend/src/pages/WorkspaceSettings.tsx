@@ -4,20 +4,6 @@ import Portal from "../components/Portal";
 import { useAuth } from "../outpace/auth";
 import type { WorkspaceUserView, WorkspaceView } from "../types";
 
-/* BYO connector options: which SMTP relay / file storage the tenant brings.
-   Selection only for now — the wiring lands with the SES/S3 integrations. */
-const SMTP_OPTIONS = [
-  { value: "MAILHOG", label: "MailHog (개발용 기본)" },
-  { value: "AWS_SES", label: "AWS SES — 회사 AWS 계정" },
-  { value: "SENDGRID", label: "SendGrid — 회사 계정" },
-  { value: "CUSTOM_SMTP", label: "자체 SMTP 서버" },
-];
-const STORAGE_OPTIONS = [
-  { value: "LOCAL", label: "로컬 디스크 (개발용 기본)" },
-  { value: "AWS_S3", label: "AWS S3 — 회사 버킷" },
-  { value: "NCP_OBJECT_STORAGE", label: "NCP Object Storage — 회사 버킷" },
-];
-
 const ROLE_LABEL: Record<string, string> = { ADMIN: "관리자", OPERATOR: "운영자" };
 
 function AddMemberModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
@@ -90,9 +76,7 @@ export default function WorkspaceSettings() {
   const [workspace, setWorkspace] = useState<WorkspaceView | null>(null);
   const [members, setMembers] = useState<WorkspaceUserView[]>([]);
   const [name, setName] = useState("");
-  const [smtp, setSmtp] = useState("MAILHOG");
-  const [storage, setStorage] = useState("LOCAL");
-  const [sendRate, setSendRate] = useState(""); // msgs/sec as text; "" = unlimited
+  const [sendRate, setSendRate] = useState(""); // 건/초 텍스트; "" = 무제한
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -105,8 +89,6 @@ export default function WorkspaceSettings() {
         const w: WorkspaceView = await wRes.json();
         setWorkspace(w);
         setName(w.name);
-        setSmtp(w.smtpProvider);
-        setStorage(w.storageProvider);
         setSendRate(w.sendRatePerSec == null ? "" : String(w.sendRatePerSec));
       }
       const uRes = await api("/api/workspace/users");
@@ -128,7 +110,7 @@ export default function WorkspaceSettings() {
       }
       const res = await api("/api/workspace", {
         method: "PUT",
-        body: JSON.stringify({ name: name.trim(), smtpProvider: smtp, storageProvider: storage, sendRatePerSec: rate }),
+        body: JSON.stringify({ name: name.trim(), sendRatePerSec: rate }),
       });
       if (res.ok) {
         setWorkspace(await res.json());
@@ -211,7 +193,7 @@ export default function WorkspaceSettings() {
       </div>
 
       <div className="op-form-card">
-        <h3 className="op-sect-title">사용량</h3>
+        <h3 className="op-sect-title">사용량 · 요금</h3>
         <div style={{ display: "flex", alignItems: "baseline", gap: 14, flexWrap: "wrap" }}>
           <span style={{ fontSize: 32, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>
             {(workspace?.monthlySent ?? 0).toLocaleString()}
@@ -219,32 +201,14 @@ export default function WorkspaceSettings() {
           <span style={{ fontSize: 13.5, color: "var(--op-muted)" }}>이번 달 발송 성공 (매월 1일 기준 집계)</span>
         </div>
         <p style={{ margin: "12px 0 0", fontSize: 12.5, color: "var(--op-faint)", lineHeight: 1.6 }}>
-          플랜·쿼터 산정의 기준 수치예요. BYO 커넥터를 연결하면 발송 인프라 비용 자체는 회사 계정에
-          직접 청구되고, 플랫폼 요금은 이 사용량 구간으로 계산됩니다.
+          발송 인프라(SMTP/SES·저장소)는 플랫폼이 제공하고, <b>요금은 이 월 발송량 기준으로 청구</b>됩니다.
+          발송량 구간별 단가·플랜 안내는 준비 중이에요.
         </p>
       </div>
 
       <div className="op-form-card">
-        <h3 className="op-sect-title">인프라 설정 (BYO)</h3>
-        <p style={{ margin: "0 0 16px", fontSize: 13, color: "var(--op-muted)", lineHeight: 1.6 }}>
-          발송·저장처럼 비용이 큰 인프라는 <b>회사 소유 계정을 연결</b>해 비용이 회사에 직접 청구되게 합니다.
-          지금은 선택만 저장돼요 — 실제 연동(자격증명 등록)은 준비 중입니다.
-        </p>
+        <h3 className="op-sect-title">발송 설정</h3>
         <div className="op-grid2">
-          <label className="op-field" style={{ marginBottom: 0 }}>
-            <span className="op-flabel">메일 발송 (SMTP)</span>
-            <select className="op-input" value={smtp} onChange={(e) => setSmtp(e.target.value)}>
-              {SMTP_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-          </label>
-          <label className="op-field" style={{ marginBottom: 0 }}>
-            <span className="op-flabel">파일 저장소</span>
-            <select className="op-input" value={storage} onChange={(e) => setStorage(e.target.value)}>
-              {STORAGE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-          </label>
-        </div>
-        <div className="op-grid2" style={{ marginTop: 16 }}>
           <label className="op-field" style={{ marginBottom: 0 }}>
             <span className="op-flabel">발송 속도 제한 (건/초)</span>
             <input
@@ -259,8 +223,8 @@ export default function WorkspaceSettings() {
           <div className="op-field" style={{ marginBottom: 0 }}>
             <span className="op-flabel">&nbsp;</span>
             <p style={{ margin: "12px 0 0", fontSize: 12.5, color: "var(--op-faint)", lineHeight: 1.6 }}>
-              연결한 발송 인프라의 초당 한도에 맞춰 두면, 대량 캠페인도 그 속도로 나눠 발송돼요.
-              제한에 걸린 메일은 실패가 아니라 잠시 대기 후 자동 재시도됩니다.
+              대량 캠페인을 이 속도로 나눠 발송해요. 제한에 걸린 메일은 실패가 아니라
+              잠시 대기 후 자동 재시도됩니다.
             </p>
           </div>
         </div>

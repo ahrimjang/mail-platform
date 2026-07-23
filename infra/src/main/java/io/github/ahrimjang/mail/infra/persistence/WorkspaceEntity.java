@@ -20,14 +20,6 @@ public class WorkspaceEntity {
     @Column(nullable = false)
     private String name;
 
-    /** BYO connector selection — which SMTP relay this tenant brings. */
-    @Column(nullable = false, length = 32)
-    private String smtpProvider;
-
-    /** BYO connector selection — which file storage this tenant brings. */
-    @Column(nullable = false, length = 32)
-    private String storageProvider;
-
     /** Send throttle in msgs/sec; null = unlimited. */
     @Column
     private Integer sendRatePerSec;
@@ -38,12 +30,9 @@ public class WorkspaceEntity {
     protected WorkspaceEntity() {
     }
 
-    public WorkspaceEntity(Long id, String name, String smtpProvider, String storageProvider,
-                           Integer sendRatePerSec, Instant createdAt) {
+    public WorkspaceEntity(Long id, String name, Integer sendRatePerSec, Instant createdAt) {
         this.id = id;
         this.name = name;
-        this.smtpProvider = smtpProvider;
-        this.storageProvider = storageProvider;
         this.sendRatePerSec = sendRatePerSec;
         this.createdAt = createdAt;
     }
@@ -54,14 +43,6 @@ public class WorkspaceEntity {
 
     public String getName() {
         return name;
-    }
-
-    public String getSmtpProvider() {
-        return smtpProvider;
-    }
-
-    public String getStorageProvider() {
-        return storageProvider;
     }
 
     public Integer getSendRatePerSec() {

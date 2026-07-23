@@ -47,25 +47,17 @@ public class WorkspaceService {
         return toView(requireWorkspace());
     }
 
-    /** Rename and/or change the BYO connector selection (ADMIN only). */
+    /** Rename and/or adjust send pacing (ADMIN only). */
     public WorkspaceView update(UpdateWorkspaceRequest request) {
         requireAdmin();
         Workspace workspace = requireWorkspace();
         if (request.name() == null || request.name().isBlank()) {
             throw new IllegalArgumentException("name is required");
         }
-        if (!Workspace.SMTP_PROVIDERS.contains(request.smtpProvider())) {
-            throw new IllegalArgumentException("unknown smtp provider: " + request.smtpProvider());
-        }
-        if (!Workspace.STORAGE_PROVIDERS.contains(request.storageProvider())) {
-            throw new IllegalArgumentException("unknown storage provider: " + request.storageProvider());
-        }
         if (request.sendRatePerSec() != null && request.sendRatePerSec() < 1) {
             throw new IllegalArgumentException("send rate must be at least 1 msg/sec (empty = unlimited)");
         }
         workspace.setName(request.name().trim());
-        workspace.setSmtpProvider(request.smtpProvider());
-        workspace.setStorageProvider(request.storageProvider());
         workspace.setSendRatePerSec(request.sendRatePerSec());
         return toView(workspaces.save(workspace));
     }
@@ -137,7 +129,7 @@ public class WorkspaceService {
     }
 
     private WorkspaceView toView(Workspace w) {
-        return new WorkspaceView(w.getId(), w.getName(), w.getSmtpProvider(), w.getStorageProvider(),
+        return new WorkspaceView(w.getId(), w.getName(),
                 w.getSendRatePerSec(), w.getCreatedAt(), users.countByWorkspaceId(w.getId()), monthlySent(w.getId()));
     }
 

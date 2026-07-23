@@ -23,7 +23,7 @@
 | [07-contacts-lists.md](07-contacts-lists.md) | 연락처(속성 JSON)·리스트·CSV 임포트 — 리스트 팬아웃 개인화 + **구독 상태 관리(전역/리스트 단위)·수신자 상세·동의 기록·페이지드 테이블**(배치 병합) |
 | [08-unit-tests.md](08-unit-tests.md) | 단위 테스트 가이드 — mail-core 전 테스트를 메소드별로 해설 (무엇을, 어떻게 검증하는가) |
 | [09-ab-testing.md](09-ab-testing.md) | A/B 테스트 — 해시 기반 결정적 분배, 홀드아웃(미발행 PENDING), **승자 자동발송**(원자적 claim)과 변형별 지표 |
-| [10-multitenancy.md](10-multitenancy.md) | 멀티테넌시 — 가입=워크스페이스, ADMIN/OPERATOR 역할, **루트 엔티티 격리**(by-id 404), 공개 경로 토큰 역해석, `WorkspaceContext` 포트, BYO 커넥터 |
+| [10-multitenancy.md](10-multitenancy.md) | 멀티테넌시 — 가입=워크스페이스, ADMIN/OPERATOR 역할, **루트 엔티티 격리**(by-id 404), 공개 경로 토큰 역해석, `WorkspaceContext` 포트 (당시 BYO 과금 모델은 V20에서 발송량 과금으로 전환) |
 | [11-send-throttling.md](11-send-throttling.md) | 테넌트별 발송 속도 제한 — **Postgres 토큰버킷**(원자적 조건부 UPDATE 재사용) + TTL 파킹 큐, claim 앞 토큰 확인, noisy neighbor 실측 |
 | [12-metrics-grafana.md](12-metrics-grafana.md) | 메트릭 대시보드 — Micrometer 어댑터 계측 → Prometheus → **파일 프로비저닝된 Grafana**, 패널/PromQL 작성 가이드(RED·USE) |
 

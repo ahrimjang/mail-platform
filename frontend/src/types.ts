@@ -262,12 +262,10 @@ export interface ContactEngagementView {
 export interface WorkspaceView {
   id: number;
   name: string;
-  smtpProvider: string;    // MAILHOG | AWS_SES | SENDGRID | CUSTOM_SMTP
-  storageProvider: string; // LOCAL | AWS_S3 | NCP_OBJECT_STORAGE
-  sendRatePerSec: number | null; // send throttle (msgs/sec); null = unlimited
+  sendRatePerSec: number | null; // 발송 속도 제한(건/초); null = 무제한
   createdAt: string;
   memberCount: number;
-  monthlySent: number; // SENT this calendar month — the usage a plan would bill against
+  monthlySent: number; // 이번 달 발송 성공 수 — 발송량 과금의 기준 수치
 }
 
 export interface WorkspaceUserView {

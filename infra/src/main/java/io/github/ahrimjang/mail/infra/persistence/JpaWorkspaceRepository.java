@@ -20,7 +20,6 @@ public class JpaWorkspaceRepository implements WorkspaceRepository {
     public Workspace save(Workspace workspace) {
         WorkspaceEntity saved = jpa.save(new WorkspaceEntity(
                 workspace.getId(), workspace.getName(),
-                workspace.getSmtpProvider(), workspace.getStorageProvider(),
                 workspace.getSendRatePerSec(), workspace.getCreatedAt()));
         return toDomain(saved);
     }
@@ -34,8 +33,6 @@ public class JpaWorkspaceRepository implements WorkspaceRepository {
         Workspace w = new Workspace();
         w.setId(e.getId());
         w.setName(e.getName());
-        w.setSmtpProvider(e.getSmtpProvider());
-        w.setStorageProvider(e.getStorageProvider());
         w.setSendRatePerSec(e.getSendRatePerSec());
         w.setCreatedAt(e.getCreatedAt());
         return w;
