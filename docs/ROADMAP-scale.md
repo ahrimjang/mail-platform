@@ -27,12 +27,16 @@
       create가 수신자 수와 무관한 **~50ms 상수**(#22). → "API가 리스트 크기와 무관하게 즉시 반환" 원칙 회복.
 
 ### Tier 2 — 강한 추가
-- [ ] **④ 발송 속도 제한(throttling)** — 토큰버킷. 워커 간 공유 상태는 Redis.
-      프로바이더 rate limit 대응에 필수인 분산 rate limiting.
+- [x] **④ 발송 속도 제한(throttling)** — *2026-07-20 완료.* 워크스페이스별 토큰버킷
+      (V19). 공유 상태는 Redis 대신 **Postgres 원자적 조건부 UPDATE**(claim 패턴 계보 —
+      새 인프라 0, 병목 시 `SendRateLimiter` 포트 뒤 Redis 교체). 거절 메시지는 TTL 1초
+      파킹 큐 경유 재진입. 실측 rate=3 → 정확히 3.0 msg/s, 무제한 테넌트는 동시 0.3초
+      완료(noisy neighbor 해소). [logic/11](logic/11-send-throttling.md).
 - [ ] **⑤ suppression 블룸필터 캐시** — 발송마다 억제목록 DB 조회 = 핫패스 병목.
       수백만 주소를 작은 메모리로 O(1) 판정(오탐 시 DB 재확인 → 오발송 없음).
-- [ ] **⑥ 메트릭 대시보드** — Micrometer→Prometheus→Grafana (처리량/큐깊이/지연 백분위).
-      부하테스트와 짝을 이루는 관측 도구.
+- [x] **⑥ 메트릭 대시보드** — *2026-07-20 완료.* Micrometer(어댑터 계측만 — 코어 무관)
+      → Prometheus → 파일 프로비저닝 Grafana 6패널(처리량/큐깊이/스로틀/SMTP p95/API/힙).
+      스로틀 실측이 그래프로 재현됨(거부율≈재큐율). [logic/12](logic/12-metrics-grafana.md).
 
 ### Tier 3 — 여유 있으면
 - [ ] `mail_messages`·`email_events` 테이블 성장 대비(파티셔닝, 인덱스·아카이빙 전략)

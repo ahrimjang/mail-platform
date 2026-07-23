@@ -43,7 +43,7 @@
 ## 로컬에서 직접 따라해 보기
 
 ```bash
-docker compose up -d                    # rabbitmq(5672/15672) + mailhog(1025/8025)
+docker compose up -d                    # postgres + rabbitmq + kafka + mailhog + prometheus(9090) + grafana(3000)
 ./gradlew :mail-api:bootRun             # REST API :8080
 ./gradlew :mail-worker:bootRun          # 큐 소비자 (SMTP 발송)
 cd frontend && npm run dev              # 화면 :5173
