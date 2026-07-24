@@ -1,0 +1,15 @@
+# 이미지 빌드 컨텍스트에서 제외 — 빌드 산출물·로컬 상태·무관한 파일
+.git
+.gradle
+**/build
+frontend/node_modules
+frontend/dist
+logs
+uploads
+monitoring
+jenkins
+Jenkinsfile
+loadtest
+docs
+*.md
+.env

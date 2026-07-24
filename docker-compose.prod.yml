@@ -1,0 +1,184 @@
+# 프로드 스택 — 인프라 + 앱(api/worker/front)까지 전부 컨테이너로.
+# 개발용 docker-compose.yml(인프라만, 앱은 bootRun)과 달리 이 파일 하나로 완주한다.
+#
+#   기동:   docker compose -f docker-compose.prod.yml up -d --build
+#   중지:   docker compose -f docker-compose.prod.yml down
+#   초기화: docker compose -f docker-compose.prod.yml down -v
+#
+# 공개 포트: 80(콘솔+API), 3000(Grafana — 운영은 방화벽/IP 제한 권장)
+# 시크릿은 .env 로 주입(.env.example 참고). 로컬 검증은 무설정으로 돈다.
+#
+# 실서버 SES 전환: SMTP_* 환경변수만 바꾸면 된다(.env) — mailhog 서비스는 지워도 무방.
+
+name: mail-platform-prod
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: maildb
+      POSTGRES_USER: maildb
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-maildb}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U maildb -d maildb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+      - ./monitoring/rabbitmq_enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  kafka:
+    image: apache/kafka:3.8.1
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      # 개발 compose 와의 유일한 차이: 앱이 컨테이너라 서비스명으로 광고한다
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+
+  # SES 전환 전까지의 SMTP — 전환 후엔 SMTP_* 만 바꾸고 이 서비스는 제거해도 된다
+  mailhog:
+    image: mailhog/mailhog
+    restart: unless-stopped
+    ports:
+      - "8025:8025"   # 받은편지함 UI (운영은 방화벽으로 막을 것)
+
+  api:
+    build:
+      context: .
+      target: api
+    restart: unless-stopped
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/maildb
+      DB_USERNAME: maildb
+      DB_PASSWORD: ${DB_PASSWORD:-maildb}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-guest}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      SMTP_HOST: ${SMTP_HOST:-mailhog}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_AUTH: ${SMTP_AUTH:-false}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-false}
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost}
+      APP_JWT_SECRET: ${APP_JWT_SECRET:-dev-only-not-a-real-secret-key-0123456789-abcdefghijklmnopqrstuvwxyz}
+      APP_WEBHOOK_SECRET: ${APP_WEBHOOK_SECRET:-dev-webhook-secret}
+    volumes:
+      - uploads-data:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/api/health >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+  worker:
+    build:
+      context: .
+      target: worker
+    restart: unless-stopped
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/maildb
+      DB_USERNAME: maildb
+      DB_PASSWORD: ${DB_PASSWORD:-maildb}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-guest}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      SMTP_HOST: ${SMTP_HOST:-mailhog}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_AUTH: ${SMTP_AUTH:-false}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-false}
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      # 스키마(Flyway)는 api 가 소유 — 워커는 validate 만 하므로 api 이후에 뜨는 게 안전
+      api:
+        condition: service_healthy
+
+  front:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      api:
+        condition: service_healthy
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/prometheus.prod.yml:/etc/prometheus/prometheus.yml:ro
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    restart: unless-stopped
+    ports:
+      - "3000:3000"   # 운영은 방화벽/IP 제한 또는 프록시 뒤로
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+
+volumes:
+  postgres-data:
+  rabbitmq-data:
+  kafka-data:
+  uploads-data:
+  grafana-data:
