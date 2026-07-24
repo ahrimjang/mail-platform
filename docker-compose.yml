@@ -13,6 +13,7 @@
 #   Postgres         : localhost:5432  (maildb / maildb / maildb)
 #   RabbitMQ 관리 UI : http://localhost:15672   (guest / guest)
 #   Kafka            : localhost:9092  (mail.events 토픽 — 오픈/클릭/바운스 이벤트 스트림)
+#   Kafka UI         : http://localhost:8088  (토픽·메시지·소비자 그룹·LAG 웹 콘솔)
 #   MailHog 받은편지함: http://localhost:8025
 #   Prometheus       : http://localhost:9090  (api/worker/actuator + RabbitMQ 수집)
 #   Grafana          : http://localhost:3000  (익명 열람 — "메일 플랫폼" 대시보드 프로비저닝됨)
@@ -57,7 +58,8 @@ services:
 
   # 참여 이벤트(오픈/클릭/바운스) 스트림 — RabbitMQ(작업큐: 1회 소비/ack/DLQ)와 역할이 다릅니다.
   # Kafka 는 append-only 로그라 여러 소비자가 각자 오프셋으로 재생(replay)할 수 있습니다.
-  # 단일 노드 KRaft(주키퍼 없음), 앱이 호스트에서 돌므로 localhost:9092 로 광고합니다.
+  # 단일 노드 KRaft(주키퍼 없음). 리스너 2개: 호스트의 앱(bootRun)은 localhost:9092,
+  # 컨테이너(kafka-ui 등)는 kafka:29092 로 접속합니다.
   kafka:
     image: apache/kafka:3.8.1
     container_name: kafka
@@ -66,11 +68,12 @@ services:
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,INTERNAL://0.0.0.0:29092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,INTERNAL://kafka:29092
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,INTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
@@ -91,6 +94,20 @@ services:
       - "1025:1025"      # SMTP — mail-worker 의 SmtpMailSender 가 여기로 발송
       - "8025:8025"      # 웹 UI — 발송된 메일 확인
     # MailHog 는 메일을 메모리에 담는 개발용이라 별도 볼륨이 필요 없습니다.
+
+  # Kafka 웹 콘솔 — 토픽·메시지·소비자 그룹·LAG 을 눈으로 (RabbitMQ 관리 UI의 Kafka 판)
+  kafka-ui:
+    image: provectuslabs/kafka-ui:v0.7.2
+    container_name: kafka-ui
+    ports:
+      - "8088:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: mail-platform
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092   # 컨테이너용 내부 리스너
+      DYNAMIC_CONFIG_ENABLED: "false"
+    depends_on:
+      kafka:
+        condition: service_healthy
 
   # ── 메트릭 스택 (Micrometer → Prometheus → Grafana) ──────────────────
   # 앱들은 /actuator/prometheus 로 지표를 내놓기만 하고(호스트에서 bootRun),

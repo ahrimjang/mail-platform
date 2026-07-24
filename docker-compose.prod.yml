@@ -5,7 +5,7 @@
 #   중지:   docker compose -f docker-compose.prod.yml down
 #   초기화: docker compose -f docker-compose.prod.yml down -v
 #
-# 공개 포트: 80(콘솔+API), 3000(Grafana — 운영은 방화벽/IP 제한 권장)
+# 공개 포트: 80(콘솔+API), 3000(Grafana), 8088(Kafka UI) — 3000/8088 은 운영에서 방화벽/IP 제한 권장
 # 시크릿은 .env 로 주입(.env.example 참고). 로컬 검증은 무설정으로 돈다.
 #
 # 실서버 SES 전환: SMTP_* 환경변수만 바꾸면 된다(.env) — mailhog 서비스는 지워도 무방.
@@ -67,6 +67,20 @@ services:
       timeout: 10s
       retries: 10
       start_period: 20s
+
+  # Kafka 웹 콘솔 — 토픽·소비자 그룹·LAG (운영은 방화벽/IP 제한 권장)
+  kafka-ui:
+    image: provectuslabs/kafka-ui:v0.7.2
+    restart: unless-stopped
+    ports:
+      - "8088:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: mail-platform
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      DYNAMIC_CONFIG_ENABLED: "false"
+    depends_on:
+      kafka:
+        condition: service_healthy
 
   # SES 전환 전까지의 SMTP — 전환 후엔 SMTP_* 만 바꾸고 이 서비스는 제거해도 된다
   mailhog:
