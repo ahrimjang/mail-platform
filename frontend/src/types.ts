@@ -274,6 +274,15 @@ export interface WorkspaceView {
   monthlySent: number; // 이번 달 발송 성공 수 — 발송량 과금의 청구 수치
 }
 
+export interface PlanView {
+  name: string;                    // STARTER | STANDARD | PRO | ENTERPRISE
+  monthlyPriceKrw: number | null;  // null = 협의
+  monthlySendLimit: number | null; // null = 무제한
+  contactLimit: number | null;
+  memberLimit: number | null;
+  sendRateCap: number | null;
+}
+
 export interface PaymentView {
   orderId: string;
   plan: string;

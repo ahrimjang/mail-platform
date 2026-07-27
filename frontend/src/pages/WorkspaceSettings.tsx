@@ -93,12 +93,12 @@ export default function WorkspaceSettings() {
   const isAdmin = role === "ADMIN";
   const [workspace, setWorkspace] = useState<WorkspaceView | null>(null);
   const [members, setMembers] = useState<WorkspaceUserView[]>([]);
-  const [name, setName] = useState("");
-  const [sendRate, setSendRate] = useState(""); // 건/초 텍스트; "" = 무제한
   const [usageHistory, setUsageHistory] = useState<UsageSnapshotView[]>([]);
   const [paymentHistory, setPaymentHistory] = useState<PaymentView[]>([]);
   const [planChoice, setPlanChoice] = useState("");
   const [billingBusy, setBillingBusy] = useState(false);
+  const [name, setName] = useState("");
+  const [sendRate, setSendRate] = useState(""); // 건/초 텍스트; "" = 무제한
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -305,7 +305,9 @@ export default function WorkspaceSettings() {
           )}
         </p>
         <div style={{ marginTop: 16, borderTop: "1px solid var(--op-line, #e5e7eb)", paddingTop: 12 }}>
-          <span className="op-flabel">플랜 변경</span>
+          <span className="op-flabel">
+            플랜 변경 — <a href="/pricing" style={{ color: "var(--op-accent, #4f46e5)" }}>플랜 비교 보기 →</a>
+          </span>
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginTop: 6 }}>
             <select className="op-input" style={{ maxWidth: 220, height: 38, fontSize: 13.5 }}
                     value={planChoice} onChange={(e) => setPlanChoice(e.target.value)}>

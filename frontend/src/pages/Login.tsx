@@ -89,6 +89,8 @@ export default function Login() {
           <p className="op-switch">
             계정이 없으신가요?{" "}
             <a className="op-linkbtn" onClick={() => nav("/signup")}>회원가입</a>
+            {" · "}
+            <a className="op-linkbtn" onClick={() => nav("/pricing")}>요금제 보기</a>
           </p>
         </form>
       </div>

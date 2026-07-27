@@ -15,6 +15,7 @@ import Lists from "./pages/Lists";
 import EmailEditor from "./pages/EmailEditor";
 import TextEditor from "./pages/TextEditor";
 import HtmlEditor from "./pages/HtmlEditor";
+import Pricing from "./pages/Pricing";
 
 /* Gate: send unauthenticated users to /login; render children otherwise. */
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -33,6 +34,8 @@ function AppRoutes() {
     <Routes>
       <Route path="/login" element={<AuthOnly><Login /></AuthOnly>} />
       <Route path="/signup" element={<AuthOnly><Signup /></AuthOnly>} />
+      {/* 요금제: 가입 전 방문자도 보는 공개 페이지 — 게이트 없음 */}
+      <Route path="/pricing" element={<Pricing />} />
 
       {/* App shell (top nav) wraps the primary screens. */}
       <Route
