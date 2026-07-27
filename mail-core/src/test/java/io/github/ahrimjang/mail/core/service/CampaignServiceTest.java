@@ -75,9 +75,25 @@ class CampaignServiceTest {
     private ContactRepository contacts;
     @Mock
     private ContactListRepository lists;
+    @Mock
+    private PlanLimits planLimits;   // mock 기본은 no-op = 한도 여유 상태
 
     @InjectMocks
     private CampaignService service;
+
+    @org.junit.jupiter.api.Test
+    void create_isBlockedWhenTheMonthlySendLimitIsReached() {
+        org.mockito.Mockito.doThrow(new PlanLimitExceededException("이번 달 발송 한도(1,000통)에 도달했습니다."))
+                .when(planLimits).assertCampaignRegistrationAllowed(WS);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                        service.create(new CreateCampaignRequest(
+                                "s", "<p>b</p>", java.util.List.of("a@x.com"), null, null, null, null,
+                                null, null, null, null, null, null, null, null, null, null, null, null, null)))
+                .isInstanceOf(PlanLimitExceededException.class);
+        org.mockito.Mockito.verify(campaigns, org.mockito.Mockito.never()).save(org.mockito.ArgumentMatchers.any());
+        org.mockito.Mockito.verify(mailQueue, org.mockito.Mockito.never()).enqueue(org.mockito.ArgumentMatchers.anyLong());
+    }
 
     private void stubCampaignSaveAssigningId() {
         when(campaigns.save(any(Campaign.class))).thenAnswer(inv -> {

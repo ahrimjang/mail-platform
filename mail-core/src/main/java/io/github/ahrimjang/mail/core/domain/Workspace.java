@@ -13,6 +13,8 @@ public class Workspace {
 
     private Long id;
     private String name;
+    /** 요금 플랜 — 한도의 기준 (기본 무료 스타터). */
+    private Plan plan = Plan.STARTER;
     /** Send throttle in msgs/sec; null = unlimited. */
     private Integer sendRatePerSec;
     private Instant createdAt;
@@ -24,8 +26,19 @@ public class Workspace {
     public static Workspace of(String name) {
         Workspace w = new Workspace();
         w.name = name;
+        w.plan = Plan.STARTER;
+        // 속도 설정은 플랜 상한으로 시작 — null(무제한)이면 토큰버킷이 상한을 못 지킨다
+        w.sendRatePerSec = Plan.STARTER.sendRateCap();
         w.createdAt = Instant.now();
         return w;
+    }
+
+    public Plan getPlan() {
+        return plan;
+    }
+
+    public void setPlan(Plan plan) {
+        this.plan = plan;
     }
 
     public Long getId() {

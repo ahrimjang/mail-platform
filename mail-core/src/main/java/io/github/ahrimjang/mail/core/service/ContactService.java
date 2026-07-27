@@ -38,17 +38,20 @@ public class ContactService {
     /** Who is acting, for which tenant — resolved by the API adapter per request. */
     private final WorkspaceContext ctx;
 
+    private final PlanLimits planLimits;
+
     public ContactService(ContactRepository contacts, ContactListRepository lists,
                           SuppressionRepository suppressions,
                           ListUnsubscribeRepository listUnsubscribes,
                           ContactEngagementService engagement,
-                          WorkspaceContext ctx) {
+                          WorkspaceContext ctx, PlanLimits planLimits) {
         this.ctx = ctx;
         this.contacts = contacts;
         this.lists = lists;
         this.suppressions = suppressions;
         this.listUnsubscribes = listUnsubscribes;
         this.engagement = engagement;
+        this.planLimits = planLimits;
     }
 
     public ContactView create(ContactRequest request) {
@@ -58,6 +61,7 @@ public class ContactService {
         if (contacts.existsByWorkspaceAndEmail(ctx.currentWorkspaceId(), request.email())) {
             throw new IllegalStateException("contact already exists: " + request.email());
         }
+        planLimits.assertContactsAddable(ctx.currentWorkspaceId(), 1);
         Contact contact = Contact.of(request.email(), request.firstName(), request.lastName(), request.attributes());
         contact.setWorkspaceId(ctx.currentWorkspaceId());
         // Consent provenance: an operator typed this address in by hand.
@@ -183,6 +187,9 @@ public class ContactService {
         }
         int imported = 0;
         int skipped = 0;
+        // 플랜의 연락처 한도를 임포트 예산으로 — 기존 주소 갱신은 예산을 안 쓰고,
+        // 신규 생성이 예산을 소진하면 그 지점에서 중단한다(지금까지 추가분은 유지).
+        Long capacity = planLimits.remainingContactCapacity(workspaceId);
         for (String line : csv.split("\\r?\\n")) {
             if (line.isBlank()) {
                 continue;
@@ -194,6 +201,11 @@ public class ContactService {
                 continue;
             }
             Optional<Contact> existing = contacts.findByWorkspaceAndEmail(workspaceId, email);
+            if (existing.isEmpty() && capacity != null && imported >= capacity) {
+                throw new PlanLimitExceededException(String.format(
+                        "연락처 한도에 도달해 가져오기를 중단했습니다. %d명은 추가됐어요 — 나머지는 플랜을 올린 뒤 다시 가져오세요.",
+                        imported));
+            }
             Contact contact = existing.orElseGet(() -> {
                 Contact fresh = Contact.of(
                         email,

@@ -28,18 +28,17 @@ public class WorkspaceService {
 
     private final WorkspaceRepository workspaces;
     private final UserRepository users;
-    private final MailMessageRepository messages;
     private final PasswordHasher hasher;
     private final WorkspaceContext ctx;
+    private final PlanLimits planLimits;
 
     public WorkspaceService(WorkspaceRepository workspaces, UserRepository users,
-                            MailMessageRepository messages,
-                            PasswordHasher hasher, WorkspaceContext ctx) {
+                            PasswordHasher hasher, WorkspaceContext ctx, PlanLimits planLimits) {
         this.workspaces = workspaces;
         this.users = users;
-        this.messages = messages;
         this.hasher = hasher;
         this.ctx = ctx;
+        this.planLimits = planLimits;
     }
 
     /** The acting user's workspace. */
@@ -55,8 +54,10 @@ public class WorkspaceService {
             throw new IllegalArgumentException("name is required");
         }
         if (request.sendRatePerSec() != null && request.sendRatePerSec() < 1) {
-            throw new IllegalArgumentException("send rate must be at least 1 msg/sec (empty = unlimited)");
+            throw new IllegalArgumentException("send rate must be at least 1 msg/sec");
         }
+        // 플랜 상한 검사 — 상한이 있는 플랜은 미설정(무제한)도 거부된다
+        planLimits.assertSendRateWithinCap(ctx.currentWorkspaceId(), request.sendRatePerSec());
         workspace.setName(request.name().trim());
         workspace.setSendRatePerSec(request.sendRatePerSec());
         return toView(workspaces.save(workspace));
@@ -81,6 +82,7 @@ public class WorkspaceService {
         if (users.existsByEmail(request.email())) {
             throw new IllegalStateException("email already registered: " + request.email());
         }
+        planLimits.assertMemberAddable(ctx.currentWorkspaceId());
         User user = User.register(request.email(), hasher.hash(request.password()), request.displayName());
         user.setWorkspaceId(ctx.currentWorkspaceId());
         user.setRole(role);
@@ -129,20 +131,12 @@ public class WorkspaceService {
     }
 
     private WorkspaceView toView(Workspace w) {
-        return new WorkspaceView(w.getId(), w.getName(),
-                w.getSendRatePerSec(), w.getCreatedAt(), users.countByWorkspaceId(w.getId()), monthlySent(w.getId()));
-    }
-
-    /**
-     * Usage meter: SENT mail this calendar month (local zone) — the number a
-     * plan/quota would bill against. Computed on read; a count over an indexed
-     * join is cheap at this scale and always current.
-     */
-    private long monthlySent(Long workspaceId) {
-        java.time.ZoneId zone = java.time.ZoneId.systemDefault();
-        java.time.Instant monthStart = java.time.LocalDate.now(zone)
-                .withDayOfMonth(1).atStartOfDay(zone).toInstant();
-        return messages.countSentByWorkspaceSince(workspaceId, monthStart);
+        // 사용량(monthlySent)은 청구·한도 공용 수치라 PlanLimits 가 단일 출처다
+        io.github.ahrimjang.mail.core.domain.Plan plan = w.getPlan();
+        return new WorkspaceView(w.getId(), w.getName(), plan.name(),
+                plan.monthlySendLimit(), plan.contactLimit(), plan.memberLimit(), plan.sendRateCap(),
+                w.getSendRatePerSec(), w.getCreatedAt(),
+                users.countByWorkspaceId(w.getId()), planLimits.monthlySent(w.getId()));
     }
 
     private static WorkspaceUserView toUserView(User u) {

@@ -262,10 +262,15 @@ export interface ContactEngagementView {
 export interface WorkspaceView {
   id: number;
   name: string;
-  sendRatePerSec: number | null; // 발송 속도 제한(건/초); null = 무제한
+  plan: string;                    // STARTER | STANDARD | PRO | ENTERPRISE
+  monthlySendLimit: number | null; // 월 발송 한도; null = 무제한
+  contactLimit: number | null;
+  memberLimit: number | null;
+  sendRateCap: number | null;      // 발송 속도 설정의 플랜 상한(건/초)
+  sendRatePerSec: number | null;   // 현재 발송 속도 설정
   createdAt: string;
   memberCount: number;
-  monthlySent: number; // 이번 달 발송 성공 수 — 발송량 과금의 기준 수치
+  monthlySent: number; // 이번 달 발송 성공 수 — 발송량 과금의 청구 수치
 }
 
 export interface WorkspaceUserView {

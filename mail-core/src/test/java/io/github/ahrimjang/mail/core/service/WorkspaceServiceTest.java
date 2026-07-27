@@ -39,11 +39,11 @@ class WorkspaceServiceTest {
     @Mock
     private UserRepository users;
     @Mock
-    private io.github.ahrimjang.mail.core.port.MailMessageRepository messages;
-    @Mock
     private PasswordHasher hasher;
     @Mock
     private WorkspaceContext ctx;
+    @Mock
+    private PlanLimits planLimits;   // mock 기본은 no-op = 한도 여유 상태
 
     @InjectMocks
     private WorkspaceService service;
@@ -52,8 +52,7 @@ class WorkspaceServiceTest {
     void stubContext() {
         lenient().when(ctx.currentWorkspaceId()).thenReturn(WS);
         lenient().when(ctx.isAdmin()).thenReturn(true);
-        lenient().when(messages.countSentByWorkspaceSince(org.mockito.ArgumentMatchers.eq(WS), any()))
-                .thenReturn(1234L);
+        lenient().when(planLimits.monthlySent(WS)).thenReturn(1234L);
     }
 
     private static User member(long id, String email, String role) {
@@ -97,8 +96,36 @@ class WorkspaceServiceTest {
 
         assertThat(view.name()).isEqualTo("에이컴퍼니");
         assertThat(view.sendRatePerSec()).isEqualTo(14);
-        // 과금 기준인 월 발송량은 모든 view에 동봉된다
+        // 과금 기준인 월 발송량과 플랜/한도는 모든 view에 동봉된다
         assertThat(view.monthlySent()).isEqualTo(1234L);
+        assertThat(view.plan()).isEqualTo("STARTER");
+        assertThat(view.monthlySendLimit()).isEqualTo(1_000L);
+    }
+
+    @Test
+    void update_rejectsASendRateAboveThePlanCap() {
+        Workspace ws = Workspace.of("회사");
+        ws.setId(WS);
+        when(workspaces.findById(WS)).thenReturn(Optional.of(ws));
+        org.mockito.Mockito.doThrow(new IllegalArgumentException("발송 속도는 현재 플랜 상한인 초당 5건 이내"))
+                .when(planLimits).assertSendRateWithinCap(WS, 50);
+
+        assertThatThrownBy(() -> service.update(new UpdateWorkspaceRequest("회사", 50)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("플랜 상한");
+        verify(workspaces, never()).save(any());
+    }
+
+    @Test
+    void addMember_isBlockedAtThePlanMemberLimit() {
+        when(users.existsByEmail("op@a.com")).thenReturn(false);
+        org.mockito.Mockito.doThrow(new PlanLimitExceededException("멤버 한도(1명)에 도달"))
+                .when(planLimits).assertMemberAddable(WS);
+
+        assertThatThrownBy(() -> service.addMember(
+                new CreateWorkspaceUserRequest("op@a.com", "pw12345", "운영자", "OPERATOR")))
+                .isInstanceOf(PlanLimitExceededException.class);
+        verify(users, never()).save(any());
     }
 
     @Test

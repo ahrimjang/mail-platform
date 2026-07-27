@@ -57,12 +57,19 @@ class ContactServiceTest {
     private io.github.ahrimjang.mail.core.port.ListUnsubscribeRepository listUnsubscribes;
     @Mock
     private ContactEngagementService engagement;
+    @Mock
+    private PlanLimits planLimits;   // mock 기본은 no-op(한도 여유), 임포트 예산은 null(무제한)
 
     private ContactService service;
 
     @BeforeEach
     void setUp() {
-        service = new ContactService(contacts, lists, suppressions, listUnsubscribes, engagement, ctx);
+        service = new ContactService(contacts, lists, suppressions, listUnsubscribes, engagement, ctx, planLimits);
+        // 주의: Mockito 는 스텁 없는 Long 반환에 null 이 아니라 0을 돌려준다 —
+        // 0은 "수용량 0"으로 읽히므로, 기본을 무제한(null)으로 명시한다.
+        org.mockito.Mockito.lenient()
+                .when(planLimits.remainingContactCapacity(org.mockito.ArgumentMatchers.anyLong()))
+                .thenReturn(null);
     }
 
     /** Makes save(...) behave like a real repository: assigns an id and returns the entity. */
@@ -166,6 +173,37 @@ class ContactServiceTest {
 
         assertThat(result).isEqualTo(new ImportResult(3, 2));
         verify(contacts, times(3)).save(any(Contact.class));
+    }
+
+    @org.junit.jupiter.api.Test
+    void importCsv_stopsAtThePlanContactCapacity_keepingWhatWasAlreadyImported() {
+        stubSaveAssignsIds();
+        when(contacts.findByWorkspaceAndEmail(eq(WS), anyString())).thenReturn(Optional.empty());
+        // 플랜의 남은 수용량 2명 — 3번째 신규부터는 예산 초과
+        when(planLimits.remainingContactCapacity(WS)).thenReturn(2L);
+
+        String csv = """
+                new1@x.com,First,One
+                new2@x.com,Second,Two
+                new3@x.com,Third,Three
+                """;
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.importCsv(csv, null))
+                .isInstanceOf(PlanLimitExceededException.class)
+                .hasMessageContaining("2명은 추가");
+        verify(contacts, times(2)).save(any(Contact.class));   // 예산만큼은 실제로 추가됨
+    }
+
+    @org.junit.jupiter.api.Test
+    void create_isBlockedWhenTheContactLimitIsReached() {
+        when(contacts.existsByWorkspaceAndEmail(WS, "full@x.com")).thenReturn(false);
+        org.mockito.Mockito.doThrow(new PlanLimitExceededException("연락처 한도"))
+                .when(planLimits).assertContactsAddable(WS, 1);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                        service.create(new io.github.ahrimjang.mail.common.ContactRequest("full@x.com", null, null, null)))
+                .isInstanceOf(PlanLimitExceededException.class);
+        verify(contacts, org.mockito.Mockito.never()).save(any(Contact.class));
     }
 
     @Test

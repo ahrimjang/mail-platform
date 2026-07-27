@@ -20,6 +20,10 @@ public class WorkspaceEntity {
     @Column(nullable = false)
     private String name;
 
+    /** 요금 플랜 코드 (Plan enum 이름 — 한도는 코드가 소유). */
+    @Column(nullable = false, length = 16)
+    private String plan;
+
     /** Send throttle in msgs/sec; null = unlimited. */
     @Column
     private Integer sendRatePerSec;
@@ -30,9 +34,10 @@ public class WorkspaceEntity {
     protected WorkspaceEntity() {
     }
 
-    public WorkspaceEntity(Long id, String name, Integer sendRatePerSec, Instant createdAt) {
+    public WorkspaceEntity(Long id, String name, String plan, Integer sendRatePerSec, Instant createdAt) {
         this.id = id;
         this.name = name;
+        this.plan = plan;
         this.sendRatePerSec = sendRatePerSec;
         this.createdAt = createdAt;
     }
@@ -43,6 +48,10 @@ public class WorkspaceEntity {
 
     public String getName() {
         return name;
+    }
+
+    public String getPlan() {
+        return plan;
     }
 
     public Integer getSendRatePerSec() {

@@ -50,11 +50,12 @@ public class CampaignService {
 
     /** Who is acting, for which tenant — resolved by the API adapter per request. */
     private final WorkspaceContext ctx;
+    private final PlanLimits planLimits;
 
     public CampaignService(CampaignRepository campaigns, MailMessageRepository messages, EmailEventRepository events,
                            MailQueue mailQueue, TemplateRepository templates, ContactRepository contacts,
                            ContactListRepository lists,
-                           WorkspaceContext ctx) {
+                           WorkspaceContext ctx, PlanLimits planLimits) {
         this.ctx = ctx;
         this.campaigns = campaigns;
         this.messages = messages;
@@ -63,9 +64,13 @@ public class CampaignService {
         this.templates = templates;
         this.contacts = contacts;
         this.lists = lists;
+        this.planLimits = planLimits;
     }
 
     public CampaignView create(CreateCampaignRequest request) {
+        // 플랜의 월 발송량 한도 — 등록 시점에만 검사한다(발송 중 컷오프 금지,
+        // 진행 중 캠페인은 끝까지). 정책: docs/BILLING-policy.md 4절.
+        planLimits.assertCampaignRegistrationAllowed(ctx.currentWorkspaceId());
         String subject;
         String body;
         if (request.templateId() != null) {

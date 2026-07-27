@@ -5,6 +5,9 @@ import { useAuth } from "../outpace/auth";
 import type { WorkspaceUserView, WorkspaceView } from "../types";
 
 const ROLE_LABEL: Record<string, string> = { ADMIN: "관리자", OPERATOR: "운영자" };
+const PLAN_LABEL: Record<string, string> = {
+  STARTER: "스타터 (무료)", STANDARD: "스탠다드", PRO: "프로", ENTERPRISE: "엔터프라이즈",
+};
 
 function AddMemberModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const [email, setEmail] = useState("");
@@ -193,16 +196,42 @@ export default function WorkspaceSettings() {
       </div>
 
       <div className="op-form-card">
-        <h3 className="op-sect-title">사용량 · 요금</h3>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+          <h3 className="op-sect-title">사용량 · 요금</h3>
+          <span style={{ fontSize: 12.5, fontWeight: 700, padding: "3px 10px", borderRadius: 999,
+                         background: "var(--op-accent-soft, #eef2ff)", color: "var(--op-accent, #4f46e5)" }}>
+            {PLAN_LABEL[workspace?.plan ?? ""] ?? workspace?.plan ?? "—"} 플랜
+          </span>
+        </div>
         <div style={{ display: "flex", alignItems: "baseline", gap: 14, flexWrap: "wrap" }}>
           <span style={{ fontSize: 32, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>
             {(workspace?.monthlySent ?? 0).toLocaleString()}
           </span>
-          <span style={{ fontSize: 13.5, color: "var(--op-muted)" }}>이번 달 발송 성공 (매월 1일 기준 집계)</span>
+          <span style={{ fontSize: 13.5, color: "var(--op-muted)" }}>
+            {workspace?.monthlySendLimit != null
+              ? `/ ${workspace.monthlySendLimit.toLocaleString()}통 · 잔여 ${Math.max(0, workspace.monthlySendLimit - workspace.monthlySent).toLocaleString()}통`
+              : "이번 달 발송 성공 (한도 없음)"}
+          </span>
         </div>
+        {workspace?.monthlySendLimit != null && (
+          <div style={{ marginTop: 10, height: 8, borderRadius: 999, background: "var(--op-line, #e5e7eb)", overflow: "hidden" }}>
+            <div style={{
+              height: "100%", borderRadius: 999,
+              width: `${Math.min(100, (workspace.monthlySent / workspace.monthlySendLimit) * 100)}%`,
+              background: workspace.monthlySent >= workspace.monthlySendLimit
+                ? "var(--op-danger, #dc2626)"
+                : workspace.monthlySent >= workspace.monthlySendLimit * 0.8
+                  ? "var(--op-warn, #d97706)" : "var(--op-accent, #4f46e5)",
+              transition: "width .3s",
+            }} />
+          </div>
+        )}
         <p style={{ margin: "12px 0 0", fontSize: 12.5, color: "var(--op-faint)", lineHeight: 1.6 }}>
           발송 인프라(SMTP/SES·저장소)는 플랫폼이 제공하고, <b>요금은 이 월 발송량 기준으로 청구</b>됩니다.
-          발송량 구간별 단가·플랜 안내는 준비 중이에요.
+          한도에 도달하면 새 캠페인 등록이 잠기고, 진행 중인 캠페인은 끝까지 발송돼요.
+          {workspace?.contactLimit != null && (
+            <> 이 플랜의 그 외 한도: 연락처 {workspace.contactLimit.toLocaleString()}명 · 멤버 {workspace.memberLimit}명.</>
+          )}
         </p>
       </div>
 
@@ -210,12 +239,15 @@ export default function WorkspaceSettings() {
         <h3 className="op-sect-title">발송 설정</h3>
         <div className="op-grid2">
           <label className="op-field" style={{ marginBottom: 0 }}>
-            <span className="op-flabel">발송 속도 제한 (건/초)</span>
+            <span className="op-flabel">
+              발송 속도 (건/초{workspace?.sendRateCap != null ? ` · 플랜 상한 ${workspace.sendRateCap}` : ""})
+            </span>
             <input
               className="op-input"
               type="number"
               min={1}
-              placeholder="비워 두면 무제한"
+              max={workspace?.sendRateCap ?? undefined}
+              placeholder={workspace?.sendRateCap != null ? `1~${workspace.sendRateCap}` : "비워 두면 무제한"}
               value={sendRate}
               onChange={(e) => setSendRate(e.target.value)}
             />
@@ -225,6 +257,7 @@ export default function WorkspaceSettings() {
             <p style={{ margin: "12px 0 0", fontSize: 12.5, color: "var(--op-faint)", lineHeight: 1.6 }}>
               대량 캠페인을 이 속도로 나눠 발송해요. 제한에 걸린 메일은 실패가 아니라
               잠시 대기 후 자동 재시도됩니다.
+              {workspace?.sendRateCap != null && <> 상한을 올리려면 플랜을 업그레이드하세요.</>}
             </p>
           </div>
         </div>
