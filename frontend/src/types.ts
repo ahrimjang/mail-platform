@@ -268,9 +268,19 @@ export interface WorkspaceView {
   memberLimit: number | null;
   sendRateCap: number | null;      // 발송 속도 설정의 플랜 상한(건/초)
   sendRatePerSec: number | null;   // 현재 발송 속도 설정
+  billingRegistered: boolean;      // 결제 카드(빌링키) 등록 여부
   createdAt: string;
   memberCount: number;
   monthlySent: number; // 이번 달 발송 성공 수 — 발송량 과금의 청구 수치
+}
+
+export interface PaymentView {
+  orderId: string;
+  plan: string;
+  amountKrw: number;
+  status: string;            // APPROVED | FAILED
+  failReason: string | null;
+  createdAt: string;
 }
 
 export interface UsageSnapshotView {

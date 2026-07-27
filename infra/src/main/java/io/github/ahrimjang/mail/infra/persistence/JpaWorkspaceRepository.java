@@ -20,7 +20,7 @@ public class JpaWorkspaceRepository implements WorkspaceRepository {
     public Workspace save(Workspace workspace) {
         WorkspaceEntity saved = jpa.save(new WorkspaceEntity(
                 workspace.getId(), workspace.getName(), workspace.getPlan().name(),
-                workspace.getSendRatePerSec(), workspace.getCreatedAt()));
+                workspace.getSendRatePerSec(), workspace.getBillingKey(), workspace.getCreatedAt()));
         return toDomain(saved);
     }
 
@@ -35,6 +35,7 @@ public class JpaWorkspaceRepository implements WorkspaceRepository {
         w.setName(e.getName());
         w.setPlan(io.github.ahrimjang.mail.core.domain.Plan.valueOf(e.getPlan()));
         w.setSendRatePerSec(e.getSendRatePerSec());
+        w.setBillingKey(e.getBillingKey());
         w.setCreatedAt(e.getCreatedAt());
         return w;
     }

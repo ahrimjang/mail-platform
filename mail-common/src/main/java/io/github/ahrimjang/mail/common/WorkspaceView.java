@@ -16,6 +16,7 @@ public record WorkspaceView(
         Integer memberLimit,
         Integer sendRateCap,
         Integer sendRatePerSec,
+        boolean billingRegistered,
         Instant createdAt,
         long memberCount,
         long monthlySent

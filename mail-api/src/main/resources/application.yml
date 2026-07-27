@@ -62,6 +62,11 @@ app:
   uploads:
     # Local template-image storage; served publicly at /uploads/**.
     dir: ${APP_UPLOADS_DIR:uploads}
+  toss:
+    # 토스페이먼츠 빌링 — 기본값은 토스 문서의 공용 테스트 키(실결제 없음).
+    # 운영 전 개발자센터에서 발급한 키로 교체. 시크릿 키는 서버 밖으로 절대 안 나감.
+    client-key: ${TOSS_CLIENT_KEY:test_ck_docs_Ovk5rk1EwkEbP0W43n07xlzm}
+    secret-key: ${TOSS_SECRET_KEY:test_sk_docs_OaPz8L5KdmQXkzRz3y47BMw6}
 
 mail:
   sender:

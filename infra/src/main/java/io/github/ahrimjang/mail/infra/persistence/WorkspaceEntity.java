@@ -28,17 +28,23 @@ public class WorkspaceEntity {
     @Column
     private Integer sendRatePerSec;
 
+    /** PG 빌링키 — 카드 등록 시 발급 (V23). */
+    @Column(length = 255)
+    private String billingKey;
+
     @Column(nullable = false)
     private Instant createdAt;
 
     protected WorkspaceEntity() {
     }
 
-    public WorkspaceEntity(Long id, String name, String plan, Integer sendRatePerSec, Instant createdAt) {
+    public WorkspaceEntity(Long id, String name, String plan, Integer sendRatePerSec,
+                           String billingKey, Instant createdAt) {
         this.id = id;
         this.name = name;
         this.plan = plan;
         this.sendRatePerSec = sendRatePerSec;
+        this.billingKey = billingKey;
         this.createdAt = createdAt;
     }
 
@@ -56,6 +62,10 @@ public class WorkspaceEntity {
 
     public Integer getSendRatePerSec() {
         return sendRatePerSec;
+    }
+
+    public String getBillingKey() {
+        return billingKey;
     }
 
     public Instant getCreatedAt() {

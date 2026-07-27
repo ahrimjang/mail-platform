@@ -17,6 +17,8 @@ public class Workspace {
     private Plan plan = Plan.STARTER;
     /** Send throttle in msgs/sec; null = unlimited. */
     private Integer sendRatePerSec;
+    /** PG 빌링키 — 카드 등록 시 발급. null = 결제 수단 미등록(유료 플랜 전환 불가). */
+    private String billingKey;
     private Instant createdAt;
 
     public Workspace() {
@@ -55,6 +57,14 @@ public class Workspace {
 
     public void setName(String name) {
         this.name = name;
+    }
+
+    public String getBillingKey() {
+        return billingKey;
+    }
+
+    public void setBillingKey(String billingKey) {
+        this.billingKey = billingKey;
     }
 
     public Integer getSendRatePerSec() {

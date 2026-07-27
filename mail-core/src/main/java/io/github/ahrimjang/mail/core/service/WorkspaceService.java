@@ -135,7 +135,7 @@ public class WorkspaceService {
         io.github.ahrimjang.mail.core.domain.Plan plan = w.getPlan();
         return new WorkspaceView(w.getId(), w.getName(), plan.name(),
                 plan.monthlySendLimit(), plan.contactLimit(), plan.memberLimit(), plan.sendRateCap(),
-                w.getSendRatePerSec(), w.getCreatedAt(),
+                w.getSendRatePerSec(), w.getBillingKey() != null, w.getCreatedAt(),
                 users.countByWorkspaceId(w.getId()), planLimits.monthlySent(w.getId()));
     }
 

@@ -2,7 +2,22 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import Portal from "../components/Portal";
 import { useAuth } from "../outpace/auth";
-import type { UsageSnapshotView, WorkspaceUserView, WorkspaceView } from "../types";
+import type { PaymentView, UsageSnapshotView, WorkspaceUserView, WorkspaceView } from "../types";
+
+/* 토스 빌링 위젯 SDK 를 필요할 때만 로드 — 카드 등록 버튼을 누를 때 한 번. */
+declare global {
+  interface Window { TossPayments?: (clientKey: string) => { requestBillingAuth: (method: string, opts: Record<string, string>) => void } }
+}
+function loadTossSdk(): Promise<void> {
+  if (window.TossPayments) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "https://js.tosspayments.com/v1/payment";
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error("toss sdk load failed"));
+    document.head.appendChild(s);
+  });
+}
 
 const ROLE_LABEL: Record<string, string> = { ADMIN: "관리자", OPERATOR: "운영자" };
 const PLAN_LABEL: Record<string, string> = {
@@ -81,6 +96,9 @@ export default function WorkspaceSettings() {
   const [name, setName] = useState("");
   const [sendRate, setSendRate] = useState(""); // 건/초 텍스트; "" = 무제한
   const [usageHistory, setUsageHistory] = useState<UsageSnapshotView[]>([]);
+  const [paymentHistory, setPaymentHistory] = useState<PaymentView[]>([]);
+  const [planChoice, setPlanChoice] = useState("");
+  const [billingBusy, setBillingBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -99,10 +117,60 @@ export default function WorkspaceSettings() {
       if (uRes.ok) setMembers(await uRes.json());
       const hRes = await api("/api/workspace/usage-history");
       if (hRes.ok) setUsageHistory(await hRes.json());
+      const pRes = await api("/api/billing/payments");
+      if (pRes.ok) setPaymentHistory(await pRes.json());
     } catch { /* transient */ }
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
+
+  // 카드 등록 위젯이 successUrl 로 돌아온 경우 — authKey 를 빌링키로 교환
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const authKey = params.get("authKey");
+    if (params.get("billing") !== "card" || !authKey) return;
+    window.history.replaceState(null, "", "/settings");   // 새로고침 재실행 방지
+    (async () => {
+      const res = await api("/api/billing/card", { method: "POST", body: JSON.stringify({ authKey }) });
+      if (res.ok) { setSavedAt(Date.now()); refresh(); }
+      else setError((await res.json().catch(() => ({}))).error ?? "카드 등록에 실패했습니다.");
+    })();
+  }, [refresh]);
+
+  async function registerCard() {
+    setError(null);
+    setBillingBusy(true);
+    try {
+      const cfgRes = await api("/api/billing/config");
+      if (!cfgRes.ok) throw new Error();
+      const cfg = await cfgRes.json();
+      await loadTossSdk();
+      // 위젯이 카드 인증 후 successUrl 로 authKey 를 붙여 돌아온다 (위 useEffect 가 마무리)
+      window.TossPayments!(cfg.clientKey).requestBillingAuth("카드", {
+        customerKey: cfg.customerKey,
+        successUrl: `${window.location.origin}/settings?billing=card`,
+        failUrl: `${window.location.origin}/settings?billing=fail`,
+      });
+    } catch {
+      setError("결제 위젯을 여는 데 실패했습니다.");
+      setBillingBusy(false);
+    }
+  }
+
+  async function changePlan() {
+    if (!planChoice) return;
+    setError(null);
+    setBillingBusy(true);
+    try {
+      const res = await api("/api/billing/plan", { method: "POST", body: JSON.stringify({ plan: planChoice }) });
+      if (res.ok) { setPlanChoice(""); refresh(); }
+      else setError((await res.json().catch(() => ({}))).error ?? "플랜 변경에 실패했습니다.");
+    } catch {
+      setError("요청 중 오류가 발생했습니다.");
+    } finally {
+      setBillingBusy(false);
+    }
+  }
 
   async function saveSettings() {
     setSaving(true);
@@ -236,6 +304,43 @@ export default function WorkspaceSettings() {
             <> 이 플랜의 그 외 한도: 연락처 {workspace.contactLimit.toLocaleString()}명 · 멤버 {workspace.memberLimit}명.</>
           )}
         </p>
+        <div style={{ marginTop: 16, borderTop: "1px solid var(--op-line, #e5e7eb)", paddingTop: 12 }}>
+          <span className="op-flabel">플랜 변경</span>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginTop: 6 }}>
+            <select className="op-input" style={{ maxWidth: 220, height: 38, fontSize: 13.5 }}
+                    value={planChoice} onChange={(e) => setPlanChoice(e.target.value)}>
+              <option value="">플랜 선택…</option>
+              {["STARTER", "STANDARD", "PRO"].filter((p) => p !== workspace?.plan).map((p) => (
+                <option key={p} value={p}>{PLAN_LABEL[p]}{p === "STANDARD" ? " — 월 9,900원" : p === "PRO" ? " — 월 29,000원" : ""}</option>
+              ))}
+            </select>
+            <button className="op-btn op-btn-sm" disabled={billingBusy || !planChoice} onClick={changePlan}>
+              {billingBusy ? "처리 중…" : "변경 (상향은 즉시 결제)"}
+            </button>
+            <button className="op-btn op-btn-sm op-btn-ghost" disabled={billingBusy} onClick={registerCard}>
+              {workspace?.billingRegistered ? "결제 카드 재등록" : "결제 카드 등록"}
+            </button>
+            {workspace?.billingRegistered && (
+              <span className="faint" style={{ fontSize: 12.5 }}>카드 등록됨 ✓</span>
+            )}
+          </div>
+        </div>
+        {paymentHistory.length > 0 && (
+          <div style={{ marginTop: 14 }}>
+            <span className="op-flabel">결제 이력</span>
+            {paymentHistory.map((p) => (
+              <div key={p.orderId}
+                   style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "6px 0",
+                            fontVariantNumeric: "tabular-nums" }}>
+                <span className="faint">{new Date(p.createdAt).toLocaleDateString("ko-KR")}</span>
+                <span className="faint">{PLAN_LABEL[p.plan] ?? p.plan}</span>
+                <span className={p.status === "APPROVED" ? "strong" : "error"}>
+                  {p.status === "APPROVED" ? `₩${p.amountKrw.toLocaleString()} 승인` : `실패 — ${p.failReason ?? ""}`}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
         {usageHistory.length > 0 && (
           <div style={{ marginTop: 16, borderTop: "1px solid var(--op-line, #e5e7eb)", paddingTop: 12 }}>
             <span className="op-flabel">청구 이력 (월 마감 시점에 고정된 수치)</span>
