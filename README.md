@@ -98,7 +98,7 @@ POST /api/campaigns ──▶ PENDING 행 생성 + RabbitMQ 발행 ──▶ 201
 | **워커 수평 확장의 정확성** | 원자적 조건부 UPDATE claim (PENDING→SENDING) | — | 동시 소비자 12개에서 **이중발송 0** (MailHog 수신 = 발송 수 정확 일치) | 정합성 유지 |
 | **noisy neighbor** (A사 대량 발송 뒤에 B사가 줄 섬) | 워크스페이스별 토큰버킷(Postgres 원자적 UPDATE) + TTL 파킹 큐 | 공유 큐 순서대로 대기 | rate=3 설정 시 실효 **3.0 msg/s** 준수, 그 백로그가 도는 중 무제한 테넌트 10건 **0.3초** 완료 | 테넌트 격리 |
 
-측정이 잡아준 것들: "SMTP가 병목일 것"이라는 추측이 틀렸음(MailHog 제거해도 +20%뿐 — 진짜 병목은 메시지당 DB 왕복), 워커 2대 증설(1.56×)보다 동시성 상향(7.7×)이 싼 레버라는 것, 그리고 단위 테스트가 놓친 무제한 테넌트 NPE까지 — 전부 재측정 단계에서 나왔습니다.
+측정이 잡아준 것들: "SMTP가 병목일 것"이라는 추측이 틀렸음(MailHog 제거해도 +20%뿐 — 진짜 병목은 메시지당 DB 왕복), 워커 2대 증설(1.56×)보다 동시성 상향(7.7×)이 싼 레버라는 것, 그리고 단위 테스트가 놓친 무제한 테넌트 NPE까지 — 전부 재측정 단계에서 나왔습니다. 이 여정의 전체 회고(틀린 예측·회수한 결정 포함): **[docs/RETRO-scaling.md](docs/RETRO-scaling.md)**
 
 단계별 구현 해설(한국어): **[docs/logic/](docs/logic/README.md)** · 바운스 설계: [docs/bounce-webhook-design.md](docs/bounce-webhook-design.md)
 
@@ -120,6 +120,17 @@ cd frontend && npm install && npm run dev   # http://localhost:5173
 # 빌드/테스트
 ./gradlew build
 ```
+
+### 프로덕션 스택 (전부 컨테이너)
+
+개발용과 달리 앱까지 컨테이너로 올리는 단일 파일 — 서버에서는 이 한 줄이 배포의 전부입니다:
+
+```bash
+docker compose -f docker-compose.prod.yml up -d --build
+# → http://localhost (콘솔+API, nginx 단일 오리진) · :3000 Grafana(admin) · :8088 Kafka UI
+```
+
+가입→발송→오픈 추적→Grafana까지 컨테이너만으로 완주하는 것을 검증했습니다(시크릿·SES 전환은 [.env.example](.env.example) 참고). 남은 배포 절차는 서버에서 clone 후 위 명령 + 도메인/TLS 연결뿐입니다.
 
 - 발송된 메일 확인: **MailHog** http://localhost:8025 · 큐 상태: RabbitMQ UI http://localhost:15672 (guest/guest)
 - 메트릭: **Grafana** http://localhost:3000/d/mail-platform (익명 열람) · Prometheus http://localhost:9090
@@ -146,7 +157,21 @@ curl -H "Authorization: Bearer $TOKEN" "localhost:8080/api/campaigns/1/log"
 
 응답의 `total/pending/sent/failed/bounced/suppressed` + `opened/clicked`로 진행·참여를 확인합니다.
 
-## 다음 단계
+## 알려진 한계와 의도된 범위
 
-- 실발송 전환(AWS SES) — **SNS 바운스 웹훅 코드는 완료**(서명검증·구독확인·파서), 남은 것은 AWS 콘솔 준비(도메인 검증·샌드박스 해제·SNS 구독): [docs/TODO-ses-sns.md](docs/TODO-ses-sns.md)
-- 대용량 처리 — 부하 측정·워커 수평 확장·fan-out 병목 제거·테넌트 throttling·Grafana까지 완료, 남은 것은 suppression 블룸필터와 산출물 정리: [docs/ROADMAP-scale.md](docs/ROADMAP-scale.md)
+미완이 아니라 **가치 대비 비용으로 판단해 범위 밖에 둔 것들**입니다 — 각각 판단 근거가 문서에 있습니다.
+
+| 범위 밖 | 판단 | 근거 문서 |
+|---|---|---|
+| PG 결제(빌링키·청구서·dunning) | 정책 설계로 갈음 — 플랜·한도·초과·환불 정책은 완성, 연동 코드는 POC 가치가 낮음 | [BILLING-policy.md](docs/BILLING-policy.md) |
+| 계정 수명주기(초대·비밀번호 재설정·비활성화) | 표준 플로우라 설계 리스크가 없음 — 로그인 시도 제한 등 보안 실위험만 구현 | [REVIEW-product.md](docs/REVIEW-product.md) 1절 |
+| SES 실연동의 AWS 콘솔 절차 | 코드(서명검증·구독확인·파서)는 완료 — 도메인·샌드박스는 계정 준비 사항 | [TODO-ses-sns.md](docs/TODO-ses-sns.md) |
+| suppression 블룸필터, IDENTITY→시퀀스 등 | 다음 병목 후보로 로드맵에 조건과 함께 기록 | [ROADMAP-scale.md](docs/ROADMAP-scale.md) Tier 2·3 |
+| 메시지 전이 이력 로그 | **만들었다 회수** — 행 2배·핫패스 비용이 현 규모에선 가치 초과. 재도입 조건 명시 | [RETRO-scaling.md](docs/RETRO-scaling.md) 5절 |
+| 봇 오픈 필터, 클릭 리다이렉트 서명 | 업계 공통 이슈로 인지·문서화 | [REVIEW-product.md](docs/REVIEW-product.md) 6절 |
+
+## 문서 안내
+
+- **아키텍처·구현 워크스루 12편**(한국어): [docs/logic/](docs/logic/README.md) — 인증부터 메트릭까지, 실제 코드 인용 기반
+- **확장 회고**(병목→해법→결과, 틀린 예측 포함): [docs/RETRO-scaling.md](docs/RETRO-scaling.md)
+- **기획 검토 체크리스트**: [docs/REVIEW-product.md](docs/REVIEW-product.md) · **작업 로그**: [docs/worklog/](docs/worklog)

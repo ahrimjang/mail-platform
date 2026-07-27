@@ -99,9 +99,10 @@ BYO(위 결정)를 번복한다: **발송(SMTP/SES)·저장(S3) 인프라는 플
 남는 과금 축 과제: 발송량 구간별 단가/플랜(quota) — [REVIEW-product.md](REVIEW-product.md) 7절.
 
 ## 산출물
-1. **README에 아키텍처 다이어그램 + 확장성 숫자표(before/after)**
-2. **병목 발견 → 해법 → 결과를 정리한 짧은 글** (docs/logic 해설 습관의 연장)
-3. **배포 링크 + Grafana 대시보드 스크린샷**
+1. ~~README에 아키텍처 다이어그램 + 확장성 숫자표(before/after)~~ — *07-23 완료* (mermaid + 실측표)
+2. ~~병목 발견 → 해법 → 결과를 정리한 짧은 글~~ — *07-27 완료:* [RETRO-scaling.md](RETRO-scaling.md)
+3. **배포 링크 + Grafana 대시보드 스크린샷** — 컨테이너화·프로드 compose 완주 검증까지 완료,
+   남은 것은 도메인·서버(선택 — README에 배포 절차 명시로 갈음 가능)
 
 ## 권장 순서
 ① 부하테스트로 기준선 → ② 워커 수평확장 검증 → ③ fan-out 병목 제거
