@@ -1,6 +1,6 @@
-# mail-platform (POC)
+# Outpace — 대용량 이메일 발송 플랫폼
 
-대용량 이메일 발송 플랫폼의 MVP/POC. 핵심은 **API가 즉시 큐에 적재하고 반환하면, 별도 워커가 큐를 비동기로 드레인**하는 구조입니다 — 수신자 수와 무관하게 API 응답이 일정합니다.
+멀티테넌트 이메일 캠페인 플랫폼. 핵심은 **API가 즉시 큐에 적재하고 반환하면, 별도 워커가 큐를 비동기로 드레인**하는 구조입니다 — 수신자 수와 무관하게 API 응답이 일정합니다.
 
 ![콘솔 대시보드 — 실시간 발송 진행률, 진행 중 캠페인의 오픈/클릭 집계, 14일 발송 추이](docs/console-dashboard.png)
 
@@ -157,14 +157,14 @@ curl -H "Authorization: Bearer $TOKEN" "localhost:8080/api/campaigns/1/log"
 
 응답의 `total/pending/sent/failed/bounced/suppressed` + `opened/clicked`로 진행·참여를 확인합니다.
 
-## 알려진 한계와 의도된 범위
+## 현재 범위와 다음 단계
 
-미완이 아니라 **가치 대비 비용으로 판단해 범위 밖에 둔 것들**입니다 — 각각 판단 근거가 문서에 있습니다.
+기능별 상태와 판단 근거입니다 — "안 한 것"에도 각각 결정 기록이 있습니다.
 
-| 범위 밖 | 판단 | 근거 문서 |
+| 항목 | 상태 | 근거 문서 |
 |---|---|---|
-| PG 결제(빌링키·청구서·dunning) | 정책 설계로 갈음 — 플랜·한도·초과·환불 정책은 완성, 연동 코드는 POC 가치가 낮음 | [BILLING-policy.md](docs/BILLING-policy.md) |
-| 계정 수명주기(초대·비밀번호 재설정·비활성화) | 표준 플로우라 설계 리스크가 없음 — 로그인 시도 제한 등 보안 실위험만 구현 | [REVIEW-product.md](docs/REVIEW-product.md) 1절 |
+| PG 결제(빌링키·청구서·dunning) | 정책 설계 완료(플랜·한도·초과·환불) — **운영 개시 단계에서 연동** | [BILLING-policy.md](docs/BILLING-policy.md) |
+| 계정 수명주기(초대·비밀번호 재설정·비활성화) | 표준 플로우 — 보안 실위험(로그인 시도 제한)부터 구현, 나머지는 운영 개시 전 순차 | [REVIEW-product.md](docs/REVIEW-product.md) 1절 |
 | SES 실연동의 AWS 콘솔 절차 | 코드(서명검증·구독확인·파서)는 완료 — 도메인·샌드박스는 계정 준비 사항 | [TODO-ses-sns.md](docs/TODO-ses-sns.md) |
 | suppression 블룸필터, IDENTITY→시퀀스 등 | 다음 병목 후보로 로드맵에 조건과 함께 기록 | [ROADMAP-scale.md](docs/ROADMAP-scale.md) Tier 2·3 |
 | 메시지 전이 이력 로그 | **만들었다 회수** — 행 2배·핫패스 비용이 현 규모에선 가치 초과. 재도입 조건 명시 | [RETRO-scaling.md](docs/RETRO-scaling.md) 5절 |
@@ -174,4 +174,4 @@ curl -H "Authorization: Bearer $TOKEN" "localhost:8080/api/campaigns/1/log"
 
 - **아키텍처·구현 워크스루 12편**(한국어): [docs/logic/](docs/logic/README.md) — 인증부터 메트릭까지, 실제 코드 인용 기반
 - **확장 회고**(병목→해법→결과, 틀린 예측 포함): [docs/RETRO-scaling.md](docs/RETRO-scaling.md)
-- **기획 검토 체크리스트**: [docs/REVIEW-product.md](docs/REVIEW-product.md) · **작업 로그**: [docs/worklog/](docs/worklog)
+- **기획 검토 체크리스트**: [docs/REVIEW-product.md](docs/REVIEW-product.md) · **요금 정책**: [docs/BILLING-policy.md](docs/BILLING-policy.md) · **작업 로그**: [docs/worklog/](docs/worklog)
