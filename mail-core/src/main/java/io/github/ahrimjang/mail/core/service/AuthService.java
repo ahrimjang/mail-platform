@@ -27,13 +27,15 @@ public class AuthService {
     private final WorkspaceRepository workspaces;
     private final PasswordHasher hasher;
     private final TokenService tokens;
+    private final LoginAttemptGuard attempts;
 
     public AuthService(UserRepository users, WorkspaceRepository workspaces,
-                       PasswordHasher hasher, TokenService tokens) {
+                       PasswordHasher hasher, TokenService tokens, LoginAttemptGuard attempts) {
         this.users = users;
         this.workspaces = workspaces;
         this.hasher = hasher;
         this.tokens = tokens;
+        this.attempts = attempts;
     }
 
     public AuthResponse signup(SignupRequest r) {
@@ -62,11 +64,18 @@ public class AuthService {
         return new AuthResponse(token, r.email(), r.displayName(), workspace.getName(), saved.getRole());
     }
 
-    public AuthResponse login(LoginRequest r) {
+    /**
+     * @param clientIp 브루트포스 잠금의 IP 축 키 (프록시 뒤에서는 X-Forwarded-For 해석값)
+     */
+    public AuthResponse login(LoginRequest r, String clientIp) {
+        // 잠긴 계정/IP 는 비밀번호 검증(BCrypt 비용)까지 가지 않고 여기서 끊는다
+        attempts.checkAllowed(r.email(), clientIp);
         User user = users.findByEmail(r.email()).orElse(null);
         if (user == null || !hasher.matches(r.password(), user.getPasswordHash())) {
+            attempts.onFailure(r.email(), clientIp);
             throw new IllegalArgumentException("invalid email or password");
         }
+        attempts.onSuccess(r.email());
         String workspaceName = workspaces.findById(user.getWorkspaceId())
                 .map(Workspace::getName)
                 .orElse(null);

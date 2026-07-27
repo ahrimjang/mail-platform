@@ -50,11 +50,14 @@ class AuthServiceTest {
     @Mock
     private io.github.ahrimjang.mail.core.port.WorkspaceRepository workspaces;
 
+    private LoginAttemptGuard attempts;
+
     private AuthService service;
 
     @BeforeEach
     void setUp() {
-        service = new AuthService(users, workspaces, hasher, tokens);
+        attempts = new LoginAttemptGuard();   // 실물 사용 — 잠금 상호작용까지 함께 검증
+        service = new AuthService(users, workspaces, hasher, tokens, attempts);
     }
 
     @BeforeEach
@@ -104,6 +107,8 @@ class AuthServiceTest {
         verify(users, never()).save(any());
     }
 
+    private static final String IP = "203.0.113.7";
+
     @Test
     void login_withCorrectPasswordReturnsIssuedToken() {
         User user = User.register("me@x.com", "stored-hash", "Me");
@@ -111,7 +116,7 @@ class AuthServiceTest {
         when(hasher.matches("raw-pw", "stored-hash")).thenReturn(true);
         when(tokens.issue(user)).thenReturn("jwt-token");
 
-        AuthResponse response = service.login(new LoginRequest("me@x.com", "raw-pw"));
+        AuthResponse response = service.login(new LoginRequest("me@x.com", "raw-pw"), IP);
 
         assertThat(response).isEqualTo(new AuthResponse("jwt-token", "me@x.com", "Me", null, null));
     }
@@ -122,7 +127,7 @@ class AuthServiceTest {
         when(users.findByEmail("me@x.com")).thenReturn(Optional.of(user));
         when(hasher.matches("wrong-pw", "stored-hash")).thenReturn(false);
 
-        assertThatThrownBy(() -> service.login(new LoginRequest("me@x.com", "wrong-pw")))
+        assertThatThrownBy(() -> service.login(new LoginRequest("me@x.com", "wrong-pw"), IP))
                 .isInstanceOf(IllegalArgumentException.class);
         verify(tokens, never()).issue(any());
     }
@@ -131,8 +136,47 @@ class AuthServiceTest {
     void login_rejectsUnknownEmail() {
         when(users.findByEmail("ghost@x.com")).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.login(new LoginRequest("ghost@x.com", "pw")))
+        assertThatThrownBy(() -> service.login(new LoginRequest("ghost@x.com", "pw"), IP))
                 .isInstanceOf(IllegalArgumentException.class);
         verify(tokens, never()).issue(any());
+    }
+
+    @Test
+    void login_locksTheAccountAfterRepeatedFailures_withoutConsultingThePasswordHasher() {
+        User user = User.register("me@x.com", "stored-hash", "Me");
+        when(users.findByEmail("me@x.com")).thenReturn(Optional.of(user));
+        when(hasher.matches(any(), any())).thenReturn(false);
+
+        for (int i = 0; i < 5; i++) {
+            assertThatThrownBy(() -> service.login(new LoginRequest("me@x.com", "wrong"), IP))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+
+        // 6번째부터는 잠금 — BCrypt 비용(hasher)에 도달하기 전에 429 계열 예외로 끊긴다
+        org.mockito.Mockito.clearInvocations(hasher);
+        assertThatThrownBy(() -> service.login(new LoginRequest("me@x.com", "wrong"), IP))
+                .isInstanceOf(TooManyLoginAttemptsException.class);
+        verify(hasher, never()).matches(any(), any());
+    }
+
+    @Test
+    void login_successResetsTheFailureCount() {
+        User user = User.register("me@x.com", "stored-hash", "Me");
+        when(users.findByEmail("me@x.com")).thenReturn(Optional.of(user));
+        when(hasher.matches("wrong", "stored-hash")).thenReturn(false);
+        when(hasher.matches("right", "stored-hash")).thenReturn(true);
+        when(tokens.issue(user)).thenReturn("jwt");
+
+        for (int i = 0; i < 4; i++) {
+            assertThatThrownBy(() -> service.login(new LoginRequest("me@x.com", "wrong"), IP))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+        service.login(new LoginRequest("me@x.com", "right"), IP);   // 성공이 카운트를 지움
+
+        // 다시 4번 틀려도 잠기지 않는다 (연속 실패가 리셋됐으므로)
+        for (int i = 0; i < 4; i++) {
+            assertThatThrownBy(() -> service.login(new LoginRequest("me@x.com", "wrong"), IP))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
     }
 }
