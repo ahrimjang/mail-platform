@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import Portal from "../components/Portal";
 import { useAuth } from "../outpace/auth";
-import type { WorkspaceUserView, WorkspaceView } from "../types";
+import type { UsageSnapshotView, WorkspaceUserView, WorkspaceView } from "../types";
 
 const ROLE_LABEL: Record<string, string> = { ADMIN: "관리자", OPERATOR: "운영자" };
 const PLAN_LABEL: Record<string, string> = {
@@ -80,6 +80,7 @@ export default function WorkspaceSettings() {
   const [members, setMembers] = useState<WorkspaceUserView[]>([]);
   const [name, setName] = useState("");
   const [sendRate, setSendRate] = useState(""); // 건/초 텍스트; "" = 무제한
+  const [usageHistory, setUsageHistory] = useState<UsageSnapshotView[]>([]);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -96,6 +97,8 @@ export default function WorkspaceSettings() {
       }
       const uRes = await api("/api/workspace/users");
       if (uRes.ok) setMembers(await uRes.json());
+      const hRes = await api("/api/workspace/usage-history");
+      if (hRes.ok) setUsageHistory(await hRes.json());
     } catch { /* transient */ }
   }, []);
 
@@ -233,6 +236,22 @@ export default function WorkspaceSettings() {
             <> 이 플랜의 그 외 한도: 연락처 {workspace.contactLimit.toLocaleString()}명 · 멤버 {workspace.memberLimit}명.</>
           )}
         </p>
+        {usageHistory.length > 0 && (
+          <div style={{ marginTop: 16, borderTop: "1px solid var(--op-line, #e5e7eb)", paddingTop: 12 }}>
+            <span className="op-flabel">청구 이력 (월 마감 시점에 고정된 수치)</span>
+            {usageHistory.map((h) => (
+              <div key={h.periodMonth}
+                   style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "6px 0",
+                            fontVariantNumeric: "tabular-nums" }}>
+                <span className="strong">{h.periodMonth}</span>
+                <span className="faint">{h.sentCount.toLocaleString()}통 · {PLAN_LABEL[h.plan] ?? h.plan}</span>
+                <span className="strong">
+                  {h.amountKrw != null ? `₩${h.amountKrw.toLocaleString()}` : "협의"}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="op-form-card">

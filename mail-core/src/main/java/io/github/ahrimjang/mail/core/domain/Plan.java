@@ -8,21 +8,29 @@ package io.github.ahrimjang.mail.core.domain;
  */
 public enum Plan {
 
-    STARTER(1_000L, 500L, 1, 5),
-    STANDARD(10_000L, 5_000L, 3, 20),
-    PRO(50_000L, 50_000L, 10, 50),
-    ENTERPRISE(null, null, null, null);
+    STARTER(1_000L, 500L, 1, 5, 0),
+    STANDARD(10_000L, 5_000L, 3, 20, 9_900),
+    PRO(50_000L, 50_000L, 10, 50, 29_000),
+    ENTERPRISE(null, null, null, null, null);
 
     private final Long monthlySendLimit;
     private final Long contactLimit;
     private final Integer memberLimit;
     private final Integer sendRateCap;
+    private final Integer monthlyPriceKrw;
 
-    Plan(Long monthlySendLimit, Long contactLimit, Integer memberLimit, Integer sendRateCap) {
+    Plan(Long monthlySendLimit, Long contactLimit, Integer memberLimit, Integer sendRateCap,
+         Integer monthlyPriceKrw) {
         this.monthlySendLimit = monthlySendLimit;
         this.contactLimit = contactLimit;
         this.memberLimit = memberLimit;
         this.sendRateCap = sendRateCap;
+        this.monthlyPriceKrw = monthlyPriceKrw;
+    }
+
+    /** 월정액(원) — 구간 월정액 모델이라 청구액은 이 값 그대로. null = 협의(엔터프라이즈). */
+    public Integer monthlyPriceKrw() {
+        return monthlyPriceKrw;
     }
 
     /** 월 발송(SENT) 한도 — 도달 시 신규 캠페인 등록이 차단된다. null = 무제한. */

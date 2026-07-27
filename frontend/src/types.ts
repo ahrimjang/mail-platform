@@ -273,6 +273,14 @@ export interface WorkspaceView {
   monthlySent: number; // 이번 달 발송 성공 수 — 발송량 과금의 청구 수치
 }
 
+export interface UsageSnapshotView {
+  periodMonth: string;      // "2026-06"
+  sentCount: number;
+  plan: string;
+  amountKrw: number | null; // 그 달 플랜 월정액; null = 협의
+  capturedAt: string;
+}
+
 export interface WorkspaceUserView {
   id: number;
   email: string;

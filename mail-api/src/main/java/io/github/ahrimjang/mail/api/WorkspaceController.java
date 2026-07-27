@@ -31,9 +31,18 @@ import java.util.NoSuchElementException;
 public class WorkspaceController {
 
     private final WorkspaceService workspace;
+    private final io.github.ahrimjang.mail.core.service.UsageSnapshotService usageSnapshots;
 
-    public WorkspaceController(WorkspaceService workspace) {
+    public WorkspaceController(WorkspaceService workspace,
+                               io.github.ahrimjang.mail.core.service.UsageSnapshotService usageSnapshots) {
         this.workspace = workspace;
+        this.usageSnapshots = usageSnapshots;
+    }
+
+    /** 월 마감 청구 이력 — 마감 시점에 고정된 사용량/플랜/청구액 (ADMIN). */
+    @GetMapping("/usage-history")
+    public List<io.github.ahrimjang.mail.common.UsageSnapshotView> usageHistory() {
+        return usageSnapshots.history();
     }
 
     /** The acting user's workspace (any member). */
