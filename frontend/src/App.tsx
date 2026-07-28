@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./outpace/auth";
 import AppShell from "./components/AppShell";
 import Login from "./pages/Login";
@@ -16,6 +16,11 @@ import EmailEditor from "./pages/EmailEditor";
 import TextEditor from "./pages/TextEditor";
 import HtmlEditor from "./pages/HtmlEditor";
 import Pricing from "./pages/Pricing";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
+import Landing from "./pages/Landing";
+import Privacy from "./pages/Privacy";
+import Terms from "./pages/Terms";
 
 /* Gate: send unauthenticated users to /login; render children otherwise. */
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -29,6 +34,14 @@ function AuthOnly({ children }: { children: React.ReactNode }) {
   return token ? <Navigate to="/" replace /> : <>{children}</>;
 }
 
+/* 루트 게이트: 로그인 상태면 콘솔 셸, 아니면 "/"에서만 소개 랜딩을 보여주고
+   그 외 콘솔 경로는 로그인으로 보낸다. */
+function ShellGate() {
+  const { token } = useAuth();
+  const { pathname } = useLocation();
+  if (token) return <AppShell />;
+  return pathname === "/" ? <Landing /> : <Navigate to="/login" replace />;
+}
 function AppRoutes() {
   return (
     <Routes>
@@ -36,16 +49,15 @@ function AppRoutes() {
       <Route path="/signup" element={<AuthOnly><Signup /></AuthOnly>} />
       {/* 요금제: 가입 전 방문자도 보는 공개 페이지 — 게이트 없음 */}
       <Route path="/pricing" element={<Pricing />} />
+      {/* 비밀번호 재설정: 메일 링크로 진입하므로 게이트 없음 */}
+      <Route path="/forgot-password" element={<AuthOnly><ForgotPassword /></AuthOnly>} />
+      <Route path="/reset-password" element={<ResetPassword />} />
+      {/* 약관류 공개 문서 — 게이트 없음 */}
+      <Route path="/privacy" element={<Privacy />} />
+      <Route path="/terms" element={<Terms />} />
 
-      {/* App shell (top nav) wraps the primary screens. */}
-      <Route
-        path="/"
-        element={
-          <RequireAuth>
-            <AppShell />
-          </RequireAuth>
-        }
-      >
+      {/* App shell (top nav) wraps the primary screens. 비로그인 "/"는 소개 랜딩. */}
+      <Route path="/" element={<ShellGate />}>
         <Route index element={<Dashboard />} />
         <Route path="campaigns" element={<Campaigns />} />
         <Route path="campaigns/new" element={<NewCampaign />} />

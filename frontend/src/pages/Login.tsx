@@ -68,7 +68,7 @@ export default function Login() {
             />
           </label>
           <div className="op-forgot">
-            <a className="op-linkbtn" href="#" onClick={(e) => e.preventDefault()}>비밀번호 찾기</a>
+            <a className="op-linkbtn" onClick={() => nav("/forgot-password")}>비밀번호 찾기</a>
           </div>
 
           <button type="submit" className="op-btn op-btn-block" disabled={submitting}>
@@ -81,7 +81,7 @@ export default function Login() {
           <button
             type="button"
             className="op-btn op-btn-block op-btn-ghost"
-            onClick={() => setError("소셜 로그인은 데모에서 지원되지 않습니다. 이메일로 로그인하세요.")}
+            onClick={() => setError("소셜 로그인은 준비 중입니다. 이메일로 로그인하세요.")}
           >
             Google로 계속하기
           </button>

@@ -24,9 +24,28 @@ import java.util.Map;
 public class AuthController {
 
     private final AuthService authService;
+    private final io.github.ahrimjang.mail.core.service.PasswordResetService passwordReset;
 
-    public AuthController(AuthService authService) {
+    public AuthController(AuthService authService,
+                          io.github.ahrimjang.mail.core.service.PasswordResetService passwordReset) {
         this.authService = authService;
+        this.passwordReset = passwordReset;
+    }
+
+    /** 재설정 메일 요청 — 계정 유무와 무관하게 항상 202 (열거 방지). */
+    @PostMapping("/password-reset/request")
+    public ResponseEntity<Void> requestPasswordReset(
+            @RequestBody io.github.ahrimjang.mail.common.PasswordResetRequest request) {
+        passwordReset.request(request.email());
+        return ResponseEntity.accepted().build();
+    }
+
+    /** 재설정 확정 — 토큰 검증 + 비밀번호 교체 (실패는 400 + 사유). */
+    @PostMapping("/password-reset/confirm")
+    public ResponseEntity<Void> confirmPasswordReset(
+            @RequestBody io.github.ahrimjang.mail.common.PasswordResetConfirm request) {
+        passwordReset.confirm(request.token(), request.newPassword());
+        return ResponseEntity.noContent().build();
     }
 
     /** Register a new user and return a freshly issued token. */
