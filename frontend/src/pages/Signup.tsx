@@ -83,7 +83,7 @@ export default function Signup() {
             </span>
             <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} style={{ display: "none" }} />
             <span className="op-t-copy">
-              <a href="#" onClick={(e) => e.preventDefault()}>이용약관</a> 및 <a href="#" onClick={(e) => e.preventDefault()}>개인정보 처리방침</a>에 동의합니다.
+              <a href="/terms" target="_blank" rel="noreferrer">이용약관</a> 및 <a href="/privacy" target="_blank" rel="noreferrer">개인정보처리방침</a>에 동의합니다.
             </span>
           </label>
 
