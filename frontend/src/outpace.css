@@ -423,6 +423,16 @@ a.op-btn { text-decoration: none; } /* Link/a 를 버튼으로 쓸 때 밑줄 �
 .op-seg-opt { flex: 1; text-align: center; padding: 11px 16px; white-space: nowrap; font-size: 13.5px; font-weight: 600; color: var(--op-muted); cursor: pointer; border-radius: 9px; }
 .op-seg-opt.active { background: #fff; color: var(--op-ink); font-weight: 700; box-shadow: 0 1px 2px rgba(24, 24, 27, 0.08); }
 
+/* ------- 약관류 공개 문서 (PolicyPage) ------- */
+.op-policy h3 { font-size: 16.5px; font-weight: 800; letter-spacing: -0.01em; margin: 34px 0 10px; }
+.op-policy h3:first-child { margin-top: 0; }
+.op-policy p, .op-policy li { font-size: 13.5px; color: var(--op-ink-2); line-height: 1.85; }
+.op-policy p { margin: 0 0 10px; }
+.op-policy ul, .op-policy ol { margin: 0 0 10px; padding-left: 22px; }
+.op-policy table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 6px 0 14px; }
+.op-policy th, .op-policy td { border: 1px solid var(--op-border); padding: 8px 12px; text-align: left; line-height: 1.6; }
+.op-policy th { background: var(--op-panel); font-weight: 700; }
+
 /* ------- analytics: engagement funnel ------- */
 .op-funnel { display: flex; flex-direction: column; gap: 12px; padding: 6px 0 2px; }
 .op-funnel-step .lab {

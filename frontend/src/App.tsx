@@ -19,6 +19,8 @@ import Pricing from "./pages/Pricing";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import Landing from "./pages/Landing";
+import Privacy from "./pages/Privacy";
+import Terms from "./pages/Terms";
 
 /* Gate: send unauthenticated users to /login; render children otherwise. */
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -50,6 +52,9 @@ function AppRoutes() {
       {/* 비밀번호 재설정: 메일 링크로 진입하므로 게이트 없음 */}
       <Route path="/forgot-password" element={<AuthOnly><ForgotPassword /></AuthOnly>} />
       <Route path="/reset-password" element={<ResetPassword />} />
+      {/* 약관류 공개 문서 — 게이트 없음 */}
+      <Route path="/privacy" element={<Privacy />} />
+      <Route path="/terms" element={<Terms />} />
 
       {/* App shell (top nav) wraps the primary screens. 비로그인 "/"는 소개 랜딩. */}
       <Route path="/" element={<ShellGate />}>
