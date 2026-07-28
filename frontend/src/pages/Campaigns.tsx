@@ -3,7 +3,6 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import type { CampaignView } from "../types";
 import { badgeClass, fmt, pctOf, statusLabel } from "../outpace/format";
-import { MOCK_CAMPAIGNS } from "../outpace/mock";
 
 /* Column template shared by the header and body rows. */
 const COLS = "minmax(140px, 2fr) minmax(90px, 1.1fr) 76px 56px 64px minmax(90px, 1.1fr) 60px 60px 118px";
@@ -71,9 +70,8 @@ export default function Campaigns() {
     return () => { cancelled = true; clearInterval(id); document.removeEventListener("visibilitychange", onVisible); };
   }, []);
 
-  // Same demo fallback the dashboard uses, so the two screens always agree.
-  const usingMock = loaded && campaigns.length === 0;
-  const rows = campaigns.length > 0 ? campaigns : usingMock ? MOCK_CAMPAIGNS : [];
+  // 실데이터만 — 빈 워크스페이스는 빈 목록으로 (목업 폴백 제거)
+  const rows = campaigns;
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();

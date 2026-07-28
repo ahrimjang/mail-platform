@@ -2,31 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import ActivityChart from "../components/ActivityChart";
 import { api } from "../api";
-import type { CampaignView, DashboardDay, DashboardView } from "../types";
+import type { CampaignView, DashboardView } from "../types";
 import { useAuth } from "../outpace/auth";
 import { badgeClass, fmt, pctOf, statusLabel } from "../outpace/format";
-import { MOCK_CAMPAIGNS } from "../outpace/mock";
 
 const CHART_DAYS = 14;
-
-/* Deterministic demo series so the chart still reads when the backend is empty. */
-function mockDaily(): DashboardDay[] {
-  const base = [820, 930, 1240, 760, 1580, 1210, 990, 1430, 1720, 880, 1310, 1650, 1240, 1490];
-  const out: DashboardDay[] = [];
-  for (let i = 0; i < CHART_DAYS; i++) {
-    const d = new Date();
-    d.setDate(d.getDate() - (CHART_DAYS - 1 - i));
-    const sent = base[i % base.length];
-    out.push({
-      date: d.toISOString().slice(0, 10),
-      sent,
-      failed: Math.round(sent * 0.008),
-      opened: Math.round(sent * 0.36),
-      clicked: Math.round(sent * 0.09),
-    });
-  }
-  return out;
-}
 
 /* Handoff icon placeholders, dependency-free: 16px inline SVGs. */
 const ICONS = {
@@ -68,7 +48,7 @@ export default function Dashboard() {
   const { email } = useAuth();
   const [campaigns, setCampaigns] = useState<CampaignView[]>([]);
   const [stats, setStats] = useState<DashboardView | null>(null);
-  const [loaded, setLoaded] = useState(false);
+  const [, setLoaded] = useState(false);   // 첫 로드 완료 신호 (현재 표시엔 미사용)
 
   useEffect(() => {
     let cancelled = false;
@@ -92,13 +72,9 @@ export default function Dashboard() {
     return () => { cancelled = true; clearInterval(id); };
   }, []);
 
-  // Fall back to demo data only once we know the backend returned nothing.
-  const usingMock = loaded && campaigns.length === 0;
-  const rows = campaigns.length > 0 ? campaigns : usingMock ? MOCK_CAMPAIGNS : [];
-  const daily = useMemo(
-    () => (usingMock ? mockDaily() : stats?.daily ?? []),
-    [usingMock, stats],
-  );
+  // 실데이터만 — 신규 워크스페이스는 정직하게 0에서 시작한다 (목업 폴백 제거)
+  const rows = campaigns;
+  const daily = useMemo(() => stats?.daily ?? [], [stats]);
   const today = daily.length > 0 ? daily[daily.length - 1] : null;
 
   // Handoff KPI derivations: today vs yesterday, 7-day success, live queue.

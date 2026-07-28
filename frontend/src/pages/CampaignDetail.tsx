@@ -4,7 +4,6 @@ import { api } from "../api";
 import Portal from "../components/Portal";
 import type { CampaignContentView, CampaignView, ContactListView, LinkClicksView, MessageStatus, MessageView, SendLogEntry } from "../types";
 import { badgeClass, fmt, pctOf, statusLabel } from "../outpace/format";
-import { MOCK_CAMPAIGNS } from "../outpace/mock";
 
 /* Dot color + Korean label per delivery outcome. */
 const LOG_META: Record<MessageStatus, { tone: "green" | "red" | "blue" | "gray"; label: string }> = {
@@ -126,11 +125,7 @@ export default function CampaignDetail() {
           return;
         }
       } catch {
-        /* fall through to mock */
-      }
-      // Unknown id (demo campaign from the dashboard fallback) → matching mock if any.
-      if (!cancelled) {
-        setCampaign((prev) => prev ?? MOCK_CAMPAIGNS.find((c) => String(c.id) === id) ?? null);
+        /* transient — keep last known state */
       }
     }
     // Live progress needs a tight poll only while the campaign is active; a
