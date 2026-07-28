@@ -68,6 +68,12 @@ export default function NewCampaign() {
   // entering the test, the winner metric and the evaluation wait. The A:B split
   // inside the test group is fixed at 50:50 (the backend defaults it).
   const [abEnabled, setAbEnabled] = useState(false);
+  // 플랜 기능 게이팅 — 로드 전엔 잠그지 않는다(최종 방어는 백엔드 409)
+  const [plan, setPlan] = useState<string | null>(null);
+  const planRank = plan ? ({ STARTER: 0, STANDARD: 1, PRO: 2, ENTERPRISE: 3 }[plan] ?? 3) : 3;
+  const abAllowed = planRank >= 1;       // A/B: 스탠다드부터 (제목)
+  const winnerAllowed = planRank >= 2;   // 본문 B·승자 자동발송: 프로부터
+  const segAllowed = planRank >= 1;      // 참여도 세그먼트: 스탠다드부터
   const [abSubjectB, setAbSubjectB] = useState("");
   const [abBodyB, setAbBodyB] = useState("");
   const [abTestPercent, setAbTestPercent] = useState(20);
@@ -117,6 +123,13 @@ export default function NewCampaign() {
     }, 300);
     return () => { cancelled = true; clearTimeout(timer); };
   }, [segEnabled, listId, segOpenPct, segClickPct]);
+
+  // 플랜 조회 — A/B·세그먼트 섹션의 잠금 판정용
+  useEffect(() => {
+    api("/api/workspace")
+      .then(async (res) => { if (res.ok) setPlan((await res.json()).plan); })
+      .catch(() => { /* 실패 시 잠그지 않음 — 백엔드가 최종 방어 */ });
+  }, []);
 
   // Resuming a draft: pour its saved fields back into the form once.
   useEffect(() => {
@@ -304,12 +317,13 @@ export default function NewCampaign() {
       senderName: senderName || null,
       senderEmail: senderEmail || null,
       scheduledAt,
-      abSubjectB: abEnabled && abContentSource === "direct" && abSubjectB.trim() !== "" ? abSubjectB : null,
-      abBodyB: abEnabled && abContentSource === "direct" && abBodyB.trim() !== "" ? abBodyB : null,
-      abTemplateId: abEnabled && abContentSource === "template" && abTemplateId ? Number(abTemplateId) : null,
-      abTestPercent: abEnabled ? abTestPercent : null,
-      abEvalMetric: abEnabled ? abMetric : null,
-      abEvalWaitMinutes: abEnabled ? abEvalWait : null,
+      abSubjectB: abEnabled && (winnerAllowed ? abContentSource === "direct" : true) && abSubjectB.trim() !== "" ? abSubjectB : null,
+      // 본문 B·템플릿 B·승자 플로우는 프로부터 — 스탠다드는 제목 A/B(반반 분배)로 제출
+      abBodyB: abEnabled && winnerAllowed && abContentSource === "direct" && abBodyB.trim() !== "" ? abBodyB : null,
+      abTemplateId: abEnabled && winnerAllowed && abContentSource === "template" && abTemplateId ? Number(abTemplateId) : null,
+      abTestPercent: abEnabled && winnerAllowed ? abTestPercent : null,
+      abEvalMetric: abEnabled && winnerAllowed ? abMetric : null,
+      abEvalWaitMinutes: abEnabled && winnerAllowed ? abEvalWait : null,
       segMinOpenPercent: audienceSource === "list" && segEnabled && segOpenPct > 0 ? segOpenPct : null,
       segMinClickPercent: audienceSource === "list" && segEnabled && segClickPct > 0 ? segClickPct : null,
       endsAt,
@@ -758,13 +772,19 @@ export default function NewCampaign() {
             </label>
             {listId && (
               <div className="op-field" style={{ marginTop: 14, marginBottom: 0 }}>
-                <label className="op-check">
+                <label className="op-check" style={!segAllowed ? { opacity: 0.55 } : undefined}>
                   <input
                     type="checkbox"
                     checked={segEnabled}
+                    disabled={!segAllowed}
                     onChange={(e) => setSegEnabled(e.target.checked)}
                   />
                   참여도 높은 구독자에게만 발송
+                  {!segAllowed && (
+                    <span className="op-pill" style={{ marginLeft: 8, fontSize: 11.5 }}>
+                      🔒 스탠다드부터 · <a href="/pricing" style={{ color: "inherit" }}>요금제 보기</a>
+                    </span>
+                  )}
                 </label>
                 {segEnabled && (
                   <>
@@ -815,15 +835,27 @@ export default function NewCampaign() {
       <div className="op-form-card">
         <h3 className="op-sect-title">내용</h3>
         <div className="op-field">
-          <label className="op-check">
+          <label className="op-check" style={!abAllowed ? { opacity: 0.55 } : undefined}>
             <input
               type="checkbox"
               checked={abEnabled}
+              disabled={!abAllowed}
               onChange={(e) => setAbEnabled(e.target.checked)}
             />
             A/B 테스트 사용
+            {!abAllowed && (
+              <span className="op-pill" style={{ marginLeft: 8, fontSize: 11.5 }}>
+                🔒 스탠다드부터 · <a href="/pricing" style={{ color: "inherit" }}>요금제 보기</a>
+              </span>
+            )}
           </label>
-          {abEnabled && (
+          {abEnabled && !winnerAllowed && (
+            <span className="op-hint" style={{ marginTop: 8 }}>
+              스탠다드는 <b>제목 A/B</b>예요 — 대상을 반씩 나눠 두 제목으로 보내고 성과를 비교합니다.
+              본문 A/B와 승자 자동발송은 <a href="/pricing">프로 플랜</a>부터.
+            </span>
+          )}
+          {abEnabled && winnerAllowed && (
             <>
               <span className="op-flabel" style={{ marginTop: 14 }}>테스트 그룹 비율</span>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -872,14 +904,30 @@ export default function NewCampaign() {
             <span className="op-flabel">A안 / B안</span>
             <div className="op-grid2" style={{ gap: 18, alignItems: "start" }}>
               <div style={{ border: "1px solid var(--op-border)", borderRadius: 12, padding: 14 }}>
-                <span className="op-pill" style={{ marginBottom: 10, display: "inline-block" }}>A안 · 테스트 {abTestPercent / 2}%</span>
+                <span className="op-pill" style={{ marginBottom: 10, display: "inline-block" }}>
+                  {winnerAllowed ? `A안 · 테스트 ${abTestPercent / 2}%` : "A안 · 50%"}
+                </span>
                 {contentControls(contentSource, setContentSource, subject, setSubject, body, setBody,
                   bodyARef, templateId, setTemplateId, selectedTemplate, false)}
               </div>
               <div style={{ border: "1px solid var(--op-border)", borderRadius: 12, padding: 14 }}>
-                <span className="op-pill" style={{ marginBottom: 10, display: "inline-block" }}>B안 · 테스트 {abTestPercent / 2}%</span>
-                {contentControls(abContentSource, setAbContentSource, abSubjectB, setAbSubjectB, abBodyB, setAbBodyB,
-                  bodyBRef, abTemplateId, setAbTemplateId, selectedAbTemplate, true)}
+                <span className="op-pill" style={{ marginBottom: 10, display: "inline-block" }}>
+                  {winnerAllowed ? `B안 · 테스트 ${abTestPercent / 2}%` : "B안 · 50%"}
+                </span>
+                {winnerAllowed ? (
+                  contentControls(abContentSource, setAbContentSource, abSubjectB, setAbSubjectB, abBodyB, setAbBodyB,
+                    bodyBRef, abTemplateId, setAbTemplateId, selectedAbTemplate, true)
+                ) : (
+                  <>
+                    {/* 스탠다드: 제목 A/B — B안은 제목만 다르고 본문은 A안을 공유 */}
+                    <span className="op-flabel">B안 제목</span>
+                    <input className="op-input" placeholder="다르게 시험할 제목"
+                           value={abSubjectB} onChange={(e) => setAbSubjectB(e.target.value)} />
+                    <span className="op-hint" style={{ marginTop: 8 }}>
+                      본문은 A안과 같은 내용으로 발송돼요. 본문까지 다르게 보내려면 프로 플랜으로.
+                    </span>
+                  </>
+                )}
               </div>
             </div>
           </div>

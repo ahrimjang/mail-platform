@@ -71,6 +71,9 @@ public class CampaignService {
         // 플랜의 월 발송량 한도 — 등록 시점에만 검사한다(발송 중 컷오프 금지,
         // 진행 중 캠페인은 끝까지). 정책: docs/BILLING-policy.md 4절.
         planLimits.assertCampaignRegistrationAllowed(ctx.currentWorkspaceId());
+        // 플랜 기능 게이팅 — A/B·세그먼트는 요청 필드로 판정 (임시저장은 자유,
+        // 발송 등록이 관문)
+        planLimits.assertCampaignFeaturesAllowed(ctx.currentWorkspaceId(), request);
         String subject;
         String body;
         if (request.templateId() != null) {

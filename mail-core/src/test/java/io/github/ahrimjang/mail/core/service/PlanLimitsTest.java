@@ -88,6 +88,47 @@ class PlanLimitsTest {
                 .hasMessageContaining("멤버 한도");
     }
 
+    private static io.github.ahrimjang.mail.common.CreateCampaignRequest campaignWith(
+            String abSubjectB, String abBodyB, Integer abTestPercent, Integer segMinOpen) {
+        return new io.github.ahrimjang.mail.common.CreateCampaignRequest(
+                "s", "<p>b</p>", java.util.List.of("a@x.com"), null, null, null, null, null,
+                abSubjectB, abBodyB, null, null, abTestPercent, null, null,
+                null, null, segMinOpen, null, null);
+    }
+
+    @Test
+    void features_starterCannotUseAbOrSegments() {
+        assertThatThrownBy(() -> limits.assertCampaignFeaturesAllowed(WS, campaignWith("B제목", null, null, null)))
+                .isInstanceOf(PlanLimitExceededException.class)
+                .hasMessageContaining("스탠다드 플랜부터");
+        assertThatThrownBy(() -> limits.assertCampaignFeaturesAllowed(WS, campaignWith(null, null, null, 30)))
+                .isInstanceOf(PlanLimitExceededException.class)
+                .hasMessageContaining("세그먼트");
+        // 기본 기능만 쓰는 요청은 플랜 조회조차 하지 않는다
+        assertThatCode(() -> limits.assertCampaignFeaturesAllowed(WS, campaignWith(null, null, null, null)))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void features_standardGetsSubjectAbButNotContentAbOrWinnerFlow() {
+        starter.setPlan(Plan.STANDARD);
+
+        assertThatCode(() -> limits.assertCampaignFeaturesAllowed(WS, campaignWith("B제목", null, null, 30)))
+                .doesNotThrowAnyException();                       // 제목 A/B + 세그먼트 OK
+        assertThatThrownBy(() -> limits.assertCampaignFeaturesAllowed(WS, campaignWith("B제목", "<p>B본문</p>", null, null)))
+                .isInstanceOf(PlanLimitExceededException.class)
+                .hasMessageContaining("프로 플랜부터");             // 본문 B는 프로
+        assertThatThrownBy(() -> limits.assertCampaignFeaturesAllowed(WS, campaignWith("B제목", null, 20, null)))
+                .isInstanceOf(PlanLimitExceededException.class);   // 승자 플로우도 프로
+    }
+
+    @Test
+    void features_proGetsEverything() {
+        starter.setPlan(Plan.PRO);
+        assertThatCode(() -> limits.assertCampaignFeaturesAllowed(WS, campaignWith("B", "<p>B</p>", 20, 30)))
+                .doesNotThrowAnyException();
+    }
+
     @Test
     void sendRate_mustBeWithinTheCap_andUnsetIsRejectedWhenCapped() {
         assertThatCode(() -> limits.assertSendRateWithinCap(WS, 5)).doesNotThrowAnyException();

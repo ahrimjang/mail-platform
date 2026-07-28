@@ -106,6 +106,37 @@ public class PlanLimits {
         }
     }
 
+    /**
+     * 요청이 쓰려는 기능이 플랜에 포함되는지 — 캠페인 등록 시 요청 필드로 판정한다.
+     * 스타터: A/B·세그먼트 불가 / 스탠다드: 제목 A/B와 세그먼트까지(본문 A/B·승자
+     * 자동발송은 프로) / 프로·엔터프라이즈: 전체. 메시지는 업셀 안내를 겸한다.
+     */
+    public void assertCampaignFeaturesAllowed(Long workspaceId,
+                                              io.github.ahrimjang.mail.common.CreateCampaignRequest r) {
+        boolean usesAb = r.abSubjectB() != null || r.abBodyB() != null || r.abTemplateId() != null;
+        boolean usesContentAb = r.abBodyB() != null || r.abTemplateId() != null;
+        boolean usesWinnerFlow = r.abTestPercent() != null;
+        boolean usesSegment = r.segMinOpenPercent() != null || r.segMinClickPercent() != null;
+        if (!usesAb && !usesSegment && !usesWinnerFlow) {
+            return;   // 기본 기능만 — 플랜 조회조차 불필요
+        }
+        Plan plan = planOf(workspaceId);
+        if (plan == Plan.STARTER) {
+            if (usesAb || usesWinnerFlow) {
+                throw new PlanLimitExceededException(
+                        "A/B 테스트는 스탠다드 플랜부터 사용할 수 있어요. 플랜을 올리면 바로 쓸 수 있습니다.");
+            }
+            if (usesSegment) {
+                throw new PlanLimitExceededException(
+                        "참여도 세그먼트는 스탠다드 플랜부터 사용할 수 있어요. 플랜을 올리면 바로 쓸 수 있습니다.");
+            }
+        }
+        if (plan == Plan.STANDARD && (usesContentAb || usesWinnerFlow)) {
+            throw new PlanLimitExceededException(
+                    "본문 A/B 테스트와 승자 자동발송은 프로 플랜부터예요. 스탠다드에서는 제목 A/B 까지 쓸 수 있습니다.");
+        }
+    }
+
     public Plan planOf(Long workspaceId) {
         return workspaces.findById(workspaceId)
                 .map(Workspace::getPlan)
