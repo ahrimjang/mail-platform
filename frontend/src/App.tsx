@@ -16,6 +16,8 @@ import EmailEditor from "./pages/EmailEditor";
 import TextEditor from "./pages/TextEditor";
 import HtmlEditor from "./pages/HtmlEditor";
 import Pricing from "./pages/Pricing";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 
 /* Gate: send unauthenticated users to /login; render children otherwise. */
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -28,7 +30,6 @@ function AuthOnly({ children }: { children: React.ReactNode }) {
   const { token } = useAuth();
   return token ? <Navigate to="/" replace /> : <>{children}</>;
 }
-
 function AppRoutes() {
   return (
     <Routes>
@@ -36,6 +37,9 @@ function AppRoutes() {
       <Route path="/signup" element={<AuthOnly><Signup /></AuthOnly>} />
       {/* 요금제: 가입 전 방문자도 보는 공개 페이지 — 게이트 없음 */}
       <Route path="/pricing" element={<Pricing />} />
+      {/* 비밀번호 재설정: 메일 링크로 진입하므로 게이트 없음 */}
+      <Route path="/forgot-password" element={<AuthOnly><ForgotPassword /></AuthOnly>} />
+      <Route path="/reset-password" element={<ResetPassword />} />
 
       {/* App shell (top nav) wraps the primary screens. */}
       <Route
