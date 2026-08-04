@@ -32,6 +32,10 @@ public class WorkspaceEntity {
     @Column(length = 255)
     private String billingKey;
 
+    /** 외부 구독 연동 API 키 (V30, null = 미발급) */
+    @Column(name = "api_key", length = 64)
+    private String apiKey;
+
     @Column(nullable = false)
     private Instant createdAt;
 
@@ -66,6 +70,14 @@ public class WorkspaceEntity {
 
     public String getBillingKey() {
         return billingKey;
+    }
+
+    public String getApiKey() {
+        return apiKey;
+    }
+
+    public void setApiKey(String apiKey) {
+        this.apiKey = apiKey;
     }
 
     public Instant getCreatedAt() {

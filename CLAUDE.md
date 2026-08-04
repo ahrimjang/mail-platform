@@ -47,7 +47,7 @@ frontend      React18+Vite+TS, 의존성 없는 콘솔(op- 클래스, src/outpac
 
 - **스키마는 Flyway 소유**(`infra/.../db/migration/V*.sql`) + `ddl-auto: validate` — 엔티티 변경엔 새 `V<n>__*.sql` 필수. **enum 값 추가 시 V1의 CHECK 제약 재생성도 필요**(V4가 선례). 장문 컬럼은 `text`(`@Lob` 금지 — Postgres에서 OID 참조가 됨).
 - **동시성은 전부 원자적 조건부 UPDATE claim**으로 푼다: 발송 claim(PENDING→SENDING + stale 재클레임), 팬아웃 claim(`QUEUED→EXPANDING` — 중복 팬아웃 잡 멱등), 예약 릴리스(`enqueued_at IS NULL AND status='QUEUED'`), 예약 취소(같은 조건 — 릴리스와 상호배제). A/B 승자 판정(`ab_winner IS NULL` — 스케줄러 다중 기동에도 1회 결정), 완료 판정도 `SENDING`에서만(`completeIfSending` — `completed_at` 스탬프를 같은 UPDATE에 실음) — 팬아웃 중 조기완료 방지, **테넌트 발송 토큰버킷**(`workspace_send_buckets` 리필+차감을 UPDATE 한 문장으로 — 거절 시 TTL 파킹 큐 경유, **토큰 확인은 claim보다 먼저**). 새 동시성 문제도 같은 패턴을 따를 것.
-- **공개 경로는 `SecurityConfig` permitAll에 명시**: `/api/auth/**`, `/api/health`, `/api/unsubscribe/**`, `/api/track/**`, `/api/webhooks/**`, `/uploads/**`. 나머지는 Bearer 필수, 실패는 401(403이면 프론트 재로그인이 안 뜸).
+- **공개 경로는 `SecurityConfig` permitAll에 명시**: `/api/auth/**`, `/api/health`, `/api/unsubscribe/**`, `/api/track/**`, `/api/webhooks/**`, `/api/public/**`(구독 연동 — X-Api-Key 로 테넌트 역해석), `/uploads/**`. 나머지는 Bearer 필수, 실패는 401(403이면 프론트 재로그인이 안 뜸).
 - **수신자의 구독 결정은 별도 기록으로 보존** — 전역은 `suppressions`, 리스트 단위는 `list_unsubscribes`(팬아웃이 발송 시점 제외). 멤버십(`list_memberships`)은 운영자의 분류일 뿐 구독 의사가 아니므로 **해지를 멤버십 삭제로 구현하지 말 것**(CSV 재가져오기가 뒤집는다).
 - **테넌트 격리 원칙(V16)**: 루트 엔티티 5개만 `workspace_id`(자식은 부모 경유), by-id 접근은 소유 검증 후 **404**(403 금지 — 존재를 숨김), 공개 경로(추적/수신거부/웹훅)는 토큰→캠페인→워크스페이스 역해석, correlation 없는 바운스 억제는 버림. 콘솔 서비스는 `WorkspaceContext` 포트로 테넌트를 해석하고 **워커에서는 절대 호출 금지**(캠페인 행에서 역해석). 억제·연락처 유니크는 `(workspace_id, email)`.
 - **공유 DTO는 `mail-common`에 정의하고 `frontend/src/types.ts`에 미러링** — 한쪽만 고치면 안 된다.
