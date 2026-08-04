@@ -43,6 +43,9 @@ import java.util.List;
  *                    for the click rate
  * @param endsAt      optional campaign period end — opens/clicks observed after
  *                    this instant are not recorded, freezing the campaign's rates
+ * @param emailId     선택한 이메일(캠페인용 콘텐츠) — 제목·본문을 등록 시점에 스냅샷.
+ *                    templateId 보다 우선한다 (이메일이 새 개념, 템플릿 직접 참조는 레거시 경로)
+ * @param abEmailId   B안으로 선택한 이메일 — abTemplateId 의 이메일 버전, 역시 우선
  */
 public record CreateCampaignRequest(
         String subject,
@@ -64,6 +67,20 @@ public record CreateCampaignRequest(
         String description,
         Integer segMinOpenPercent,
         Integer segMinClickPercent,
-        Instant endsAt
+        Instant endsAt,
+        Long emailId,
+        Long abEmailId
 ) {
+    /** emailId 도입(V27) 이전 시그니처 호환 — 이메일 미선택으로 위임. */
+    public CreateCampaignRequest(String subject, String body, List<String> recipients, Long templateId,
+                                 Long listId, String senderName, String senderEmail, Instant scheduledAt,
+                                 String abSubjectB, String abBodyB, Long abTemplateId, Integer abSplitPercent,
+                                 Integer abTestPercent, String abEvalMetric, Integer abEvalWaitMinutes,
+                                 String name, String description, Integer segMinOpenPercent,
+                                 Integer segMinClickPercent, Instant endsAt) {
+        this(subject, body, recipients, templateId, listId, senderName, senderEmail, scheduledAt,
+                abSubjectB, abBodyB, abTemplateId, abSplitPercent, abTestPercent, abEvalMetric,
+                abEvalWaitMinutes, name, description, segMinOpenPercent, segMinClickPercent, endsAt,
+                null, null);
+    }
 }

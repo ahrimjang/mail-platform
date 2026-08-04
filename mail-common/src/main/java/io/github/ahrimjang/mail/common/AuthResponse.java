@@ -12,6 +12,7 @@ public record AuthResponse(
         String email,
         String displayName,
         String workspaceName,
-        String role
+        String role,
+        boolean emailVerified   // 가입 이메일 인증 여부 — 미인증이면 콘솔이 배너를 띄운다
 ) {
 }

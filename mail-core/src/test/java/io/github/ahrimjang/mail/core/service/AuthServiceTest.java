@@ -52,12 +52,18 @@ class AuthServiceTest {
 
     private LoginAttemptGuard attempts;
 
+    @Mock
+    private EmailVerificationService verification;   // mock 기본은 no-op = 인증 메일 무발송
+
+    @Mock
+    private io.github.ahrimjang.mail.core.port.GoogleIdentityVerifier google;
+
     private AuthService service;
 
     @BeforeEach
     void setUp() {
         attempts = new LoginAttemptGuard();   // 실물 사용 — 잠금 상호작용까지 함께 검증
-        service = new AuthService(users, workspaces, hasher, tokens, attempts);
+        service = new AuthService(users, workspaces, hasher, tokens, attempts, verification, google);
     }
 
     @BeforeEach
@@ -86,7 +92,7 @@ class AuthServiceTest {
         verify(users).save(captor.capture());
         assertThat(captor.getValue().getEmail()).isEqualTo("new@x.com");
         assertThat(captor.getValue().getPasswordHash()).isEqualTo("hashed-pw");
-        assertThat(response).isEqualTo(new AuthResponse("jwt-token", "new@x.com", "New User", "new 워크스페이스", "ADMIN"));
+        assertThat(response).isEqualTo(new AuthResponse("jwt-token", "new@x.com", "New User", "new 워크스페이스", "ADMIN", false));
     }
 
     @Test
@@ -118,7 +124,7 @@ class AuthServiceTest {
 
         AuthResponse response = service.login(new LoginRequest("me@x.com", "raw-pw"), IP);
 
-        assertThat(response).isEqualTo(new AuthResponse("jwt-token", "me@x.com", "Me", null, null));
+        assertThat(response).isEqualTo(new AuthResponse("jwt-token", "me@x.com", "Me", null, null, false));
     }
 
     @Test
@@ -178,5 +184,70 @@ class AuthServiceTest {
             assertThatThrownBy(() -> service.login(new LoginRequest("me@x.com", "wrong"), IP))
                     .isInstanceOf(IllegalArgumentException.class);
         }
+    }
+
+    // ── 구글 로그인 ──────────────────────────────────────────────────
+
+    private static io.github.ahrimjang.mail.core.port.GoogleIdentityVerifier.GoogleIdentity gid(
+            String email, boolean verified) {
+        return new io.github.ahrimjang.mail.core.port.GoogleIdentityVerifier.GoogleIdentity(
+                "g-sub-123", email, "구글유저", verified);
+    }
+
+    @Test
+    void google_newUser_signsUpVerifiedWithoutVerificationMail() {
+        when(google.verify("id-token")).thenReturn(gid("new@gmail.com", true));
+        when(users.findByEmail("new@gmail.com")).thenReturn(Optional.empty());
+        when(users.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(tokens.issue(any(User.class))).thenReturn("jwt");
+
+        var response = service.loginWithGoogle("id-token");
+
+        assertThat(response.emailVerified()).isTrue();
+        org.mockito.ArgumentCaptor<User> saved = org.mockito.ArgumentCaptor.forClass(User.class);
+        verify(users).save(saved.capture());
+        assertThat(saved.getValue().getAuthProvider()).isEqualTo("GOOGLE");
+        assertThat(saved.getValue().getProviderSubject()).isEqualTo("g-sub-123");
+        assertThat(saved.getValue().getPasswordHash()).isNull();
+        assertThat(saved.getValue().getRole()).isEqualTo("ADMIN");
+        // 구글이 메일함 소유를 검증했으니 우리 인증 메일은 안 나간다
+        verify(verification, never()).send(any());
+    }
+
+    @Test
+    void google_existingLocalUser_linksAndBackfillsVerification() {
+        User existing = User.register("me@x.com", "stored-hash", "Me");
+        existing.setWorkspaceId(1L);
+        when(google.verify("id-token")).thenReturn(gid("me@x.com", true));
+        when(users.findByEmail("me@x.com")).thenReturn(Optional.of(existing));
+        when(users.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(tokens.issue(existing)).thenReturn("jwt");
+
+        var response = service.loginWithGoogle("id-token");
+
+        assertThat(response.emailVerified()).isTrue();
+        assertThat(existing.getProviderSubject()).isEqualTo("g-sub-123");
+        assertThat(existing.getPasswordHash()).isEqualTo("stored-hash");   // 기존 비밀번호 로그인 유지
+        assertThat(existing.isEmailVerified()).isTrue();                   // 구글 검증이 우리 인증을 갈음
+    }
+
+    @Test
+    void google_invalidToken_rejected() {
+        when(google.verify("bad")).thenThrow(new IllegalArgumentException("유효하지 않은 Google 토큰입니다."));
+
+        assertThatThrownBy(() -> service.loginWithGoogle("bad"))
+                .isInstanceOf(IllegalArgumentException.class);
+        verify(users, never()).save(any());
+    }
+
+    @Test
+    void login_passwordlessGoogleAccount_getsGuidanceInsteadOfBcrypt() {
+        User social = User.registerSocial("g@gmail.com", "구글유저", "GOOGLE", "g-sub-123");
+        when(users.findByEmail("g@gmail.com")).thenReturn(Optional.of(social));
+
+        assertThatThrownBy(() -> service.login(new LoginRequest("g@gmail.com", "whatever"), IP))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Google");
+        verify(hasher, never()).matches(any(), any());   // null 해시로 BCrypt 에 안 들어간다
     }
 }

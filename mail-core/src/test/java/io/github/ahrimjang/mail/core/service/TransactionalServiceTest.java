@@ -58,12 +58,15 @@ class TransactionalServiceTest {
     @Mock
     private MailQueue mailQueue;
 
+    @Mock
+    private EmailVerificationService verification;   // mock 기본은 no-op = 인증 완료 상태
+
     private TransactionalService service;
 
     @BeforeEach
     void setUp() {
         // Real renderer on purpose: the contract under test includes actual {{var}} substitution.
-        service = new TransactionalService(templates, campaigns, messages, mailQueue, new TemplateRenderer(), ctx);
+        service = new TransactionalService(templates, campaigns, messages, mailQueue, new TemplateRenderer(), ctx, verification);
     }
 
     private void stubPersistenceAssigningIds() {

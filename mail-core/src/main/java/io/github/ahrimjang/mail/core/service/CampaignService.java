@@ -51,11 +51,14 @@ public class CampaignService {
     /** Who is acting, for which tenant — resolved by the API adapter per request. */
     private final WorkspaceContext ctx;
     private final PlanLimits planLimits;
+    private final EmailVerificationService verification;
+    private final EmailDraftService emailDrafts;
 
     public CampaignService(CampaignRepository campaigns, MailMessageRepository messages, EmailEventRepository events,
                            MailQueue mailQueue, TemplateRepository templates, ContactRepository contacts,
                            ContactListRepository lists,
-                           WorkspaceContext ctx, PlanLimits planLimits) {
+                           WorkspaceContext ctx, PlanLimits planLimits,
+                           EmailVerificationService verification, EmailDraftService emailDrafts) {
         this.ctx = ctx;
         this.campaigns = campaigns;
         this.messages = messages;
@@ -65,9 +68,13 @@ public class CampaignService {
         this.contacts = contacts;
         this.lists = lists;
         this.planLimits = planLimits;
+        this.verification = verification;
+        this.emailDrafts = emailDrafts;
     }
 
     public CampaignView create(CreateCampaignRequest request) {
+        // 가입 이메일 소유 검증 전에는 발송 경로를 열지 않는다 (스팸 오남용 통로 차단)
+        verification.assertCurrentUserVerified();
         // 플랜의 월 발송량 한도 — 등록 시점에만 검사한다(발송 중 컷오프 금지,
         // 진행 중 캠페인은 끝까지). 정책: docs/BILLING-policy.md 4절.
         planLimits.assertCampaignRegistrationAllowed(ctx.currentWorkspaceId());
@@ -76,7 +83,12 @@ public class CampaignService {
         planLimits.assertCampaignFeaturesAllowed(ctx.currentWorkspaceId(), request);
         String subject;
         String body;
-        if (request.templateId() != null) {
+        if (request.emailId() != null) {
+            // 이메일(캠페인용 콘텐츠) 선택 — 템플릿과 마찬가지로 등록 시점 스냅샷
+            var email = emailDrafts.ownedOrThrow(request.emailId());
+            subject = email.getSubject();
+            body = email.getHtmlBody();
+        } else if (request.templateId() != null) {
             Template template = templates.findById(request.templateId())
                     .filter(this::templateVisible)
                     .orElseThrow(() -> new NoSuchElementException("template not found: " + request.templateId()));
@@ -113,6 +125,7 @@ public class CampaignService {
         // enqueuedAt null so the worker's scheduler claims them when due.
         campaign.setEnqueuedAt(deferred ? null : now);
         campaign.setTemplateId(request.templateId());
+        campaign.setEmailId(request.emailId());   // 캠페인-이메일 매핑 (소프트 참조)
         campaign.setListId(request.listId());
         // Campaign period: engagement observed after endsAt is dropped, so the
         // reported rates cover a bounded window. Must leave room to send first.
@@ -136,7 +149,11 @@ public class CampaignService {
         // A/B split test: any non-blank B content makes this an A/B campaign.
         // Variant B mirrors the main content sourcing — direct subject/body or a
         // template snapshotted at create time.
-        if (request.abTemplateId() != null) {
+        if (request.abEmailId() != null) {
+            var abEmail = emailDrafts.ownedOrThrow(request.abEmailId());
+            campaign.setAbSubjectB(abEmail.getSubject());
+            campaign.setAbBodyB(abEmail.getHtmlBody());
+        } else if (request.abTemplateId() != null) {
             Template abTemplate = templates.findById(request.abTemplateId())
                     .filter(this::templateVisible)
                     .orElseThrow(() -> new NoSuchElementException("template not found: " + request.abTemplateId()));
@@ -314,6 +331,7 @@ public class CampaignService {
         draft.setScheduledAt(request.scheduledAt());
         draft.setEndsAt(request.endsAt());
         draft.setTemplateId(request.templateId());
+        draft.setEmailId(request.emailId());
         draft.setListId(request.listId());
         draft.setSegMinOpenPercent(request.segMinOpenPercent());
         draft.setSegMinClickPercent(request.segMinClickPercent());
@@ -422,6 +440,8 @@ public class CampaignService {
         // Soft references: a deleted template/list leaves the id without a name.
         String templateName = campaign.getTemplateId() == null ? null
                 : templates.findById(campaign.getTemplateId()).map(Template::getName).orElse(null);
+        String emailName = campaign.getEmailId() == null ? null
+                : emailDrafts.displayNameOf(campaign.getEmailId());
         String listName = campaign.getListId() == null ? null
                 : lists.findById(campaign.getListId())
                         .map(io.github.ahrimjang.mail.core.domain.ContactList::getName).orElse(null);
@@ -448,6 +468,8 @@ public class CampaignService {
                 campaign.getCreatedBy(),
                 campaign.getTemplateId(),
                 templateName,
+                campaign.getEmailId(),
+                emailName,
                 campaign.getListId(),
                 listName,
                 campaign.getSegMinOpenPercent(),

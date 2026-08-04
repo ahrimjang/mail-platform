@@ -113,8 +113,9 @@ public class PlanLimits {
      */
     public void assertCampaignFeaturesAllowed(Long workspaceId,
                                               io.github.ahrimjang.mail.common.CreateCampaignRequest r) {
-        boolean usesAb = r.abSubjectB() != null || r.abBodyB() != null || r.abTemplateId() != null;
-        boolean usesContentAb = r.abBodyB() != null || r.abTemplateId() != null;
+        boolean usesAb = r.abSubjectB() != null || r.abBodyB() != null || r.abTemplateId() != null
+                || r.abEmailId() != null;
+        boolean usesContentAb = r.abBodyB() != null || r.abTemplateId() != null || r.abEmailId() != null;
         boolean usesWinnerFlow = r.abTestPercent() != null;
         boolean usesSegment = r.segMinOpenPercent() != null || r.segMinClickPercent() != null;
         if (!usesAb && !usesSegment && !usesWinnerFlow) {

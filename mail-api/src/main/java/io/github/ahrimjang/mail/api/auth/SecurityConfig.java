@@ -29,6 +29,8 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**", "/api/health", "/api/unsubscribe/**", "/api/track/**", "/api/webhooks/**").permitAll()
+                        // 외부 구독 신청 — 인증은 X-Api-Key 로 서비스가 직접 검증
+                        .requestMatchers("/api/public/**").permitAll()
                         // 요금제 목록: 가입 전 방문자가 보는 공개 페이지의 데이터
                         .requestMatchers("/api/plans").permitAll()
                         // uploaded template images: recipients' mail clients fetch these unauthenticated

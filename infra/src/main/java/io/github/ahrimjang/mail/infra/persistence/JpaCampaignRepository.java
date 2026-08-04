@@ -112,6 +112,7 @@ public class JpaCampaignRepository implements CampaignRepository {
                 c.getAbEvaluateAt(), c.getAbWinner());
         entity.setWorkspaceId(c.getWorkspaceId());
         entity.setCreatedBy(c.getCreatedBy());
+        entity.setEmailId(c.getEmailId());
         return entity;
     }
 
@@ -134,6 +135,7 @@ public class JpaCampaignRepository implements CampaignRepository {
         c.setEndsAt(e.getEndsAt());
         c.setDraftRecipients(e.getDraftRecipients());
         c.setTemplateId(e.getTemplateId());
+        c.setEmailId(e.getEmailId());
         c.setListId(e.getListId());
         c.setSegMinOpenPercent(e.getSegMinOpenPercent());
         c.setSegMinClickPercent(e.getSegMinClickPercent());

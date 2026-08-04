@@ -32,11 +32,28 @@ public class WorkspaceController {
 
     private final WorkspaceService workspace;
     private final io.github.ahrimjang.mail.core.service.UsageSnapshotService usageSnapshots;
+    private final io.github.ahrimjang.mail.core.service.PublicSubscriptionService subscriptions;
 
     public WorkspaceController(WorkspaceService workspace,
-                               io.github.ahrimjang.mail.core.service.UsageSnapshotService usageSnapshots) {
+                               io.github.ahrimjang.mail.core.service.UsageSnapshotService usageSnapshots,
+                               io.github.ahrimjang.mail.core.service.PublicSubscriptionService subscriptions) {
         this.workspace = workspace;
         this.usageSnapshots = usageSnapshots;
+        this.subscriptions = subscriptions;
+    }
+
+    /** 구독 연동 API 키 조회 (ADMIN) — null 이면 미발급. */
+    @GetMapping("/api-key")
+    public java.util.Map<String, String> apiKey() {
+        java.util.Map<String, String> body = new java.util.HashMap<>();
+        body.put("apiKey", subscriptions.currentApiKey());
+        return body;
+    }
+
+    /** 구독 연동 API 키 발급/재발급 (ADMIN) — 재발급 시 이전 키는 즉시 무효. */
+    @PostMapping("/api-key")
+    public java.util.Map<String, String> issueApiKey() {
+        return java.util.Map.of("apiKey", subscriptions.issueApiKey());
     }
 
     /** 월 마감 청구 이력 — 마감 시점에 고정된 사용량/플랜/청구액 (ADMIN). */

@@ -65,6 +65,10 @@ app:
   # 재설정 메일 등 시스템 메일의 링크가 가리키는 콘솔 주소 —
   # 운영은 공개 도메인(APP_BASE_URL 과 동일 오리진), 개발 기본은 Vite.
   console-url: ${APP_CONSOLE_URL:http://localhost:5175}
+  google:
+    # 구글 로그인 (OAuth 클라이언트 ID). 미설정 시 구글 로그인 시도만 실패하고
+    # 이메일+비밀번호 경로는 그대로 동작. 프론트는 VITE_GOOGLE_CLIENT_ID 로 같은 값.
+    client-id: ${GOOGLE_CLIENT_ID:}
   toss:
     # 토스페이먼츠 빌링 — 기본값은 토스 문서의 공용 테스트 키(실결제 없음).
     # 운영 전 개발자센터에서 발급한 키로 교체. 시크릿 키는 서버 밖으로 절대 안 나감.

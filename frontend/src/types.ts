@@ -61,6 +61,8 @@ export interface CampaignView {
   segMinClickPercent?: number | null; // engagement segment floor; null = whole list
   templateId: number | null; // content source (null = authored directly)
   templateName: string | null; // resolved at read time; null if deleted since
+  emailId: number | null; // 캠페인-이메일 매핑 (소프트 참조 — 내용은 스냅샷)
+  emailName: string | null; // 조회 시점 해석; 삭제됐으면 null
   listId: number | null; // audience source (null = raw addresses)
   listName: string | null; // resolved at read time; null if deleted since
   // A/B winner flow (all null/absent for split-only A/B and plain campaigns):
@@ -125,6 +127,19 @@ export interface TemplateView {
   // Seed key of a built-in template; null = user-authored. Built-ins are
   // editable but not deletable, and can be reset to their original content.
   builtinKey: string | null;
+}
+
+// 캠페인에 실제 쓰는 이메일 콘텐츠 — 템플릿(재사용 자산)과 구분되는 계층.
+// 템플릿을 불러와 만들면 내용이 복사되고(sourceTemplateId 는 계보 추적용),
+// 캠페인 등록 시 내용이 캠페인으로 스냅샷된다.
+export interface EmailDraftView {
+  id: number;
+  name: string;
+  subject: string;
+  htmlBody: string;
+  sourceTemplateId: number | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface RenderedTemplate {

@@ -47,6 +47,8 @@ public record CampaignView(
         String createdBy,
         Long templateId,
         String templateName,
+        Long emailId,     // 캠페인-이메일 매핑 (소프트 참조 — 삭제되면 이름만 사라짐)
+        String emailName,
         Long listId,
         String listName,
         Integer segMinOpenPercent,

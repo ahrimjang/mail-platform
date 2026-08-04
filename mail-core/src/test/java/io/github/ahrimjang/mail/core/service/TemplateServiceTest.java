@@ -43,9 +43,53 @@ class TemplateServiceTest {
     private TemplateRepository templates;
     @Mock
     private TemplateRenderer renderer;
+    @Mock
+    private io.github.ahrimjang.mail.core.port.BuiltinVisibilityRepository hiddenBuiltins;
+    // Mockito 는 Set 반환 mock 에 빈 Set 을 기본으로 돌려주므로(null 아님)
+    // 기존 테스트는 스텁 없이 "숨김 없음"으로 동작한다.
 
     @InjectMocks
     private TemplateService service;
+
+    @Test
+    void list_excludesBuiltinsHiddenByThisWorkspace() {
+        Template shown = builtin(1L, "welcome");
+        Template hidden = builtin(2L, "promo");
+        Template mine = Template.create("내 템플릿", "s", "<p>b</p>");
+        mine.setId(3L);
+        mine.setWorkspaceId(WS);
+        when(templates.findVisibleToWorkspace(WS)).thenReturn(java.util.List.of(shown, hidden, mine));
+        when(hiddenBuiltins.hiddenTemplateIds(WS)).thenReturn(java.util.Set.of(2L));
+
+        var views = service.list();
+
+        org.assertj.core.api.Assertions.assertThat(views)
+                .extracting(io.github.ahrimjang.mail.common.TemplateView::id)
+                .containsExactly(1L, 3L);   // 숨긴 빌트인(2)만 빠진다
+    }
+
+    @Test
+    void hide_rejectsUserTemplates() {
+        Template mine = Template.create("내 템플릿", "s", "<p>b</p>");
+        mine.setId(3L);
+        mine.setWorkspaceId(WS);
+        when(templates.findById(3L)).thenReturn(java.util.Optional.of(mine));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.hide(3L))
+                .isInstanceOf(IllegalStateException.class);
+        org.mockito.Mockito.verify(hiddenBuiltins, org.mockito.Mockito.never())
+                .hide(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void hide_recordsBuiltinForThisWorkspaceOnly() {
+        Template b = builtin(2L, "promo");
+        when(templates.findById(2L)).thenReturn(java.util.Optional.of(b));
+
+        service.hide(2L);
+
+        org.mockito.Mockito.verify(hiddenBuiltins).hide(WS, 2L);
+    }
 
     private static Template builtin(long id, String key) {
         Template t = Template.create("edited name", "edited subject", "<p>edited</p>");

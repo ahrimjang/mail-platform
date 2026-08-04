@@ -54,6 +54,9 @@ public class JpaUserRepository implements UserRepository {
         UserEntity entity = new UserEntity(u.getId(), u.getEmail(), u.getPasswordHash(), u.getDisplayName(), u.getCreatedAt());
         entity.setWorkspaceId(u.getWorkspaceId());
         entity.setRole(u.getRole());
+        entity.setEmailVerifiedAt(u.getEmailVerifiedAt());
+        entity.setAuthProvider(u.getAuthProvider());
+        entity.setProviderSubject(u.getProviderSubject());
         return entity;
     }
 
@@ -66,6 +69,9 @@ public class JpaUserRepository implements UserRepository {
         u.setPasswordHash(e.getPasswordHash());
         u.setDisplayName(e.getDisplayName());
         u.setCreatedAt(e.getCreatedAt());
+        u.setEmailVerifiedAt(e.getEmailVerifiedAt());
+        u.setAuthProvider(e.getAuthProvider());
+        u.setProviderSubject(e.getProviderSubject());
         return u;
     }
 }

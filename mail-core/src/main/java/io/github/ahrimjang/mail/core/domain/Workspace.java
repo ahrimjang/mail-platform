@@ -19,6 +19,7 @@ public class Workspace {
     private Integer sendRatePerSec;
     /** PG 빌링키 — 카드 등록 시 발급. null = 결제 수단 미등록(유료 플랜 전환 불가). */
     private String billingKey;
+    private String apiKey;   // 외부 구독 연동 API 키 (null = 미발급)
     private Instant createdAt;
 
     public Workspace() {
@@ -65,6 +66,14 @@ public class Workspace {
 
     public void setBillingKey(String billingKey) {
         this.billingKey = billingKey;
+    }
+
+    public String getApiKey() {
+        return apiKey;
+    }
+
+    public void setApiKey(String apiKey) {
+        this.apiKey = apiKey;
     }
 
     public Integer getSendRatePerSec() {

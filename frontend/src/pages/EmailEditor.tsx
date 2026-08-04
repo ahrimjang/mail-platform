@@ -169,7 +169,7 @@ function BlockView({ b, patch, onRichFocus }: {
     }
     case "image":
       return b.url.trim() ? (
-        <div style={{ ...bgStyle(b), minHeight: b.minH }}><img src={b.url} alt={b.alt} style={{ display: "block", width: "100%" }} /></div>
+        <div style={{ ...bgStyle(b), minHeight: b.minH }}><img src={b.url} alt={b.alt} style={{ display: "block", width: "100%", opacity: (b.opacity ?? 100) / 100 }} /></div>
       ) : (
         <div className="op-hatch" style={{ height: b.minH ?? 150, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 6 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: "#9a9aa2", fontFamily: "ui-monospace, monospace" }}>이미지 · 권장 1200×400</div>
@@ -233,6 +233,13 @@ function BlockPanel({ b, patch }: { b: Block; patch: (updates: Partial<Block>) =
           <label className="op-rp-field" style={{ marginTop: 12 }}><span>대체 텍스트</span>
             <input className="op-input rp" value={b.alt} onChange={(e) => patch({ alt: e.target.value })} />
           </label>
+          <div className="op-rp-section">투명도</div>
+          <div className="op-stylerow">
+            <input className="op-range" type="range" min={10} max={100} step={5}
+              value={b.opacity ?? 100}
+              onChange={(e) => patch({ opacity: Number(e.target.value) === 100 ? undefined : Number(e.target.value) })} />
+            <span className="sl">{b.opacity ?? 100}%</span>
+          </div>
         </>
       )}
       {b.type === "button" && (
@@ -294,6 +301,12 @@ function BlockPanel({ b, patch }: { b: Block; patch: (updates: Partial<Block>) =
               <span key={c} className={`op-swatch${(b.color ?? (DEFAULTS[b.type] as { color: string }).color) === c ? " active" : ""}`}
                 style={{ background: c }} onClick={() => patch({ color: c })} />
             ))}
+            {/* 팔레트 밖 자유 색 — 배경색과 같은 UX */}
+            <label className={`op-swatch custom${b.color != null && !TEXT_COLORS.includes(b.color) ? " active" : ""}`} title="직접 선택">
+              <input type="color"
+                value={/^#[0-9a-fA-F]{6}$/.test(b.color ?? "") ? (b.color as string) : "#3f3f46"}
+                onChange={(e) => patch({ color: e.target.value })} />
+            </label>
           </div>
         </>
       )}
@@ -305,6 +318,11 @@ function BlockPanel({ b, patch }: { b: Block; patch: (updates: Partial<Block>) =
               <span key={c} className={`op-swatch${(b.color ?? DEFAULTS.footer.color) === c ? " active" : ""}`}
                 style={{ background: c }} onClick={() => patch({ color: c })} />
             ))}
+            <label className={`op-swatch custom${b.color != null && !TEXT_COLORS.includes(b.color) ? " active" : ""}`} title="직접 선택">
+              <input type="color"
+                value={/^#[0-9a-fA-F]{6}$/.test(b.color ?? "") ? (b.color as string) : "#a1a1aa"}
+                onChange={(e) => patch({ color: e.target.value })} />
+            </label>
           </div>
         </>
       )}
@@ -318,6 +336,11 @@ function BlockPanel({ b, patch }: { b: Block; patch: (updates: Partial<Block>) =
               <span key={c} className={`op-swatch${(b.btnColor ?? DEFAULTS.button.btnColor) === c ? " active" : ""}`}
                 style={{ background: c }} onClick={() => patch({ btnColor: c })} />
             ))}
+            <label className={`op-swatch custom${b.btnColor != null && !BTN_COLORS.includes(b.btnColor) ? " active" : ""}`} title="직접 선택">
+              <input type="color"
+                value={/^#[0-9a-fA-F]{6}$/.test(b.btnColor ?? "") ? (b.btnColor as string) : "#2563eb"}
+                onChange={(e) => patch({ btnColor: e.target.value })} />
+            </label>
           </div>
           <div className="op-rp-section">모서리 라운드</div>
           <div className="op-stylerow">
@@ -368,6 +391,11 @@ function BlockPanel({ b, patch }: { b: Block; patch: (updates: Partial<Block>) =
 export default function EmailEditor() {
   const nav = useNavigate();
   const { id } = useParams();
+  // ?target=email — 같은 에디터가 템플릿(재사용 자산) 대신 이메일(캠페인용
+  // 콘텐츠)을 상대로 열린다. 저장 API 와 발송 설정 핸드오프 파라미터만 다르다.
+  const isEmail = new URLSearchParams(window.location.search).get("target") === "email";
+  const apiBase = isEmail ? "/api/emails" : "/api/templates";
+  const editorQuery = isEmail ? "?target=email" : "";
 
   const [name, setName] = useState("새 이메일");
   const [subject, setSubject] = useState("");
@@ -388,8 +416,8 @@ export default function EmailEditor() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await api(`/api/templates/${id}`);
-        if (!res.ok) { if (!cancelled) setLoadError("템플릿을 불러오지 못했습니다."); return; }
+        const res = await api(`${apiBase}/${id}`);
+        if (!res.ok) { if (!cancelled) setLoadError(isEmail ? "이메일을 불러오지 못했습니다." : "템플릿을 불러오지 못했습니다."); return; }
         const t: TemplateView = await res.json();
         if (cancelled) return;
         const restored = parseBlocksMarker(t.htmlBody);
@@ -502,14 +530,46 @@ export default function EmailEditor() {
   function insertVariableAtCaret(token: string) {
     document.execCommand("insertText", false, token);
   }
+  /* 커서/선택이 걸친 기존 <a> — 링크 수정·해제의 대상. */
+  function linkAncestorOf(node: Node | null): HTMLAnchorElement | null {
+    let n: Node | null = node;
+    while (n) {
+      if (n instanceof HTMLAnchorElement) return n;
+      n = n.parentNode;
+    }
+    return null;
+  }
+
+  /* 링크 삽입·수정·해제를 한 버튼으로: 새 선택은 삽입, 기존 링크 위에서는
+     현재 주소가 채워진 채 수정, 비우면 해제. 커밋은 블러 시 sanitizeRich 가 담당. */
   function execLink() {
     const selApi = window.getSelection();
-    if (!selApi || selApi.rangeCount === 0 || selApi.isCollapsed) return;
+    if (!selApi || selApi.rangeCount === 0) return;
     const range = selApi.getRangeAt(0);
-    const url = window.prompt("링크 URL (https://…)");
-    if (!url || !/^(https?:|mailto:)/i.test(url)) return;
+    const existing = linkAncestorOf(range.startContainer);
+    if (selApi.isCollapsed && !existing) return;   // 선택도 기존 링크도 없음
+
+    const url = window.prompt("링크 URL (https://…) — 비우면 링크 해제", existing?.getAttribute("href") ?? "");
+    if (url === null) return;   // 취소
+
     selApi.removeAllRanges();
     selApi.addRange(range);
+    if (url.trim() === "") {
+      if (existing) {
+        // 커서만 올라가 있어도 링크 전체를 선택해 해제
+        const whole = document.createRange();
+        whole.selectNodeContents(existing);
+        selApi.removeAllRanges();
+        selApi.addRange(whole);
+      }
+      document.execCommand("unlink");
+      return;
+    }
+    if (!/^(https?:|mailto:)/i.test(url)) return;
+    if (existing && selApi.isCollapsed) {
+      existing.setAttribute("href", url);   // 기존 링크 주소만 교체
+      return;
+    }
     document.execCommand("createLink", false, url);
   }
 
@@ -526,8 +586,8 @@ export default function EmailEditor() {
     try {
       const payload = JSON.stringify({ name: name.trim(), subject: subject.trim(), htmlBody: blocksToHtmlBody(blocks) });
       const res = id
-        ? await api(`/api/templates/${id}`, { method: "PUT", body: payload })
-        : await api("/api/templates", { method: "POST", body: payload });
+        ? await api(`${apiBase}/${id}`, { method: "PUT", body: payload })
+        : await api(apiBase, { method: "POST", body: payload });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         setError(res.status === 409
@@ -537,7 +597,7 @@ export default function EmailEditor() {
       }
       const view: TemplateView = await res.json();
       setSavedAt(new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }));
-      if (!id) nav(`/editor/${view.id}`, { replace: true });
+      if (!id) nav(`/editor/${view.id}${editorQuery}`, { replace: true });
       return view.id;
     } catch {
       setError("저장에 실패했습니다.");
@@ -570,10 +630,10 @@ export default function EmailEditor() {
             className="op-title-input"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="템플릿 이름"
-            aria-label="템플릿 이름"
+            placeholder={isEmail ? "이메일 이름" : "템플릿 이름"}
+            aria-label={isEmail ? "이메일 이름" : "템플릿 이름"}
           />
-          <span className="op-autosave">{savedAt ? `저장됨 ${savedAt}` : id ? "저장된 템플릿" : "저장 전"}</span>
+          <span className="op-autosave">{savedAt ? `저장됨 ${savedAt}` : id ? (isEmail ? "저장된 이메일" : "저장된 템플릿") : "저장 전"}</span>
         </div>
         <div className="op-editor-actions">
           {error && <span className="op-editor-error">{error}</span>}
@@ -582,9 +642,19 @@ export default function EmailEditor() {
           <button
             className="op-tbtn primary"
             disabled={saving}
-            onClick={async () => { const tid = await save(); if (tid) nav(`/campaigns/new?templateId=${tid}`); }}
+            onClick={async () => {
+              const tid = await save();
+              if (!tid) return;
+              if (isEmail) { nav(`/campaigns/new?emailId=${tid}`); return; }
+              // 템플릿은 발송 대상이 아니다 — 내용을 복사한 이메일을 만들어 이어간다
+              const res = await api("/api/emails", { method: "POST", body: JSON.stringify({ templateId: tid }) });
+              if (res.ok) {
+                const created = await res.json();
+                nav(`/editor/${created.id}?target=email`);
+              }
+            }}
           >
-            다음 · 발송 설정
+            {isEmail ? "다음 · 발송 설정" : "이메일로 만들기"}
           </button>
         </div>
       </div>
