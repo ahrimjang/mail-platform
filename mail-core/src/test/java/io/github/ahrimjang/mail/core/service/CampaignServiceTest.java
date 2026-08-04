@@ -77,9 +77,34 @@ class CampaignServiceTest {
     private ContactListRepository lists;
     @Mock
     private PlanLimits planLimits;   // mock 기본은 no-op = 한도 여유 상태
+    @Mock
+    private EmailVerificationService verification;   // mock 기본은 no-op = 인증 완료 상태
+    @Mock
+    private EmailDraftService emailDrafts;
 
     @InjectMocks
     private CampaignService service;
+
+    @org.junit.jupiter.api.Test
+    void create_snapshotsTheSelectedEmailContent() {
+        io.github.ahrimjang.mail.core.domain.EmailDraft email =
+                io.github.ahrimjang.mail.core.domain.EmailDraft.of(WS, "7월 뉴스레터", "이메일 제목", "<p>이메일 본문</p>", null);
+        when(emailDrafts.ownedOrThrow(55L)).thenReturn(email);
+        stubCampaignSaveAssigningId();
+        stubMessageSaveAllAssigningIds();
+        when(messages.countByCampaign(CAMPAIGN_ID))
+                .thenReturn(new io.github.ahrimjang.mail.core.port.MailMessageRepository.MessageCounts(1, 1, 0, 0, 0, 0, 0));
+
+        service.create(new CreateCampaignRequest(
+                null, null, java.util.List.of("a@x.com"), null, null, null, null,
+                null, null, null, null, null, null, null, null, null, null, null, null, null,
+                55L, null));
+
+        org.mockito.ArgumentCaptor<Campaign> saved = org.mockito.ArgumentCaptor.forClass(Campaign.class);
+        org.mockito.Mockito.verify(campaigns).save(saved.capture());
+        org.assertj.core.api.Assertions.assertThat(saved.getValue().getSubject()).isEqualTo("이메일 제목");
+        org.assertj.core.api.Assertions.assertThat(saved.getValue().getBody()).isEqualTo("<p>이메일 본문</p>");
+    }
 
     @org.junit.jupiter.api.Test
     void create_isBlockedWhenTheMonthlySendLimitIsReached() {

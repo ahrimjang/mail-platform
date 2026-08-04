@@ -6,10 +6,10 @@ import VariableMenu from "../components/VariableMenu";
 import Portal from "../components/Portal";
 import { fmt } from "../outpace/format";
 import { renderPreview } from "../outpace/starters";
-import type { CampaignContentView, CampaignDraftView, CampaignView, ContactListView, TemplateView } from "../types";
+import type { CampaignContentView, CampaignDraftView, CampaignView, ContactListView, EmailDraftView } from "../types";
 
 type Timing = "now" | "scheduled";
-type ContentSource = "direct" | "template";
+type ContentSource = "direct" | "email";
 type AudienceSource = "direct" | "list";
 
 /** Evaluation wait choices for the A/B winner flow. */
@@ -32,10 +32,12 @@ function minScheduleLocal(): string {
 export default function NewCampaign() {
   const nav = useNavigate();
   const { email: myEmail } = useAuth();
-  // ?templateId= — the editors' "다음 · 발송 설정" hands over the just-saved
-  // template so it arrives here already selected.
+  // ?emailId= — 이메일 목록/에디터의 "다음 · 발송 설정"이 방금 저장한 이메일을
+  // 넘겨서 도착 즉시 선택돼 있다. ?templateId= 는 템플릿 에디터의 레거시 핸드오프 —
+  // 도착하면 그 템플릿을 복사한 이메일을 만들어 같은 흐름에 태운다.
   const [searchParams] = useSearchParams();
-  const initialTemplateId = searchParams.get("templateId") ?? "";
+  const initialEmailId = searchParams.get("emailId") ?? "";
+  const legacyTemplateId = searchParams.get("templateId") ?? "";
   // ?draftId= — resume a draft saved from this form; 임시저장 then updates it.
   const draftId = searchParams.get("draftId");
   const [savingDraft, setSavingDraft] = useState(false);
@@ -91,17 +93,17 @@ export default function NewCampaign() {
   const [testSending, setTestSending] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
-  // Template preview popup: which template + the variant label it belongs to.
-  const [tplPreview, setTplPreview] = useState<{ tpl: TemplateView; label: string } | null>(null);
+  // 미리보기 팝업: 어느 이메일 + 어떤 변형(A/B) 라벨인지.
+  const [tplPreview, setTplPreview] = useState<{ tpl: EmailDraftView; label: string } | null>(null);
 
-  // Content can come from a saved template (snapshotted server-side at create),
+  // Content can come from a saved email (snapshotted server-side at create),
   // and the audience from a contact list (fanned out server-side). Variant B
-  // mirrors the same direct/template choice.
-  const [contentSource, setContentSource] = useState<ContentSource>(initialTemplateId ? "template" : "direct");
-  const [templateId, setTemplateId] = useState<string>(initialTemplateId);
+  // mirrors the same direct/email choice.
+  const [contentSource, setContentSource] = useState<ContentSource>(initialEmailId ? "email" : "direct");
+  const [emailId, setEmailId] = useState<string>(initialEmailId);
   const [abContentSource, setAbContentSource] = useState<ContentSource>("direct");
-  const [abTemplateId, setAbTemplateId] = useState<string>("");
-  const [templates, setTemplates] = useState<TemplateView[]>([]);
+  const [abEmailId, setAbEmailId] = useState<string>("");
+  const [emailDrafts, setEmailDrafts] = useState<EmailDraftView[]>([]);
   const [audienceSource, setAudienceSource] = useState<AudienceSource>("direct");
   const [listId, setListId] = useState<string>("");
   const [lists, setLists] = useState<ContactListView[]>([]);
@@ -150,8 +152,9 @@ export default function NewCampaign() {
         setSenderEmail(d.senderEmail ?? "");
         setSubject(d.subject ?? "");
         setBody(d.body ?? "");
-        setContentSource(d.templateId != null ? "template" : "direct");
-        setTemplateId(d.templateId != null ? String(d.templateId) : "");
+        // 초안은 제목·본문 스냅샷을 함께 저장하므로 항상 직접 입력으로 복원한다
+        // (템플릿/이메일 참조는 등록 시점 스냅샷용 — 초안 편집에는 원본이 필요 없다)
+        setContentSource("direct");
         setAudienceSource(d.listId != null ? "list" : "direct");
         setListId(d.listId != null ? String(d.listId) : "");
         setRecipients(d.recipients.join("\n"));
@@ -184,30 +187,52 @@ export default function NewCampaign() {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([api("/api/templates"), api("/api/lists")])
-      .then(async ([tRes, lRes]) => {
+    Promise.all([api("/api/emails"), api("/api/lists")])
+      .then(async ([eRes, lRes]) => {
         if (cancelled) return;
-        if (tRes.ok) setTemplates(await tRes.json());
+        if (eRes.ok) setEmailDrafts(await eRes.json());
         if (lRes.ok) setLists(await lRes.json());
       })
       .catch(() => { /* pickers just stay empty */ });
     return () => { cancelled = true; };
   }, []);
 
+  // 템플릿 에디터의 레거시 핸드오프(?templateId=) — 템플릿을 복사한 이메일을
+  // 만들어 선택 상태로 전환한다 (캠페인은 이메일만 소비하는 개념).
+  useEffect(() => {
+    if (!legacyTemplateId || initialEmailId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api("/api/emails", {
+          method: "POST",
+          body: JSON.stringify({ templateId: Number(legacyTemplateId) }),
+        });
+        if (!res.ok || cancelled) return;
+        const created: EmailDraftView = await res.json();
+        setEmailDrafts((prev) => [created, ...prev]);
+        setEmailId(String(created.id));
+        setContentSource("email");
+      } catch { /* 선택 없이 두면 사용자가 직접 고른다 */ }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const emails = useMemo(
     () => recipients.split(/[\n,]/).map((r) => r.trim()).filter(Boolean),
     [recipients],
   );
-  const selectedTemplate = templates.find((t) => String(t.id) === templateId) ?? null;
-  const selectedAbTemplate = templates.find((t) => String(t.id) === abTemplateId) ?? null;
+  const selectedEmail = emailDrafts.find((t) => String(t.id) === emailId) ?? null;
+  const selectedAbEmail = emailDrafts.find((t) => String(t.id) === abEmailId) ?? null;
   const selectedList = lists.find((l) => String(l.id) === listId) ?? null;
   const audienceCount = audienceSource === "list" ? selectedList?.memberCount ?? 0 : emails.length;
   const abWaitLabel = AB_WAIT_OPTIONS.find((o) => o.minutes === abEvalWait)?.label ?? `${abEvalWait}분`;
 
-  // What the recipient will get: direct input or the selected template's snapshot.
-  const previewSubject = contentSource === "template" ? selectedTemplate?.subject ?? "" : subject;
-  const previewHtml = contentSource === "template" ? selectedTemplate?.htmlBody ?? "" : body;
-  const canPreview = contentSource === "direct" || !!selectedTemplate;
+  // What the recipient will get: direct input or the selected email's snapshot.
+  const previewSubject = contentSource === "email" ? selectedEmail?.subject ?? "" : subject;
+  const previewHtml = contentSource === "email" ? selectedEmail?.htmlBody ?? "" : body;
+  const canPreview = contentSource === "direct" || !!selectedEmail;
 
   // Lazy-load the campaign list the first time the import modal opens.
   useEffect(() => {
@@ -257,7 +282,7 @@ export default function NewCampaign() {
       // The snapshot is the source of truth for what was actually sent, so the
       // copy edits it directly instead of re-linking the template.
       setContentSource("direct");
-      setTemplateId("");
+      setEmailId("");
       setSubject(content?.subject ?? c.subject ?? "");
       setBody(content?.htmlBody ?? "");
       setAudienceSource(c.listId != null ? "list" : "direct");
@@ -309,18 +334,20 @@ export default function NewCampaign() {
     return {
       name: name || null,
       description: description || null,
-      subject: contentSource === "direct" ? subject : null,
-      body: contentSource === "direct" ? body : null,
-      templateId: contentSource === "template" && templateId ? Number(templateId) : null,
+      // 이메일 선택 시에도 제목·본문 스냅샷을 함께 싣는다 — 등록은 서버가 emailId 를
+      // 우선하므로 무해하고, 임시저장(초안)은 스냅샷 덕에 내용이 보존된다.
+      subject: contentSource === "direct" ? subject : selectedEmail?.subject ?? null,
+      body: contentSource === "direct" ? body : selectedEmail?.htmlBody ?? null,
+      emailId: contentSource === "email" && emailId ? Number(emailId) : null,
       recipients: audienceSource === "direct" ? emails : null,
       listId: audienceSource === "list" && listId ? Number(listId) : null,
       senderName: senderName || null,
       senderEmail: senderEmail || null,
       scheduledAt,
       abSubjectB: abEnabled && (winnerAllowed ? abContentSource === "direct" : true) && abSubjectB.trim() !== "" ? abSubjectB : null,
-      // 본문 B·템플릿 B·승자 플로우는 프로부터 — 스탠다드는 제목 A/B(반반 분배)로 제출
+      // 본문 B·이메일 B·승자 플로우는 프로부터 — 스탠다드는 제목 A/B(반반 분배)로 제출
       abBodyB: abEnabled && winnerAllowed && abContentSource === "direct" && abBodyB.trim() !== "" ? abBodyB : null,
-      abTemplateId: abEnabled && winnerAllowed && abContentSource === "template" && abTemplateId ? Number(abTemplateId) : null,
+      abEmailId: abEnabled && winnerAllowed && abContentSource === "email" && abEmailId ? Number(abEmailId) : null,
       abTestPercent: abEnabled && winnerAllowed ? abTestPercent : null,
       abEvalMetric: abEnabled && winnerAllowed ? abMetric : null,
       abEvalWaitMinutes: abEnabled && winnerAllowed ? abEvalWait : null,
@@ -355,13 +382,13 @@ export default function NewCampaign() {
   }
 
   async function submit() {
-    if (contentSource === "template" && !templateId) {
-      setError(abEnabled ? "A안에서 사용할 템플릿을 선택하세요." : "사용할 템플릿을 선택하세요.");
+    if (contentSource === "email" && !emailId) {
+      setError(abEnabled ? "A안에서 사용할 이메일을 선택하세요." : "사용할 이메일을 선택하세요.");
       return;
     }
     if (abEnabled) {
-      if (abContentSource === "template" && !abTemplateId) {
-        setError("B안에서 사용할 템플릿을 선택하세요.");
+      if (abContentSource === "email" && !abEmailId) {
+        setError("B안에서 사용할 이메일을 선택하세요.");
         return;
       }
       if (abContentSource === "direct" && abSubjectB.trim() === "" && abBodyB.trim() === "") {
@@ -447,18 +474,17 @@ export default function NewCampaign() {
   /** Content the test mail should carry, honoring the A/B variant choice. */
   function testPayload() {
     if (testVariant === "B" && abEnabled) {
-      if (abContentSource === "template" && abTemplateId) {
-        return { templateId: Number(abTemplateId) };
+      if (abContentSource === "email" && selectedAbEmail) {
+        // 테스트 발송 API 는 제목·본문을 직접 받는다 — 이메일의 현재 내용을 실어 보낸다
+        return { subject: selectedAbEmail.subject, body: selectedAbEmail.htmlBody };
       }
-      // A subject-only (or body-only) B test falls back to A's direct content.
+      // A subject-only (or body-only) B test falls back to A's content.
       return {
-        subject: abSubjectB.trim() || (contentSource === "direct" ? subject : ""),
-        body: abBodyB.trim() || (contentSource === "direct" ? body : ""),
+        subject: abSubjectB.trim() || previewSubject,
+        body: abBodyB.trim() || previewHtml,
       };
     }
-    return contentSource === "template" && templateId
-        ? { templateId: Number(templateId) }
-        : { subject, body };
+    return { subject: previewSubject, body: previewHtml };
   }
 
   async function sendTest() {
@@ -496,9 +522,9 @@ export default function NewCampaign() {
     bod: string,
     setBod: (v: string) => void,
     bodyRef: React.RefObject<HTMLTextAreaElement>,
-    tplId: string,
-    setTplId: (v: string) => void,
-    selectedTpl: TemplateView | null,
+    emlId: string,
+    setEmlId: (v: string) => void,
+    selectedEml: EmailDraftView | null,
     variantB: boolean,
   ) {
     return (
@@ -507,10 +533,10 @@ export default function NewCampaign() {
           <label className="op-check">
             <input
               type="checkbox"
-              checked={source === "template"}
-              onChange={(e) => setSource(e.target.checked ? "template" : "direct")}
+              checked={source === "email"}
+              onChange={(e) => setSource(e.target.checked ? "email" : "direct")}
             />
-            템플릿 사용
+            만들어 둔 이메일 사용
           </label>
         </div>
         {source === "direct" ? (
@@ -545,27 +571,27 @@ export default function NewCampaign() {
         ) : (
           // div, not label: the preview button below must not re-trigger the select.
           <div className="op-field" style={{ marginBottom: 0 }}>
-            <span className="op-flabel">템플릿</span>
-            <select className="op-input" value={tplId} onChange={(e) => setTplId(e.target.value)}>
-              <option value="">템플릿을 선택하세요</option>
-              {templates.map((t) => (
+            <span className="op-flabel">이메일</span>
+            <select className="op-input" value={emlId} onChange={(e) => setEmlId(e.target.value)}>
+              <option value="">이메일을 선택하세요</option>
+              {emailDrafts.map((t) => (
                 <option key={t.id} value={t.id}>{t.name}</option>
               ))}
             </select>
-            {templates.length === 0 && <span className="op-hint">저장된 템플릿이 없습니다. 템플릿 메뉴에서 먼저 만들어 주세요.</span>}
-            {selectedTpl && (
+            {emailDrafts.length === 0 && <span className="op-hint">만들어 둔 이메일이 없습니다. 이메일 메뉴에서 템플릿을 불러와 먼저 만들어 주세요.</span>}
+            {selectedEml && (
               <>
-                <span className="op-hint">제목: {selectedTpl.subject}</span>
+                <span className="op-hint">제목: {selectedEml.subject}</span>
                 <button
                   type="button"
                   className="op-btn op-btn-sm op-btn-ghost"
                   style={{ marginTop: 8 }}
                   onClick={() => setTplPreview({
-                    tpl: selectedTpl,
-                    label: abEnabled ? (variantB ? "B안" : "A안") : "템플릿",
+                    tpl: selectedEml,
+                    label: abEnabled ? (variantB ? "B안" : "A안") : "이메일",
                   })}
                 >
-                  템플릿 미리보기
+                  이메일 미리보기
                 </button>
               </>
             )}
@@ -908,7 +934,7 @@ export default function NewCampaign() {
                   {winnerAllowed ? `A안 · 테스트 ${abTestPercent / 2}%` : "A안 · 50%"}
                 </span>
                 {contentControls(contentSource, setContentSource, subject, setSubject, body, setBody,
-                  bodyARef, templateId, setTemplateId, selectedTemplate, false)}
+                  bodyARef, emailId, setEmailId, selectedEmail, false)}
               </div>
               <div style={{ border: "1px solid var(--op-border)", borderRadius: 12, padding: 14 }}>
                 <span className="op-pill" style={{ marginBottom: 10, display: "inline-block" }}>
@@ -916,7 +942,7 @@ export default function NewCampaign() {
                 </span>
                 {winnerAllowed ? (
                   contentControls(abContentSource, setAbContentSource, abSubjectB, setAbSubjectB, abBodyB, setAbBodyB,
-                    bodyBRef, abTemplateId, setAbTemplateId, selectedAbTemplate, true)
+                    bodyBRef, abEmailId, setAbEmailId, selectedAbEmail, true)
                 ) : (
                   <>
                     {/* 스탠다드: 제목 A/B — B안은 제목만 다르고 본문은 A안을 공유 */}
@@ -934,7 +960,7 @@ export default function NewCampaign() {
         ) : (
           <div className="op-field" style={{ marginBottom: 0 }}>
             {contentControls(contentSource, setContentSource, subject, setSubject, body, setBody,
-              bodyARef, templateId, setTemplateId, selectedTemplate, false)}
+              bodyARef, emailId, setEmailId, selectedEmail, false)}
           </div>
         )}
       </div>
@@ -1117,7 +1143,7 @@ export default function NewCampaign() {
               <div>
                 <h3 style={{ margin: 0 }}>발송 미리보기{abEnabled ? " — A안" : ""}</h3>
                 <p className="op-modal-sub" style={{ margin: "6px 0 0" }}>
-                  미리보기 전용입니다 — 수정은 {contentSource === "template" ? "템플릿 편집 화면" : "위 입력란"}에서만 가능해요.
+                  미리보기 전용입니다 — 수정은 {contentSource === "email" ? "이메일 편집 화면" : "위 입력란"}에서만 가능해요.
                   {"{{변수}}"}는 발송 시 수신자별로 채워집니다.
                 </p>
               </div>

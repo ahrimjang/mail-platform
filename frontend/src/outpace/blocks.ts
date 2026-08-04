@@ -327,8 +327,10 @@ export function parseTextMarker(htmlBody: string): string | null {
 }
 
 /** Which editor should open a saved template. */
-export function editorRouteFor(t: { id: number; htmlBody: string }): string {
-  if (t.htmlBody.startsWith(BLOCKS_PREFIX)) return `/editor/${t.id}`;
-  if (t.htmlBody.startsWith(TEXT_PREFIX)) return `/editor/text/${t.id}`;
-  return `/editor/html/${t.id}`;
+export function editorRouteFor(t: { id: number; htmlBody: string }, target?: "email"): string {
+  // target=email 이면 에디터가 /api/emails 를 상대로 열린다 (템플릿/이메일 개념 분리)
+  const q = target === "email" ? "?target=email" : "";
+  if (t.htmlBody.startsWith(BLOCKS_PREFIX)) return `/editor/${t.id}${q}`;
+  if (t.htmlBody.startsWith(TEXT_PREFIX)) return `/editor/text/${t.id}${q}`;
+  return `/editor/html/${t.id}${q}`;
 }

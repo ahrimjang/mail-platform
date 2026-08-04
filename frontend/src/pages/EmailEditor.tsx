@@ -368,6 +368,11 @@ function BlockPanel({ b, patch }: { b: Block; patch: (updates: Partial<Block>) =
 export default function EmailEditor() {
   const nav = useNavigate();
   const { id } = useParams();
+  // ?target=email — 같은 에디터가 템플릿(재사용 자산) 대신 이메일(캠페인용
+  // 콘텐츠)을 상대로 열린다. 저장 API 와 발송 설정 핸드오프 파라미터만 다르다.
+  const isEmail = new URLSearchParams(window.location.search).get("target") === "email";
+  const apiBase = isEmail ? "/api/emails" : "/api/templates";
+  const editorQuery = isEmail ? "?target=email" : "";
 
   const [name, setName] = useState("새 이메일");
   const [subject, setSubject] = useState("");
@@ -388,8 +393,8 @@ export default function EmailEditor() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await api(`/api/templates/${id}`);
-        if (!res.ok) { if (!cancelled) setLoadError("템플릿을 불러오지 못했습니다."); return; }
+        const res = await api(`${apiBase}/${id}`);
+        if (!res.ok) { if (!cancelled) setLoadError(isEmail ? "이메일을 불러오지 못했습니다." : "템플릿을 불러오지 못했습니다."); return; }
         const t: TemplateView = await res.json();
         if (cancelled) return;
         const restored = parseBlocksMarker(t.htmlBody);
@@ -526,8 +531,8 @@ export default function EmailEditor() {
     try {
       const payload = JSON.stringify({ name: name.trim(), subject: subject.trim(), htmlBody: blocksToHtmlBody(blocks) });
       const res = id
-        ? await api(`/api/templates/${id}`, { method: "PUT", body: payload })
-        : await api("/api/templates", { method: "POST", body: payload });
+        ? await api(`${apiBase}/${id}`, { method: "PUT", body: payload })
+        : await api(apiBase, { method: "POST", body: payload });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         setError(res.status === 409
@@ -537,7 +542,7 @@ export default function EmailEditor() {
       }
       const view: TemplateView = await res.json();
       setSavedAt(new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }));
-      if (!id) nav(`/editor/${view.id}`, { replace: true });
+      if (!id) nav(`/editor/${view.id}${editorQuery}`, { replace: true });
       return view.id;
     } catch {
       setError("저장에 실패했습니다.");
@@ -570,10 +575,10 @@ export default function EmailEditor() {
             className="op-title-input"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="템플릿 이름"
-            aria-label="템플릿 이름"
+            placeholder={isEmail ? "이메일 이름" : "템플릿 이름"}
+            aria-label={isEmail ? "이메일 이름" : "템플릿 이름"}
           />
-          <span className="op-autosave">{savedAt ? `저장됨 ${savedAt}` : id ? "저장된 템플릿" : "저장 전"}</span>
+          <span className="op-autosave">{savedAt ? `저장됨 ${savedAt}` : id ? (isEmail ? "저장된 이메일" : "저장된 템플릿") : "저장 전"}</span>
         </div>
         <div className="op-editor-actions">
           {error && <span className="op-editor-error">{error}</span>}
@@ -582,9 +587,19 @@ export default function EmailEditor() {
           <button
             className="op-tbtn primary"
             disabled={saving}
-            onClick={async () => { const tid = await save(); if (tid) nav(`/campaigns/new?templateId=${tid}`); }}
+            onClick={async () => {
+              const tid = await save();
+              if (!tid) return;
+              if (isEmail) { nav(`/campaigns/new?emailId=${tid}`); return; }
+              // 템플릿은 발송 대상이 아니다 — 내용을 복사한 이메일을 만들어 이어간다
+              const res = await api("/api/emails", { method: "POST", body: JSON.stringify({ templateId: tid }) });
+              if (res.ok) {
+                const created = await res.json();
+                nav(`/editor/${created.id}?target=email`);
+              }
+            }}
           >
-            다음 · 발송 설정
+            {isEmail ? "다음 · 발송 설정" : "이메일로 만들기"}
           </button>
         </div>
       </div>

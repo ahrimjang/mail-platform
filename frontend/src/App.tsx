@@ -8,6 +8,7 @@ import Campaigns from "./pages/Campaigns";
 import NewCampaign from "./pages/NewCampaign";
 import CampaignDetail from "./pages/CampaignDetail";
 import Templates from "./pages/Templates";
+import Emails from "./pages/Emails";
 import Recipients from "./pages/Recipients";
 import Analytics from "./pages/Analytics";
 import WorkspaceSettings from "./pages/WorkspaceSettings";
@@ -21,6 +22,7 @@ import ResetPassword from "./pages/ResetPassword";
 import Landing from "./pages/Landing";
 import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
+import VerifyEmail from "./pages/VerifyEmail";
 
 /* Gate: send unauthenticated users to /login; render children otherwise. */
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -55,6 +57,8 @@ function AppRoutes() {
       {/* 약관류 공개 문서 — 게이트 없음 */}
       <Route path="/privacy" element={<Privacy />} />
       <Route path="/terms" element={<Terms />} />
+      {/* 가입 이메일 인증: 메일 링크로 진입하므로 게이트 없음 */}
+      <Route path="/verify-email" element={<VerifyEmail />} />
 
       {/* App shell (top nav) wraps the primary screens. 비로그인 "/"는 소개 랜딩. */}
       <Route path="/" element={<ShellGate />}>
@@ -63,6 +67,7 @@ function AppRoutes() {
         <Route path="campaigns/new" element={<NewCampaign />} />
         <Route path="campaigns/:id" element={<CampaignDetail />} />
         <Route path="templates" element={<Templates />} />
+        <Route path="emails" element={<Emails />} />
         <Route path="recipients" element={<Recipients />} />
         <Route path="lists" element={<Lists />} />
         <Route path="analytics" element={<Analytics />} />

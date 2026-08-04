@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import { api } from "../api";
 import { useAuth } from "../outpace/auth";
 
 /* Top navigation shell shared by dashboard / campaigns / templates.
@@ -11,6 +12,10 @@ export default function AppShell() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [search, setSearch] = useState("");
   const menuRef = useRef<HTMLDivElement>(null);
+  // 가입 이메일 인증 배너 — null 은 아직 모름(배너 미표시). 페이지 이동마다
+  // 가볍게 재확인해서 다른 탭에서 인증을 마치면 배너가 사라지게 한다.
+  const [emailVerified, setEmailVerified] = useState<boolean | null>(null);
+  const [resent, setResent] = useState(false);
 
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
@@ -20,9 +25,26 @@ export default function AppShell() {
     return () => document.removeEventListener("mousedown", onDocClick);
   }, []);
 
+  useEffect(() => {
+    let alive = true;
+    api("/api/me/email-verification")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (alive && d) setEmailVerified(d.verified); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [pathname]);
+
+  async function resendVerification() {
+    try {
+      await api("/api/me/email-verification/resend", { method: "POST" });
+      setResent(true);
+    } catch { /* 배너 유지 */ }
+  }
+
   const isDash = pathname === "/";
   const isCamp = pathname.startsWith("/campaigns");
-  const isTpl = pathname.startsWith("/templates");
+  // 템플릿 관리는 이메일 허브 하위 화면 — 네비 하이라이트도 이메일로 묶는다
+  const isEml = pathname.startsWith("/emails") || pathname.startsWith("/templates");
   const isRcp = pathname.startsWith("/recipients");
   const isList = pathname.startsWith("/lists");
   const isAnal = pathname.startsWith("/analytics");
@@ -40,7 +62,7 @@ export default function AppShell() {
           <nav className="op-navlinks">
             <button className={`op-navlink${isDash ? " active" : ""}`} onClick={() => nav("/")}>대시보드</button>
             <button className={`op-navlink${isCamp ? " active" : ""}`} onClick={() => nav("/campaigns")}>캠페인</button>
-            <button className={`op-navlink${isTpl ? " active" : ""}`} onClick={() => nav("/templates")}>템플릿</button>
+            <button className={`op-navlink${isEml ? " active" : ""}`} onClick={() => nav("/emails")}>이메일</button>
             <button className={`op-navlink${isRcp ? " active" : ""}`} onClick={() => nav("/recipients")}>수신자</button>
             <button className={`op-navlink${isList ? " active" : ""}`} onClick={() => nav("/lists")}>리스트</button>
             <button className={`op-navlink${isAnal ? " active" : ""}`} onClick={() => nav("/analytics")}>분석</button>
@@ -90,6 +112,19 @@ export default function AppShell() {
           </div>
         </div>
       </header>
+      {emailVerified === false && (
+        <div style={{ background: "#fef9c3", borderBottom: "1px solid #fde047", padding: "9px 24px",
+                      fontSize: 13, textAlign: "center", color: "#713f12" }}>
+          가입 이메일 인증이 아직이에요 — 인증을 마쳐야 캠페인을 보낼 수 있어요.{" "}
+          {resent
+            ? <b>인증 메일을 다시 보냈어요. 받은편지함을 확인해주세요.</b>
+            : <button onClick={resendVerification}
+                      style={{ background: "none", border: "none", cursor: "pointer", font: "inherit",
+                               fontWeight: 700, color: "#713f12", textDecoration: "underline", padding: 0 }}>
+                인증 메일 재발송
+              </button>}
+        </div>
+      )}
       <main className="op-main">
         <Outlet />
       </main>
