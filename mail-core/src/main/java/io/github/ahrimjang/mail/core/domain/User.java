@@ -14,6 +14,9 @@ public class User {
     private String passwordHash;
     private String displayName;
     private Instant createdAt;
+    private Instant emailVerifiedAt;   // 가입 이메일 소유 검증 완료 시각 (null = 미인증)
+    private String authProvider = "LOCAL";   // 가입 경로: LOCAL(이메일+비밀번호) | GOOGLE
+    private String providerSubject;          // IdP 발급 고유 식별자 (구글 sub) — 소셜 연결 시에만
 
     public User() {
     }
@@ -83,5 +86,46 @@ public class User {
 
     public void setCreatedAt(Instant createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public Instant getEmailVerifiedAt() {
+        return emailVerifiedAt;
+    }
+
+    public void setEmailVerifiedAt(Instant emailVerifiedAt) {
+        this.emailVerifiedAt = emailVerifiedAt;
+    }
+
+    /** 가입 이메일 소유 검증을 마쳤는지 — 발송 경로의 게이트 조건. */
+    public boolean isEmailVerified() {
+        return emailVerifiedAt != null;
+    }
+
+    /** 소셜 가입 팩토리 — 비밀번호 없이 IdP 신원으로 만든다. */
+    public static User registerSocial(String email, String displayName,
+                                      String provider, String providerSubject) {
+        User u = new User();
+        u.email = email;
+        u.displayName = displayName;
+        u.authProvider = provider;
+        u.providerSubject = providerSubject;
+        u.createdAt = Instant.now();
+        return u;
+    }
+
+    public String getAuthProvider() {
+        return authProvider;
+    }
+
+    public void setAuthProvider(String authProvider) {
+        this.authProvider = authProvider;
+    }
+
+    public String getProviderSubject() {
+        return providerSubject;
+    }
+
+    public void setProviderSubject(String providerSubject) {
+        this.providerSubject = providerSubject;
     }
 }

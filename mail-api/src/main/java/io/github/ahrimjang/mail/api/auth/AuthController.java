@@ -25,11 +25,14 @@ public class AuthController {
 
     private final AuthService authService;
     private final io.github.ahrimjang.mail.core.service.PasswordResetService passwordReset;
+    private final io.github.ahrimjang.mail.core.service.EmailVerificationService emailVerification;
 
     public AuthController(AuthService authService,
-                          io.github.ahrimjang.mail.core.service.PasswordResetService passwordReset) {
+                          io.github.ahrimjang.mail.core.service.PasswordResetService passwordReset,
+                          io.github.ahrimjang.mail.core.service.EmailVerificationService emailVerification) {
         this.authService = authService;
         this.passwordReset = passwordReset;
+        this.emailVerification = emailVerification;
     }
 
     /** 재설정 메일 요청 — 계정 유무와 무관하게 항상 202 (열거 방지). */
@@ -38,6 +41,14 @@ public class AuthController {
             @RequestBody io.github.ahrimjang.mail.common.PasswordResetRequest request) {
         passwordReset.request(request.email());
         return ResponseEntity.accepted().build();
+    }
+
+    /** 가입 이메일 인증 확인 — 인증 메일 링크가 도달하는 곳 (공개, 실패는 400 + 사유). */
+    @PostMapping("/verify-email")
+    public ResponseEntity<Void> verifyEmail(
+            @RequestBody io.github.ahrimjang.mail.common.EmailVerifyConfirm request) {
+        emailVerification.confirm(request.token());
+        return ResponseEntity.noContent().build();
     }
 
     /** 재설정 확정 — 토큰 검증 + 비밀번호 교체 (실패는 400 + 사유). */
@@ -53,6 +64,12 @@ public class AuthController {
     public ResponseEntity<AuthResponse> signup(@RequestBody SignupRequest request) {
         AuthResponse response = authService.signup(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
+    /** 구글 로그인 — 계정이 없으면 즉석 가입. ID 토큰 검증은 서버가 한다. */
+    @PostMapping("/google")
+    public AuthResponse google(@RequestBody io.github.ahrimjang.mail.common.GoogleLoginRequest request) {
+        return authService.loginWithGoogle(request.idToken());
     }
 
     /** Authenticate an existing user and return a freshly issued token. */

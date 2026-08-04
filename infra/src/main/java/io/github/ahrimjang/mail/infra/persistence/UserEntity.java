@@ -37,6 +37,18 @@ public class UserEntity {
     @Column(nullable = false)
     private Instant createdAt;
 
+    /** 가입 이메일 인증 완료 시각 (null = 미인증) */
+    @Column(name = "email_verified_at")
+    private Instant emailVerifiedAt;
+
+    /** 가입 경로: LOCAL | GOOGLE */
+    @Column(name = "auth_provider", length = 16, nullable = false)
+    private String authProvider = "LOCAL";
+
+    /** IdP 발급 고유 식별자 (구글 sub) — 소셜 연결 시에만 */
+    @Column(name = "provider_subject")
+    private String providerSubject;
+
     protected UserEntity() {
     }
 
@@ -83,5 +95,29 @@ public class UserEntity {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    public Instant getEmailVerifiedAt() {
+        return emailVerifiedAt;
+    }
+
+    public void setEmailVerifiedAt(Instant emailVerifiedAt) {
+        this.emailVerifiedAt = emailVerifiedAt;
+    }
+
+    public String getAuthProvider() {
+        return authProvider;
+    }
+
+    public void setAuthProvider(String authProvider) {
+        this.authProvider = authProvider;
+    }
+
+    public String getProviderSubject() {
+        return providerSubject;
+    }
+
+    public void setProviderSubject(String providerSubject) {
+        this.providerSubject = providerSubject;
     }
 }
