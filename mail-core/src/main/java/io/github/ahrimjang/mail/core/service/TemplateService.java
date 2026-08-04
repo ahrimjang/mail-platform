@@ -25,15 +25,18 @@ public class TemplateService {
 
     private final TemplateRepository templates;
     private final TemplateRenderer renderer;
+    private final io.github.ahrimjang.mail.core.port.BuiltinVisibilityRepository hiddenBuiltins;
 
     /** Who is acting, for which tenant — resolved by the API adapter per request. */
     private final WorkspaceContext ctx;
 
     public TemplateService(TemplateRepository templates, TemplateRenderer renderer,
-                           WorkspaceContext ctx) {
+                           WorkspaceContext ctx,
+                           io.github.ahrimjang.mail.core.port.BuiltinVisibilityRepository hiddenBuiltins) {
         this.ctx = ctx;
         this.templates = templates;
         this.renderer = renderer;
+        this.hiddenBuiltins = hiddenBuiltins;
     }
 
     public TemplateView create(TemplateRequest request) {
@@ -63,9 +66,38 @@ public class TemplateService {
     }
 
     public List<TemplateView> list() {
+        // 이 워크스페이스가 숨긴 빌트인은 목록(캠페인·이메일 만들기 포함)에서 뺀다.
+        var hidden = hiddenBuiltins.hiddenTemplateIds(ctx.currentWorkspaceId());
         return templates.findVisibleToWorkspace(ctx.currentWorkspaceId()).stream()
+                .filter(t -> !(t.isBuiltin() && hidden.contains(t.getId())))
                 .map(this::toView)
                 .toList();
+    }
+
+    /** 이 워크스페이스가 숨긴 빌트인 목록 — 복원 UI 용. */
+    public List<TemplateView> listHidden() {
+        var hidden = hiddenBuiltins.hiddenTemplateIds(ctx.currentWorkspaceId());
+        return templates.findVisibleToWorkspace(ctx.currentWorkspaceId()).stream()
+                .filter(t -> t.isBuiltin() && hidden.contains(t.getId()))
+                .map(this::toView)
+                .toList();
+    }
+
+    /**
+     * 빌트인을 이 워크스페이스의 목록에서 숨긴다. 전역 자산이라 삭제는 불가하고
+     * (시더가 되살림), 숨김은 내 화면에서만 빠지는 표시용 기록이다. 이미 캠페인·
+     * 이메일로 복사된 내용에는 영향이 없다.
+     */
+    public void hide(Long id) {
+        if (!load(id).isBuiltin()) {
+            throw new IllegalStateException("내 템플릿은 숨기기 대신 삭제할 수 있어요: " + id);
+        }
+        hiddenBuiltins.hide(ctx.currentWorkspaceId(), id);
+    }
+
+    /** 숨긴 빌트인을 다시 목록에 표시한다. */
+    public void unhide(Long id) {
+        hiddenBuiltins.unhide(ctx.currentWorkspaceId(), id);
     }
 
     public void delete(Long id) {

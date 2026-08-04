@@ -73,6 +73,10 @@ public class CampaignEntity {
     /** Template the content was snapshotted from; null = authored directly. */
     private Long templateId;
 
+    /** 이메일(캠페인용 콘텐츠) 소프트 참조 (V28) — 내용은 스냅샷, 이건 계보 추적용 */
+    @Column(name = "email_id")
+    private Long emailId;
+
     /** Contact list the recipients were fanned out from; null = raw addresses. */
     private Long listId;
 
@@ -236,6 +240,14 @@ public class CampaignEntity {
 
     public Long getTemplateId() {
         return templateId;
+    }
+
+    public Long getEmailId() {
+        return emailId;
+    }
+
+    public void setEmailId(Long emailId) {
+        this.emailId = emailId;
     }
 
     public Long getListId() {

@@ -103,6 +103,9 @@ export default function WorkspaceSettings() {
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  // 구독 연동 API 키 — null 은 미발급
+  const [apiKey, setApiKey] = useState<string | null>(null);
+  const [apiKeyMsg, setApiKeyMsg] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -119,10 +122,25 @@ export default function WorkspaceSettings() {
       if (hRes.ok) setUsageHistory(await hRes.json());
       const pRes = await api("/api/billing/payments");
       if (pRes.ok) setPaymentHistory(await pRes.json());
+      const kRes = await api("/api/workspace/api-key");
+      if (kRes.ok) setApiKey((await kRes.json()).apiKey ?? null);
     } catch { /* transient */ }
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
+
+  /* 구독 연동 API 키 발급/재발급 — 재발급하면 이전 키는 즉시 무효. */
+  async function issueApiKey() {
+    if (apiKey && !window.confirm("키를 재발급할까요? 이전 키는 즉시 사용할 수 없게 됩니다.")) return;
+    setApiKeyMsg(null);
+    const res = await api("/api/workspace/api-key", { method: "POST" });
+    if (res.ok) {
+      setApiKey((await res.json()).apiKey);
+      setApiKeyMsg(apiKey ? "재발급됨" : "발급됨");
+    } else {
+      setApiKeyMsg("발급에 실패했습니다.");
+    }
+  }
 
   // 카드 등록 위젯이 successUrl 로 돌아온 경우 — authKey 를 빌링키로 교환
   useEffect(() => {
@@ -393,6 +411,36 @@ export default function WorkspaceSettings() {
             {saving ? "저장 중…" : "설정 저장"}
           </button>
         </div>
+      </div>
+
+      <div className="op-form-card">
+        <h3 className="op-sect-title">구독 연동 API</h3>
+        <p style={{ margin: "0 0 12px", fontSize: 13, color: "var(--op-muted)", lineHeight: 1.7 }}>
+          외부 사이트의 구독 폼에서 이 키로 연락처를 등록할 수 있어요. 신규 주소는
+          동의 출처가 API 로 기록되고, 이미 있는 주소는 리스트 가입만 보장됩니다(멱등).
+        </p>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <code style={{ background: "var(--op-panel)", padding: "9px 14px", borderRadius: 9,
+                         fontSize: 12.5, wordBreak: "break-all" }}>
+            {apiKey ?? "아직 발급하지 않았어요"}
+          </code>
+          {apiKey && (
+            <button className="op-btn op-btn-sm op-btn-ghost"
+                    onClick={() => { navigator.clipboard.writeText(apiKey); setApiKeyMsg("복사됨"); }}>복사</button>
+          )}
+          <button className="op-btn op-btn-sm" onClick={issueApiKey}>
+            {apiKey ? "재발급 (이전 키 즉시 무효)" : "키 발급"}
+          </button>
+          {apiKeyMsg && <span className="faint" style={{ fontSize: 12.5 }}>{apiKeyMsg}</span>}
+        </div>
+        {apiKey && (
+          <pre style={{ marginTop: 14, background: "var(--op-panel)", borderRadius: 10, padding: 14,
+                        fontSize: 11.5, lineHeight: 1.7, overflowX: "auto" }}>
+{`curl -X POST ${window.location.origin}/api/public/subscribe \\
+  -H "X-Api-Key: ${apiKey}" -H "Content-Type: application/json" \\
+  -d '{"email":"reader@example.com","firstName":"길동","listId":1}'`}
+          </pre>
+        )}
       </div>
 
       <div className="op-card">

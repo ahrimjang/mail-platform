@@ -18,15 +18,21 @@ public class JpaWorkspaceRepository implements WorkspaceRepository {
 
     @Override
     public Workspace save(Workspace workspace) {
-        WorkspaceEntity saved = jpa.save(new WorkspaceEntity(
+        WorkspaceEntity entity = new WorkspaceEntity(
                 workspace.getId(), workspace.getName(), workspace.getPlan().name(),
-                workspace.getSendRatePerSec(), workspace.getBillingKey(), workspace.getCreatedAt()));
-        return toDomain(saved);
+                workspace.getSendRatePerSec(), workspace.getBillingKey(), workspace.getCreatedAt());
+        entity.setApiKey(workspace.getApiKey());
+        return toDomain(jpa.save(entity));
     }
 
     @Override
     public Optional<Workspace> findById(Long id) {
         return jpa.findById(id).map(this::toDomain);
+    }
+
+    @Override
+    public Optional<Workspace> findByApiKey(String apiKey) {
+        return jpa.findByApiKey(apiKey).map(this::toDomain);
     }
 
     private Workspace toDomain(WorkspaceEntity e) {
@@ -36,6 +42,7 @@ public class JpaWorkspaceRepository implements WorkspaceRepository {
         w.setPlan(io.github.ahrimjang.mail.core.domain.Plan.valueOf(e.getPlan()));
         w.setSendRatePerSec(e.getSendRatePerSec());
         w.setBillingKey(e.getBillingKey());
+        w.setApiKey(e.getApiKey());
         w.setCreatedAt(e.getCreatedAt());
         return w;
     }

@@ -55,6 +55,26 @@ public class TemplateController {
         return templates.update(id, request);
     }
 
+    /** 이 워크스페이스가 숨긴 빌트인 목록 — 복원 UI 용. */
+    @GetMapping("/hidden")
+    public List<TemplateView> listHidden() {
+        return templates.listHidden();
+    }
+
+    /** 빌트인을 내 목록에서 숨김 (전역 삭제 아님 — 워크스페이스 표시용 기록). */
+    @PostMapping("/{id}/hide")
+    public ResponseEntity<Void> hide(@PathVariable Long id) {
+        templates.hide(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    /** 숨긴 빌트인 복원. */
+    @PostMapping("/{id}/unhide")
+    public ResponseEntity<Void> unhide(@PathVariable Long id) {
+        templates.unhide(id);
+        return ResponseEntity.noContent().build();
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         templates.delete(id);

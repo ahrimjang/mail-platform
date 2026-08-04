@@ -16,8 +16,18 @@ function escapeHtml(s: string): string {
     .replaceAll(">", "&gt;");
 }
 
+/* 본문 속 URL 을 클릭 가능한 링크로 — 링크여야 발송 파이프라인이 클릭을 추적한다.
+   이스케이프된 텍스트를 받으므로 그대로 감싸도 안전하고, 문장부호 꼬리는 링크 밖으로. */
+function autoLink(escaped: string): string {
+  return escaped.replace(/https?:\/\/[^\s<]+/g, (m) => {
+    const trimmed = m.replace(/[.,;)]+$/, "");
+    const rest = m.slice(trimmed.length);
+    return `<a href="${trimmed}" style="color:#2563eb">${trimmed}</a>${rest}`;
+  });
+}
+
 function textToHtml(text: string): string {
-  const paragraphs = escapeHtml(text.trim())
+  const paragraphs = autoLink(escapeHtml(text.trim()))
     .split(/\n{2,}/)
     .map((p) => `<p style="margin:0 0 16px;font-size:15px;line-height:1.9">${p.replaceAll("\n", "<br>")}</p>`)
     .join("\n");
@@ -27,6 +37,9 @@ function textToHtml(text: string): string {
 export default function TextEditor() {
   const nav = useNavigate();
   const { id } = useParams();
+  // ?target=email — 이메일(캠페인용 콘텐츠)을 상대로 열린 경우 API 만 갈아탄다
+  const isEmail = new URLSearchParams(window.location.search).get("target") === "email";
+  const apiBase = isEmail ? "/api/emails" : "/api/templates";
   const areaRef = useRef<HTMLTextAreaElement>(null);
   const [name, setName] = useState("텍스트 템플릿");
   const [subject, setSubject] = useState("");
@@ -42,8 +55,8 @@ export default function TextEditor() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await api(`/api/templates/${id}`);
-        if (!res.ok) { if (!cancelled) setError("템플릿을 불러오지 못했습니다."); return; }
+        const res = await api(`${apiBase}/${id}`);
+        if (!res.ok) { if (!cancelled) setError(isEmail ? "이메일을 불러오지 못했습니다." : "템플릿을 불러오지 못했습니다."); return; }
         const t: TemplateView = await res.json();
         if (cancelled) return;
         const source = parseTextMarker(t.htmlBody);
@@ -89,8 +102,8 @@ export default function TextEditor() {
         htmlBody: textToHtmlBody(text, textToHtml(text)),
       });
       const res = savedId
-        ? await api(`/api/templates/${savedId}`, { method: "PUT", body: payload })
-        : await api("/api/templates", { method: "POST", body: payload });
+        ? await api(`${apiBase}/${savedId}`, { method: "PUT", body: payload })
+        : await api(apiBase, { method: "POST", body: payload });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         setError(res.status === 409
@@ -132,9 +145,19 @@ export default function TextEditor() {
           <button
             className="op-tbtn primary"
             disabled={saving}
-            onClick={async () => { const tid = await save(); if (tid) nav(`/campaigns/new?templateId=${tid}`); }}
+            onClick={async () => {
+              const tid = await save();
+              if (!tid) return;
+              if (isEmail) { nav(`/campaigns/new?emailId=${tid}`); return; }
+              // 템플릿은 발송 대상이 아니다 — 내용을 복사한 이메일을 만들어 이어간다
+              const res = await api("/api/emails", { method: "POST", body: JSON.stringify({ templateId: tid }) });
+              if (res.ok) {
+                const created = await res.json();
+                nav(`/editor/text/${created.id}?target=email`);
+              }
+            }}
           >
-            다음 · 발송 설정
+            {isEmail ? "다음 · 발송 설정" : "이메일로 만들기"}
           </button>
         </div>
       </div>

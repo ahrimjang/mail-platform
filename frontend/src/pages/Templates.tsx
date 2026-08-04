@@ -1,17 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
-import type { CampaignView, TemplateView } from "../types";
+import type { TemplateView } from "../types";
 import Portal from "../components/Portal";
-import { badgeClass, fmt, statusLabel } from "../outpace/format";
 import { editorRouteFor } from "../outpace/blocks";
 import { renderPreview } from "../outpace/starters";
 
-type Tab = "list" | "scratch" | "usage";
+type Tab = "list" | "scratch";
 type SourceFilter = "all" | "builtin" | "mine";
 
-/* Display category per built-in seed key (badge on the card). */
-const BUILTIN_CATEGORY: Record<string, { label: string; badge: "blue" | "amber" | "green" | "gray" }> = {
+/* Display category per built-in seed key (badge on the card).
+   이메일 만들기의 템플릿 카드도 같은 표기를 쓰므로 export. */
+export const BUILTIN_CATEGORY: Record<string, { label: string; badge: "blue" | "amber" | "green" | "gray" }> = {
   newsletter: { label: "뉴스레터", badge: "blue" },
   promo: { label: "프로모션", badge: "amber" },
   welcome: { label: "온보딩", badge: "green" },
@@ -21,7 +21,7 @@ const BUILTIN_CATEGORY: Record<string, { label: string; badge: "blue" | "amber" 
 
 /* Real thumbnail: the template's actual HTML, scaled down in an inert iframe.
    pointer-events off so the whole card stays one click target. */
-function LiveThumb({ html }: { html: string }) {
+export function LiveThumb({ html }: { html: string }) {
   return (
     <div className="op-thumb-live">
       <iframe title="템플릿 미리보기" sandbox="" tabIndex={-1} srcDoc={html} scrolling="no" />
@@ -30,11 +30,13 @@ function LiveThumb({ html }: { html: string }) {
 }
 
 /* Kebab menu on a template card: built-ins offer reset, user templates delete. */
-function CardMenu({ builtin, onEdit, onReset, onDelete }: {
+function CardMenu({ builtin, onEdit, onReset, onDelete, onMakeEmail, onHide }: {
   builtin: boolean;
   onEdit: () => void;
   onReset: () => void;
   onDelete: () => void;
+  onMakeEmail: () => void;
+  onHide: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -52,9 +54,14 @@ function CardMenu({ builtin, onEdit, onReset, onDelete }: {
       <span className="op-dots" onClick={() => setOpen((o) => !o)}>···</span>
       {open && (
         <div className="op-menu" style={{ top: 26 }}>
+          <button onClick={() => { setOpen(false); onMakeEmail(); }}>이 템플릿으로 이메일 만들기</button>
           <button onClick={() => { setOpen(false); onEdit(); }}>{builtin ? "복사해서 편집" : "수정"}</button>
           {builtin
-            ? <button onClick={() => { setOpen(false); onReset(); }}>원본 복원</button>
+            ? <>
+                <button onClick={() => { setOpen(false); onReset(); }}>원본 복원</button>
+                {/* 빌트인은 전역 자산이라 삭제 대신 내 목록에서만 숨긴다 */}
+                <button className="danger" onClick={() => { setOpen(false); onHide(); }}>목록에서 숨기기</button>
+              </>
             : <button className="danger" onClick={() => { setOpen(false); onDelete(); }}>삭제</button>}
         </div>
       )}
@@ -155,16 +162,16 @@ export default function Templates() {
   const [tab, setTab] = useState<Tab>("list");
   const [source, setSource] = useState<SourceFilter>("all");
   const [templates, setTemplates] = useState<TemplateView[]>([]);
+  const [hiddenTemplates, setHiddenTemplates] = useState<TemplateView[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [deleting, setDeleting] = useState<TemplateView | null>(null);
   const [resetting, setResetting] = useState<TemplateView | null>(null);
-  // Campaign→template usage rows for the 매핑 tab; fetched once on first open.
-  const [campaigns, setCampaigns] = useState<CampaignView[] | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      const res = await api("/api/templates");
+      const [res, hRes] = await Promise.all([api("/api/templates"), api("/api/templates/hidden")]);
       if (res.ok) setTemplates(await res.json());
+      if (hRes.ok) setHiddenTemplates(await hRes.json());
     } catch {
       /* transient / unauthorized handled by api() */
     } finally {
@@ -172,16 +179,18 @@ export default function Templates() {
     }
   }, []);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  /* 빌트인 숨기기/복원 — 워크스페이스 표시용 기록이라 전역 삭제가 아니다. */
+  async function hideBuiltin(t: TemplateView) {
+    const res = await api(`/api/templates/${t.id}/hide`, { method: "POST" });
+    if (res.ok) refresh();
+  }
 
-  useEffect(() => {
-    if (tab !== "usage" || campaigns !== null) return;
-    let cancelled = false;
-    api("/api/campaigns")
-      .then(async (res) => { if (res.ok && !cancelled) setCampaigns(await res.json()); })
-      .catch(() => { if (!cancelled) setCampaigns([]); });
-    return () => { cancelled = true; };
-  }, [tab, campaigns]);
+  async function unhideBuiltin(t: TemplateView) {
+    const res = await api(`/api/templates/${t.id}/unhide`, { method: "POST" });
+    if (res.ok) refresh();
+  }
+
+  useEffect(() => { refresh(); }, [refresh]);
 
   // Built-ins are read-only and shared by every workspace — editing starts
   // from a private copy (copy-on-write).
@@ -203,6 +212,16 @@ export default function Templates() {
     }
   }
 
+  /* 템플릿 내용을 복사한 이메일(캠페인용 콘텐츠)을 만들어 에디터로 —
+     빌트인/내 템플릿 구분 없이 원본은 그대로 남는다. */
+  async function makeEmail(t: TemplateView) {
+    const res = await api("/api/emails", { method: "POST", body: JSON.stringify({ templateId: t.id }) });
+    if (res.ok) {
+      const created = await res.json();
+      nav(editorRouteFor(created, "email"));
+    }
+  }
+
   const builtins = templates
     .filter((t) => t.builtinKey)
     .sort((a, b) => a.id - b.id);
@@ -215,72 +234,22 @@ export default function Templates() {
     <div className="op-container op-fade">
       <div className="op-pagehead">
         <div>
-          <h2>템플릿</h2>
-          <p>자주 쓰는 이메일을 저장하고 캠페인에 바로 적용하세요.</p>
+          <h2>템플릿 관리</h2>
+          <p>자주 쓰는 형식을 템플릿으로 저장해두고, 이메일 만들기에서 불러와 쓰세요.</p>
         </div>
         {/* default entry is the block editor — raw HTML stays an explicit choice */}
-        <button className="op-btn op-btn-sm" onClick={() => nav("/editor")}>
+        {/* 새 템플릿은 에디터 직행이 아니라 3가지 작성 방식 선택부터 */}
+        <button className="op-btn op-btn-sm" onClick={() => setTab("scratch")}>
           <span className="op-btn-plus">+</span>새 템플릿
         </button>
       </div>
 
+      {/* 이메일 허브의 탭줄 — 템플릿 관리는 이메일 하위 개념이다 */}
       <div className="op-tabs">
-        <button className={`op-tab${tab === "list" ? " active" : ""}`} onClick={() => setTab("list")}>템플릿</button>
-        <button className={`op-tab${tab === "scratch" ? " active" : ""}`} onClick={() => setTab("scratch")}>직접 만들기</button>
-        <button className={`op-tab${tab === "usage" ? " active" : ""}`} onClick={() => setTab("usage")}>캠페인 매핑</button>
+        <button className="op-tab" onClick={() => nav("/emails")}>이메일</button>
+        <button className="op-tab" onClick={() => nav("/emails?tab=create")}>이메일 만들기</button>
+        <button className="op-tab active">템플릿 관리</button>
       </div>
-
-      {tab === "usage" && (() => {
-        // Campaigns whose content was snapshotted from a template, newest first.
-        const used = (campaigns ?? [])
-          .filter((c) => c.templateId != null)
-          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-        const tplName = (id: number) => templates.find((t) => t.id === id)?.name ?? `#${id} (삭제됨)`;
-        const USAGE_COLS = "minmax(160px, 2fr) 90px minmax(140px, 1.4fr) 120px";
-        return (
-          <div className="op-card">
-            <div className="op-thead" style={{ gridTemplateColumns: USAGE_COLS }}>
-              <span>캠페인</span>
-              <span>상태</span>
-              <span>사용 템플릿</span>
-              <span>생성일</span>
-            </div>
-            {campaigns === null && (
-              <div className="op-list-row"><span className="meta">불러오는 중…</span></div>
-            )}
-            {campaigns !== null && used.length === 0 && (
-              <div className="op-list-row"><span className="meta">템플릿으로 만든 캠페인이 아직 없습니다. 새 캠페인에서 ‘템플릿 사용’을 선택하거나 에디터의 ‘다음 · 발송 설정’으로 시작해 보세요.</span></div>
-            )}
-            {used.map((c) => {
-              const tpl = templates.find((t) => t.id === c.templateId);
-              return (
-                <div
-                  key={c.id}
-                  className="op-trow clickable"
-                  style={{ gridTemplateColumns: USAGE_COLS }}
-                  onClick={() => nav(`/campaigns/${c.id}`)}
-                >
-                  <div style={{ minWidth: 0 }}>
-                    <div className="strong op-ell">{c.name ?? c.subject}</div>
-                    <div className="faint op-ell">수신자 {fmt(c.total)}명 · 발송 {fmt(c.sent)}</div>
-                  </div>
-                  <span><span className={`op-badge ${badgeClass(c.status)}`}>{statusLabel(c)}</span></span>
-                  <span>
-                    <span
-                      className="op-minibadge blue link"
-                      title={tpl ? `'${tpl.name}' 편집 화면 열기` : "삭제된 템플릿"}
-                      onClick={(e) => { e.stopPropagation(); if (tpl) nav(editorRouteFor(tpl)); }}
-                    >
-                      {tplName(c.templateId as number)}
-                    </span>
-                  </span>
-                  <span className="faint">{new Date(c.createdAt).toLocaleDateString("ko-KR")}</span>
-                </div>
-              );
-            })}
-          </div>
-        );
-      })()}
 
       {tab === "list" && (
         <>
@@ -320,31 +289,50 @@ export default function Templates() {
                       onEdit={() => openTemplate(t)}
                       onReset={() => setResetting(t)}
                       onDelete={() => setDeleting(t)}
+                      onMakeEmail={() => makeEmail(t)}
+                      onHide={() => hideBuiltin(t)}
                     />
                   </div>
                 </div>
               );
             })}
             {loaded && shown.length === 0 && (
-              <div className="op-dash-card" onClick={() => nav("/editor")}>
+              <div className="op-dash-card" onClick={() => setTab("scratch")}>
                 <div className="plus">+</div>
                 <div className="t">첫 템플릿 만들기</div>
-                <div className="s">기본 제공 템플릿에서 시작하거나 직접 작성해 보세요.</div>
+                <div className="s">블록·텍스트·HTML 중 작성 방식을 골라 시작해 보세요.</div>
               </div>
             )}
             {shown.length > 0 && source !== "builtin" && (
-              <div className="op-dash-card" onClick={() => nav("/editor")}>
+              <div className="op-dash-card" onClick={() => setTab("scratch")}>
                 <div className="plus">+</div>
                 <div className="t">새 템플릿</div>
-                <div className="s">블록 에디터에서 새로 작성합니다.</div>
+                <div className="s">블록·텍스트·HTML 중 작성 방식을 골라 시작합니다.</div>
               </div>
             )}
           </div>
+
+          {hiddenTemplates.length > 0 && (
+            <div className="op-card op-card-pad" style={{ marginTop: 22 }}>
+              <h3 style={{ margin: "0 0 4px", fontSize: 14.5 }}>숨긴 기본 템플릿 {hiddenTemplates.length}개</h3>
+              <p style={{ margin: "0 0 10px", fontSize: 12.5, color: "var(--op-muted)" }}>
+                내 목록에서만 숨겨진 상태예요 — 언제든 다시 표시할 수 있습니다.
+              </p>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {hiddenTemplates.map((t) => (
+                  <button key={t.id} className="op-btn op-btn-sm op-btn-ghost" onClick={() => unhideBuiltin(t)}>
+                    {t.name} — 다시 표시
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </>
       )}
 
       {tab === "scratch" && (
         <>
+          <button className="op-back" onClick={() => setTab("list")}>← 템플릿 목록</button>
           <p className="op-tab-hint">디자인 없이 빈 화면에서 시작하거나, 텍스트·HTML 에디터로 직접 작성할 수 있어요.</p>
           <div className="op-tpl-grid">
             <div className="op-scratch-card" onClick={() => nav("/editor")}>

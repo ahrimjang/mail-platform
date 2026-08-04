@@ -39,6 +39,7 @@ public class Campaign {
     // Soft provenance references (content/audience snapshotted at create time):
     // kept for display even if the template or list is deleted later.
     private Long templateId;
+    private Long emailId;   // 어느 이메일(캠페인용 콘텐츠)에서 스냅샷했는지 — 소프트 참조
     private Long listId;
     // Engagement segment (list campaigns only): fan-out keeps a member only if
     // their open/click rate over delivered mail clears these floors, evaluated
@@ -207,6 +208,14 @@ public class Campaign {
 
     public void setTemplateId(Long templateId) {
         this.templateId = templateId;
+    }
+
+    public Long getEmailId() {
+        return emailId;
+    }
+
+    public void setEmailId(Long emailId) {
+        this.emailId = emailId;
     }
 
     public Long getListId() {
