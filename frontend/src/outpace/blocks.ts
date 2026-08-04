@@ -35,6 +35,7 @@ export interface ImageBlock extends BaseStyle {
   type: "image";
   url: string; // "" renders a placeholder in the canvas and is skipped in HTML
   alt: string;
+  opacity?: number; // 10~100 (%) — 미지정 = 100 (Outlook 데스크톱은 무시함)
 }
 
 export interface ButtonBlock extends BaseStyle {
@@ -229,7 +230,7 @@ function blockHtml(b: Block): string {
       if (!b.url.trim()) {
         return `<td style="padding:0;${bgOf(b)}${hOf(b)}"></td>`;
       }
-      return `<td style="padding:${padOf(b)};${bgOf(b)}${hOf(b)}"><img src="${escAttr(b.url)}" alt="${escAttr(b.alt)}" width="600" style="display:block;width:100%;height:auto"></td>`;
+      return `<td style="padding:${padOf(b)};${bgOf(b)}${hOf(b)}"><img src="${escAttr(b.url)}" alt="${escAttr(b.alt)}" width="600" style="display:block;width:100%;height:auto${b.opacity != null && b.opacity < 100 ? `;opacity:${b.opacity / 100}` : ""}"></td>`;
     case "button": {
       const d = DEFAULTS.button;
       return `<td style="padding:${padOf(b)};${bgOf(b)}${hOf(b)};text-align:${b.align}"><a href="${escAttr(b.url)}" style="display:inline-block;background:${b.btnColor ?? d.btnColor};color:#ffffff;font-size:14.5px;font-weight:bold;padding:13px 32px;border-radius:${b.btnRadius ?? d.btnRadius}px;text-decoration:none">${esc(b.label)}</a></td>`;

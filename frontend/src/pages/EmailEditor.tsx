@@ -169,7 +169,7 @@ function BlockView({ b, patch, onRichFocus }: {
     }
     case "image":
       return b.url.trim() ? (
-        <div style={{ ...bgStyle(b), minHeight: b.minH }}><img src={b.url} alt={b.alt} style={{ display: "block", width: "100%" }} /></div>
+        <div style={{ ...bgStyle(b), minHeight: b.minH }}><img src={b.url} alt={b.alt} style={{ display: "block", width: "100%", opacity: (b.opacity ?? 100) / 100 }} /></div>
       ) : (
         <div className="op-hatch" style={{ height: b.minH ?? 150, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 6 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: "#9a9aa2", fontFamily: "ui-monospace, monospace" }}>이미지 · 권장 1200×400</div>
@@ -233,6 +233,13 @@ function BlockPanel({ b, patch }: { b: Block; patch: (updates: Partial<Block>) =
           <label className="op-rp-field" style={{ marginTop: 12 }}><span>대체 텍스트</span>
             <input className="op-input rp" value={b.alt} onChange={(e) => patch({ alt: e.target.value })} />
           </label>
+          <div className="op-rp-section">투명도</div>
+          <div className="op-stylerow">
+            <input className="op-range" type="range" min={10} max={100} step={5}
+              value={b.opacity ?? 100}
+              onChange={(e) => patch({ opacity: Number(e.target.value) === 100 ? undefined : Number(e.target.value) })} />
+            <span className="sl">{b.opacity ?? 100}%</span>
+          </div>
         </>
       )}
       {b.type === "button" && (
@@ -294,6 +301,12 @@ function BlockPanel({ b, patch }: { b: Block; patch: (updates: Partial<Block>) =
               <span key={c} className={`op-swatch${(b.color ?? (DEFAULTS[b.type] as { color: string }).color) === c ? " active" : ""}`}
                 style={{ background: c }} onClick={() => patch({ color: c })} />
             ))}
+            {/* 팔레트 밖 자유 색 — 배경색과 같은 UX */}
+            <label className={`op-swatch custom${b.color != null && !TEXT_COLORS.includes(b.color) ? " active" : ""}`} title="직접 선택">
+              <input type="color"
+                value={/^#[0-9a-fA-F]{6}$/.test(b.color ?? "") ? (b.color as string) : "#3f3f46"}
+                onChange={(e) => patch({ color: e.target.value })} />
+            </label>
           </div>
         </>
       )}
@@ -305,6 +318,11 @@ function BlockPanel({ b, patch }: { b: Block; patch: (updates: Partial<Block>) =
               <span key={c} className={`op-swatch${(b.color ?? DEFAULTS.footer.color) === c ? " active" : ""}`}
                 style={{ background: c }} onClick={() => patch({ color: c })} />
             ))}
+            <label className={`op-swatch custom${b.color != null && !TEXT_COLORS.includes(b.color) ? " active" : ""}`} title="직접 선택">
+              <input type="color"
+                value={/^#[0-9a-fA-F]{6}$/.test(b.color ?? "") ? (b.color as string) : "#a1a1aa"}
+                onChange={(e) => patch({ color: e.target.value })} />
+            </label>
           </div>
         </>
       )}
@@ -318,6 +336,11 @@ function BlockPanel({ b, patch }: { b: Block; patch: (updates: Partial<Block>) =
               <span key={c} className={`op-swatch${(b.btnColor ?? DEFAULTS.button.btnColor) === c ? " active" : ""}`}
                 style={{ background: c }} onClick={() => patch({ btnColor: c })} />
             ))}
+            <label className={`op-swatch custom${b.btnColor != null && !BTN_COLORS.includes(b.btnColor) ? " active" : ""}`} title="직접 선택">
+              <input type="color"
+                value={/^#[0-9a-fA-F]{6}$/.test(b.btnColor ?? "") ? (b.btnColor as string) : "#2563eb"}
+                onChange={(e) => patch({ btnColor: e.target.value })} />
+            </label>
           </div>
           <div className="op-rp-section">모서리 라운드</div>
           <div className="op-stylerow">
