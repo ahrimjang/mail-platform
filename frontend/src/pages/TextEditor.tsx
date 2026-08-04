@@ -16,8 +16,18 @@ function escapeHtml(s: string): string {
     .replaceAll(">", "&gt;");
 }
 
+/* 본문 속 URL 을 클릭 가능한 링크로 — 링크여야 발송 파이프라인이 클릭을 추적한다.
+   이스케이프된 텍스트를 받으므로 그대로 감싸도 안전하고, 문장부호 꼬리는 링크 밖으로. */
+function autoLink(escaped: string): string {
+  return escaped.replace(/https?:\/\/[^\s<]+/g, (m) => {
+    const trimmed = m.replace(/[.,;)]+$/, "");
+    const rest = m.slice(trimmed.length);
+    return `<a href="${trimmed}" style="color:#2563eb">${trimmed}</a>${rest}`;
+  });
+}
+
 function textToHtml(text: string): string {
-  const paragraphs = escapeHtml(text.trim())
+  const paragraphs = autoLink(escapeHtml(text.trim()))
     .split(/\n{2,}/)
     .map((p) => `<p style="margin:0 0 16px;font-size:15px;line-height:1.9">${p.replaceAll("\n", "<br>")}</p>`)
     .join("\n");

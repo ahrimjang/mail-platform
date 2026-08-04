@@ -530,14 +530,46 @@ export default function EmailEditor() {
   function insertVariableAtCaret(token: string) {
     document.execCommand("insertText", false, token);
   }
+  /* 커서/선택이 걸친 기존 <a> — 링크 수정·해제의 대상. */
+  function linkAncestorOf(node: Node | null): HTMLAnchorElement | null {
+    let n: Node | null = node;
+    while (n) {
+      if (n instanceof HTMLAnchorElement) return n;
+      n = n.parentNode;
+    }
+    return null;
+  }
+
+  /* 링크 삽입·수정·해제를 한 버튼으로: 새 선택은 삽입, 기존 링크 위에서는
+     현재 주소가 채워진 채 수정, 비우면 해제. 커밋은 블러 시 sanitizeRich 가 담당. */
   function execLink() {
     const selApi = window.getSelection();
-    if (!selApi || selApi.rangeCount === 0 || selApi.isCollapsed) return;
+    if (!selApi || selApi.rangeCount === 0) return;
     const range = selApi.getRangeAt(0);
-    const url = window.prompt("링크 URL (https://…)");
-    if (!url || !/^(https?:|mailto:)/i.test(url)) return;
+    const existing = linkAncestorOf(range.startContainer);
+    if (selApi.isCollapsed && !existing) return;   // 선택도 기존 링크도 없음
+
+    const url = window.prompt("링크 URL (https://…) — 비우면 링크 해제", existing?.getAttribute("href") ?? "");
+    if (url === null) return;   // 취소
+
     selApi.removeAllRanges();
     selApi.addRange(range);
+    if (url.trim() === "") {
+      if (existing) {
+        // 커서만 올라가 있어도 링크 전체를 선택해 해제
+        const whole = document.createRange();
+        whole.selectNodeContents(existing);
+        selApi.removeAllRanges();
+        selApi.addRange(whole);
+      }
+      document.execCommand("unlink");
+      return;
+    }
+    if (!/^(https?:|mailto:)/i.test(url)) return;
+    if (existing && selApi.isCollapsed) {
+      existing.setAttribute("href", url);   // 기존 링크 주소만 교체
+      return;
+    }
     document.execCommand("createLink", false, url);
   }
 
