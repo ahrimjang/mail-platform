@@ -46,14 +46,17 @@ public class CampaignFanoutService {
     private final ContactRepository contacts;
     private final EmailEventRepository events;
     private final MailQueue mailQueue;
+    private final NotificationService notifications;
 
     public CampaignFanoutService(CampaignRepository campaigns, MailMessageRepository messages,
-                                 ContactRepository contacts, EmailEventRepository events, MailQueue mailQueue) {
+                                 ContactRepository contacts, EmailEventRepository events, MailQueue mailQueue,
+                                 NotificationService notifications) {
         this.campaigns = campaigns;
         this.messages = messages;
         this.contacts = contacts;
         this.events = events;
         this.mailQueue = mailQueue;
+        this.notifications = notifications;
     }
 
     /**
@@ -117,7 +120,9 @@ public class CampaignFanoutService {
         // If every message already drained before we flipped to SENDING (fast sends /
         // empty list), finish it here — cheap EXISTS, not a full count.
         if (!messages.hasPendingOrSending(campaignId)) {
-            campaigns.completeIfSending(campaignId);
+            if (campaigns.completeIfSending(campaignId)) {
+                notifications.campaignCompleted(campaign);   // claim 승자만 도달 — 1회 발행
+            }
         }
         log.info("fanned out campaign {} into {} messages", campaignId, total);
     }

@@ -142,6 +142,21 @@ export interface EmailDraftView {
   updatedAt: string;
 }
 
+// 콘솔 인앱 알림 — campaignId 는 클릭 시 이동할 캠페인(소프트 참조)
+export interface NotificationView {
+  id: number;
+  type: string; // CAMPAIGN_COMPLETED 등
+  title: string;
+  campaignId: number | null;
+  createdAt: string;
+  readAt: string | null;
+}
+
+export interface NotificationFeedView {
+  unread: number;
+  items: NotificationView[];
+}
+
 export interface RenderedTemplate {
   subject: string;
   htmlBody: string;

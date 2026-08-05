@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../outpace/auth";
+import type { NotificationFeedView } from "../types";
 
 /* Top navigation shell shared by dashboard / campaigns / templates.
    Editors render outside this shell (full-screen), matching the handoff. */
@@ -15,6 +16,10 @@ export default function AppShell() {
   // 가이드 드롭다운 — 요금제·구독 API·약관 같은 공개 문서로 가는 통로
   const [guideOpen, setGuideOpen] = useState(false);
   const guideRef = useRef<HTMLDivElement>(null);
+  // 알림 피드 — 벨 아이콘의 점은 안 읽은 알림이 있을 때만
+  const [notif, setNotif] = useState<NotificationFeedView>({ unread: 0, items: [] });
+  const [notifOpen, setNotifOpen] = useState(false);
+  const notifRef = useRef<HTMLDivElement>(null);
   // 가입 이메일 인증 배너 — null 은 아직 모름(배너 미표시). 페이지 이동마다
   // 가볍게 재확인해서 다른 탭에서 인증을 마치면 배너가 사라지게 한다.
   const [emailVerified, setEmailVerified] = useState<boolean | null>(null);
@@ -24,6 +29,7 @@ export default function AppShell() {
     function onDocClick(e: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
       if (guideRef.current && !guideRef.current.contains(e.target as Node)) setGuideOpen(false);
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) setNotifOpen(false);
     }
     document.addEventListener("mousedown", onDocClick);
     return () => document.removeEventListener("mousedown", onDocClick);
@@ -37,6 +43,36 @@ export default function AppShell() {
       .catch(() => {});
     return () => { alive = false; };
   }, [pathname]);
+
+  useEffect(() => {
+    let alive = true;
+    api("/api/notifications")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (alive && d) setNotif(d); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [pathname]);
+
+  /* 벨 클릭 — 여는 순간 전부 읽음 처리(점 소등), 목록은 그대로 보여준다. */
+  async function toggleNotifications() {
+    const opening = !notifOpen;
+    setNotifOpen(opening);
+    if (opening && notif.unread > 0) {
+      try {
+        await api("/api/notifications/read-all", { method: "POST" });
+        setNotif((n) => ({ ...n, unread: 0 }));
+      } catch { /* 다음 조회에서 재시도 */ }
+    }
+  }
+
+  /* "3분 전" 식 상대 시각 — 알림 목록용 */
+  function timeAgo(iso: string): string {
+    const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+    if (s < 60) return "방금 전";
+    if (s < 3600) return `${Math.floor(s / 60)}분 전`;
+    if (s < 86400) return `${Math.floor(s / 3600)}시간 전`;
+    return `${Math.floor(s / 86400)}일 전`;
+  }
 
   async function resendVerification() {
     try {
@@ -105,12 +141,32 @@ export default function AppShell() {
               }}
             />
           </div>
-          <button className="op-bell" title="알림" aria-label="알림">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" /><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
-            </svg>
-            <span className="dot" />
-          </button>
+          <div className="op-avatar-menu" ref={notifRef}>
+            <button className="op-bell" title="알림" aria-label="알림" onClick={toggleNotifications}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" /><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+              </svg>
+              {notif.unread > 0 && <span className="dot" />}
+            </button>
+            {notifOpen && (
+              <div className="op-menu" style={{ minWidth: 280, maxHeight: 360, overflowY: "auto" }}>
+                {notif.items.length === 0 && (
+                  <div className="op-menu-email">알림이 없어요 — 캠페인 발송이 완료되면 여기로 알려드릴게요.</div>
+                )}
+                {notif.items.map((n) => (
+                  <button key={n.id}
+                          onClick={() => { setNotifOpen(false); if (n.campaignId != null) nav(`/campaigns/${n.campaignId}`); }}>
+                    <span style={{ display: "block", fontWeight: n.readAt == null ? 700 : 500 }}>{n.title}</span>
+                    <span style={{ display: "block", fontSize: 11.5, color: "var(--op-faint)", marginTop: 2 }}>{timeAgo(n.createdAt)}</span>
+                  </button>
+                ))}
+                <button style={{ borderTop: "1px solid var(--op-border)", borderRadius: 0, textAlign: "center", fontWeight: 700 }}
+                        onClick={() => { setNotifOpen(false); nav("/notifications"); }}>
+                  알림 전체 보기
+                </button>
+              </div>
+            )}
+          </div>
           <span className="op-nav-divider" />
           <div className="op-avatar-menu" ref={menuRef}>
             <div className="op-avatar" onClick={() => setMenuOpen((o) => !o)}>{avatar}</div>

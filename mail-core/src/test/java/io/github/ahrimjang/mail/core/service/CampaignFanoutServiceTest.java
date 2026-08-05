@@ -48,6 +48,9 @@ class CampaignFanoutServiceTest {
     @Mock
     private MailQueue mailQueue;
 
+    @Mock
+    private NotificationService notifications;   // mock 기본 no-op
+
     @InjectMocks
     private CampaignFanoutService service;
 
