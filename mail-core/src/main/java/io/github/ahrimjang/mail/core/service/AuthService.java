@@ -30,11 +30,13 @@ public class AuthService {
     private final LoginAttemptGuard attempts;
     private final EmailVerificationService verification;
     private final io.github.ahrimjang.mail.core.port.GoogleIdentityVerifier google;
+    private final int betaSignupCap;   // 0 = 무제한 (베타 정원 — 환경변수로만 조절)
 
     public AuthService(UserRepository users, WorkspaceRepository workspaces,
                        PasswordHasher hasher, TokenService tokens, LoginAttemptGuard attempts,
                        EmailVerificationService verification,
-                       io.github.ahrimjang.mail.core.port.GoogleIdentityVerifier google) {
+                       io.github.ahrimjang.mail.core.port.GoogleIdentityVerifier google,
+                       @org.springframework.beans.factory.annotation.Value("${app.beta.signup-cap:0}") int betaSignupCap) {
         this.users = users;
         this.workspaces = workspaces;
         this.hasher = hasher;
@@ -42,6 +44,19 @@ public class AuthService {
         this.attempts = attempts;
         this.verification = verification;
         this.google = google;
+        this.betaSignupCap = betaSignupCap;
+    }
+
+    /**
+     * 베타 가입 정원 — 워크스페이스 수가 정원에 닿으면 신규 가입(=워크스페이스 생성)을
+     * 막는다. 초기 SES 평판 워밍업 기간의 발송량 통제 장치이기도 하다. 기존 계정
+     * 로그인·멤버 추가는 영향 없고, 해제는 배포 없이 환경변수 제거로 끝난다.
+     */
+    private void assertBetaCapacity() {
+        if (betaSignupCap > 0 && workspaces.count() >= betaSignupCap) {
+            throw new IllegalStateException(
+                    "지금은 베타 기간이라 가입 정원이 가득 찼어요. 자리가 나는 대로 순서대로 열어드릴게요 — 조금만 기다려주세요.");
+        }
     }
 
     public AuthResponse signup(SignupRequest r) {
@@ -56,6 +71,7 @@ public class AuthService {
         if (users.existsByEmail(r.email())) {
             throw new IllegalStateException("email already registered: " + r.email());
         }
+        assertBetaCapacity();
 
         // A signup registers the company: the workspace is the tenant boundary,
         // and its first account runs it as ADMIN.
@@ -112,6 +128,7 @@ public class AuthService {
 
         User user = users.findByEmail(identity.email()).orElse(null);
         if (user == null) {
+            assertBetaCapacity();   // 구글 즉석 가입도 같은 정원을 탄다
             // 즉석 가입 — 일반 가입과 같은 구도 (워크스페이스 = 테넌트, 첫 계정 = ADMIN)
             Workspace workspace = workspaces.save(
                     Workspace.of(identity.email().split("@")[0] + " 워크스페이스"));
