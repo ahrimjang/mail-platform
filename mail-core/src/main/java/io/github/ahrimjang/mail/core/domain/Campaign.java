@@ -40,6 +40,7 @@ public class Campaign {
     // kept for display even if the template or list is deleted later.
     private Long templateId;
     private Long emailId;   // 어느 이메일(캠페인용 콘텐츠)에서 스냅샷했는지 — 소프트 참조
+    private String replyTo; // 회신 주소 (null = 미설정) — SES 발신 도메인 제약의 짝
     private Long listId;
     // Engagement segment (list campaigns only): fan-out keeps a member only if
     // their open/click rate over delivered mail clears these floors, evaluated
@@ -216,6 +217,14 @@ public class Campaign {
 
     public void setEmailId(Long emailId) {
         this.emailId = emailId;
+    }
+
+    public String getReplyTo() {
+        return replyTo;
+    }
+
+    public void setReplyTo(String replyTo) {
+        this.replyTo = replyTo;
     }
 
     public Long getListId() {

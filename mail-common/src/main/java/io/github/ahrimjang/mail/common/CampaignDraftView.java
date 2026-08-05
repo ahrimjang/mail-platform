@@ -19,6 +19,7 @@ public record CampaignDraftView(
         Long listId,
         String senderName,
         String senderEmail,
+        String replyTo,
         Instant scheduledAt,
         Instant endsAt,
         String abSubjectB,

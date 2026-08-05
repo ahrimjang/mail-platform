@@ -27,13 +27,15 @@ public class TestSendService {
     private final TemplateRenderer renderer;
     private final MailSender sender;
     private final WorkspaceContext ctx;
+    private final SenderPolicy senderPolicy;
 
     public TestSendService(TemplateRepository templates, TemplateRenderer renderer,
-                           MailSender sender, WorkspaceContext ctx) {
+                           MailSender sender, WorkspaceContext ctx, SenderPolicy senderPolicy) {
         this.templates = templates;
         this.renderer = renderer;
         this.sender = sender;
         this.ctx = ctx;
+        this.senderPolicy = senderPolicy;
     }
 
     /** Send one rendered test mail; returns the recipient it went to. */
@@ -41,6 +43,8 @@ public class TestSendService {
         if (request.recipient() == null || !request.recipient().contains("@")) {
             throw new IllegalArgumentException("valid recipient is required");
         }
+        // 본 발송과 같은 발신 도메인 정책 — 테스트에서 미리 걸러져야 본 발송에서 안 놀란다
+        senderPolicy.assertSenderAllowed(request.senderEmail());
         String subject;
         String body;
         if (request.templateId() != null) {

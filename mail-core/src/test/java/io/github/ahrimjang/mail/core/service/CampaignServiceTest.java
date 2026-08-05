@@ -83,6 +83,8 @@ class CampaignServiceTest {
     private EmailDraftService emailDrafts;
     @Mock
     private SendingSuspensionService suspensionGuard;   // mock 기본 no-op = 정지 아님
+    @Mock
+    private SenderPolicy senderPolicy;   // mock 기본 no-op = 발신 제한 없음
 
     @InjectMocks
     private CampaignService service;
@@ -100,7 +102,7 @@ class CampaignServiceTest {
         service.create(new CreateCampaignRequest(
                 null, null, java.util.List.of("a@x.com"), null, null, null, null,
                 null, null, null, null, null, null, null, null, null, null, null, null, null,
-                55L, null));
+                55L, null, null));
 
         org.mockito.ArgumentCaptor<Campaign> saved = org.mockito.ArgumentCaptor.forClass(Campaign.class);
         org.mockito.Mockito.verify(campaigns).save(saved.capture());

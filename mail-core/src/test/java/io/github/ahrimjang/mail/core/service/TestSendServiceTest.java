@@ -41,7 +41,8 @@ class TestSendServiceTest {
     @BeforeEach
     void setUp() {
         // Real renderer on purpose: sample-variable substitution is part of the contract.
-        service = new TestSendService(templates, new TemplateRenderer(), sender, ctx);
+        // 빈 도메인 = 발신 정책 미적용 (개발 기본과 동일) — 정책 자체는 SenderPolicyTest 에서
+        service = new TestSendService(templates, new TemplateRenderer(), sender, ctx, new SenderPolicy(""));
         lenient().when(ctx.currentWorkspaceId()).thenReturn(WS);
     }
 

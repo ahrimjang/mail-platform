@@ -54,13 +54,14 @@ public class CampaignService {
     private final EmailVerificationService verification;
     private final EmailDraftService emailDrafts;
     private final SendingSuspensionService suspensionGuard;
+    private final SenderPolicy senderPolicy;
 
     public CampaignService(CampaignRepository campaigns, MailMessageRepository messages, EmailEventRepository events,
                            MailQueue mailQueue, TemplateRepository templates, ContactRepository contacts,
                            ContactListRepository lists,
                            WorkspaceContext ctx, PlanLimits planLimits,
                            EmailVerificationService verification, EmailDraftService emailDrafts,
-                           SendingSuspensionService suspensionGuard) {
+                           SendingSuspensionService suspensionGuard, SenderPolicy senderPolicy) {
         this.ctx = ctx;
         this.campaigns = campaigns;
         this.messages = messages;
@@ -73,6 +74,7 @@ public class CampaignService {
         this.verification = verification;
         this.emailDrafts = emailDrafts;
         this.suspensionGuard = suspensionGuard;
+        this.senderPolicy = senderPolicy;
     }
 
     public CampaignView create(CreateCampaignRequest request) {
@@ -80,6 +82,9 @@ public class CampaignService {
         verification.assertCurrentUserVerified();
         // 평판 방어 — 바운스율 임계 초과로 정지된 워크스페이스는 신규 등록 불가
         suspensionGuard.assertNotSuspended(ctx.currentWorkspaceId());
+        // SES 발신 도메인 제약 — 운영에서 허용 밖 발신 주소는 등록 시점에 거른다
+        senderPolicy.assertSenderAllowed(request.senderEmail());
+        senderPolicy.assertReplyToValid(request.replyTo());
         // 플랜의 월 발송량 한도 — 등록 시점에만 검사한다(발송 중 컷오프 금지,
         // 진행 중 캠페인은 끝까지). 정책: docs/BILLING-policy.md 4절.
         planLimits.assertCampaignRegistrationAllowed(ctx.currentWorkspaceId());
@@ -130,6 +135,7 @@ public class CampaignService {
         // enqueuedAt null so the worker's scheduler claims them when due.
         campaign.setEnqueuedAt(deferred ? null : now);
         campaign.setTemplateId(request.templateId());
+        campaign.setReplyTo(blankToNull(request.replyTo()));
         campaign.setEmailId(request.emailId());   // 캠페인-이메일 매핑 (소프트 참조)
         campaign.setListId(request.listId());
         // Campaign period: engagement observed after endsAt is dropped, so the
@@ -309,7 +315,7 @@ public class CampaignService {
                 blankToNull(d.getSubject()), blankToNull(d.getBody()),
                 d.getTemplateId(),
                 d.getDraftRecipients() == null ? List.of() : List.of(d.getDraftRecipients().split("\n")),
-                d.getListId(), d.getSenderName(), d.getSenderEmail(),
+                d.getListId(), d.getSenderName(), d.getSenderEmail(), d.getReplyTo(),
                 d.getScheduledAt(), d.getEndsAt(),
                 d.getAbSubjectB(), d.getAbBodyB(),
                 d.getAbTestPercent(), d.getAbEvalMetric(), d.getAbEvalWaitMinutes(),
@@ -336,6 +342,7 @@ public class CampaignService {
         draft.setScheduledAt(request.scheduledAt());
         draft.setEndsAt(request.endsAt());
         draft.setTemplateId(request.templateId());
+        draft.setReplyTo(blankToNull(request.replyTo()));
         draft.setEmailId(request.emailId());
         draft.setListId(request.listId());
         draft.setSegMinOpenPercent(request.segMinOpenPercent());
