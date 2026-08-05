@@ -106,6 +106,8 @@ export default function WorkspaceSettings() {
   // 구독 연동 API 키 — null 은 미발급
   const [apiKey, setApiKey] = useState<string | null>(null);
   const [apiKeyMsg, setApiKeyMsg] = useState<string | null>(null);
+  // listId 파라미터 안내용 — 이름과 ID 를 카드에서 바로 보여준다
+  const [myLists, setMyLists] = useState<{ id: number; name: string }[]>([]);
 
   const refresh = useCallback(async () => {
     try {
@@ -124,6 +126,8 @@ export default function WorkspaceSettings() {
       if (pRes.ok) setPaymentHistory(await pRes.json());
       const kRes = await api("/api/workspace/api-key");
       if (kRes.ok) setApiKey((await kRes.json()).apiKey ?? null);
+      const lRes = await api("/api/lists");
+      if (lRes.ok) setMyLists(await lRes.json());
     } catch { /* transient */ }
   }, []);
 
@@ -417,7 +421,8 @@ export default function WorkspaceSettings() {
         <h3 className="op-sect-title">구독 연동 API</h3>
         <p style={{ margin: "0 0 12px", fontSize: 13, color: "var(--op-muted)", lineHeight: 1.7 }}>
           외부 사이트의 구독 폼에서 이 키로 연락처를 등록할 수 있어요. 신규 주소는
-          동의 출처가 API 로 기록되고, 이미 있는 주소는 리스트 가입만 보장됩니다(멱등).
+          동의 출처가 API 로 기록되고, 이미 있는 주소는 리스트 가입만 보장됩니다(멱등).{" "}
+          <a className="op-linkbtn" href="/developers" target="_blank" rel="noreferrer">연동 가이드 보기</a>
         </p>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <code style={{ background: "var(--op-panel)", padding: "9px 14px", borderRadius: 9,
@@ -434,12 +439,26 @@ export default function WorkspaceSettings() {
           {apiKeyMsg && <span className="faint" style={{ fontSize: 12.5 }}>{apiKeyMsg}</span>}
         </div>
         {apiKey && (
-          <pre style={{ marginTop: 14, background: "var(--op-panel)", borderRadius: 10, padding: 14,
-                        fontSize: 11.5, lineHeight: 1.7, overflowX: "auto" }}>
+          <>
+            <pre style={{ marginTop: 14, background: "var(--op-panel)", borderRadius: 10, padding: 14,
+                          fontSize: 11.5, lineHeight: 1.7, overflowX: "auto" }}>
 {`curl -X POST ${window.location.origin}/api/public/subscribe \\
   -H "X-Api-Key: ${apiKey}" -H "Content-Type: application/json" \\
-  -d '{"email":"reader@example.com","firstName":"길동","listId":1}'`}
-          </pre>
+  -d '{"email":"reader@example.com","firstName":"길동"${myLists.length > 0 ? `,"listId":${myLists[0].id}` : ""}}'`}
+            </pre>
+            {/* listId 는 여기서 확인 — 리스트 화면의 ID 배지와 같은 값 */}
+            {myLists.length > 0 && (
+              <p style={{ margin: "10px 0 0", fontSize: 12.5, color: "var(--op-faint)", lineHeight: 1.9 }}>
+                내 리스트 ID:{" "}
+                {myLists.map((l, i) => (
+                  <span key={l.id}>
+                    {i > 0 && " · "}
+                    {l.name} <code style={{ background: "var(--op-panel)", padding: "1px 6px", borderRadius: 6 }}>{l.id}</code>
+                  </span>
+                ))}
+              </p>
+            )}
+          </>
         )}
       </div>
 

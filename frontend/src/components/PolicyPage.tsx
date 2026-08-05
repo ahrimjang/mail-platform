@@ -1,4 +1,5 @@
 import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "../outpace/auth";
 
 /* 약관류 공개 문서의 공용 프레임 — 랜딩/요금제와 같은 op-topnav + 본문 아티클.
    본문 타이포는 outpace.css 의 .op-policy 규칙을 쓴다. */
@@ -8,6 +9,7 @@ export default function PolicyPage({ title, updated, children }: {
   children: React.ReactNode;
 }) {
   const navigate = useNavigate();
+  const { token } = useAuth();
 
   return (
     <div className="op-root" style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
@@ -19,8 +21,12 @@ export default function PolicyPage({ title, updated, children }: {
           </div>
         </div>
         <div className="op-topnav-right">
-          <Link className="op-btn op-btn-sm op-btn-ghost" to="/login">로그인</Link>
-          <Link className="op-btn op-btn-sm" to="/signup">무료로 시작</Link>
+          {token
+            ? <Link className="op-btn op-btn-sm" to="/">대시보드로</Link>
+            : <>
+                <Link className="op-btn op-btn-sm op-btn-ghost" to="/login">로그인</Link>
+                <Link className="op-btn op-btn-sm" to="/signup">무료로 시작</Link>
+              </>}
         </div>
       </header>
 

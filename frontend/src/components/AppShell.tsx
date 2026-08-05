@@ -12,6 +12,9 @@ export default function AppShell() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [search, setSearch] = useState("");
   const menuRef = useRef<HTMLDivElement>(null);
+  // 가이드 드롭다운 — 요금제·구독 API·약관 같은 공개 문서로 가는 통로
+  const [guideOpen, setGuideOpen] = useState(false);
+  const guideRef = useRef<HTMLDivElement>(null);
   // 가입 이메일 인증 배너 — null 은 아직 모름(배너 미표시). 페이지 이동마다
   // 가볍게 재확인해서 다른 탭에서 인증을 마치면 배너가 사라지게 한다.
   const [emailVerified, setEmailVerified] = useState<boolean | null>(null);
@@ -20,6 +23,7 @@ export default function AppShell() {
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+      if (guideRef.current && !guideRef.current.contains(e.target as Node)) setGuideOpen(false);
     }
     document.addEventListener("mousedown", onDocClick);
     return () => document.removeEventListener("mousedown", onDocClick);
@@ -69,6 +73,17 @@ export default function AppShell() {
             {role === "ADMIN" && (
               <button className={`op-navlink${isAdminPage ? " active" : ""}`} onClick={() => nav("/settings")}>관리</button>
             )}
+            <div className="op-avatar-menu" ref={guideRef} style={{ display: "inline-block" }}>
+              <button className="op-navlink" onClick={() => setGuideOpen((o) => !o)}>가이드 ▾</button>
+              {guideOpen && (
+                <div className="op-menu" style={{ minWidth: 170 }}>
+                  <button onClick={() => { setGuideOpen(false); nav("/pricing"); }}>요금제 안내</button>
+                  <button onClick={() => { setGuideOpen(false); nav("/developers"); }}>구독 API 가이드</button>
+                  <button onClick={() => { setGuideOpen(false); nav("/terms"); }}>이용약관</button>
+                  <button onClick={() => { setGuideOpen(false); nav("/privacy"); }}>개인정보처리방침</button>
+                </div>
+              )}
+            </div>
           </nav>
         </div>
         <div className="op-topnav-right">

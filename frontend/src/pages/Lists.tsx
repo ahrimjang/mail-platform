@@ -192,6 +192,9 @@ export default function Lists() {
                 <span className="strong">
                   <span className={`op-rowcaret${expanded ? " open" : ""}`}>▸</span>
                   {l.name}
+                  {/* 구독 API 의 listId 파라미터가 이 값 — 화면에서 바로 확인 가능해야 한다 */}
+                  <span className="op-minibadge gray" style={{ marginLeft: 8, fontFamily: "ui-monospace, monospace" }}
+                        title="구독 API 연동 시 listId 로 사용">ID {l.id}</span>
                 </span>
                 <span className="faint" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {l.description || "-"}
