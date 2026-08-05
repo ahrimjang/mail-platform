@@ -81,6 +81,8 @@ class CampaignServiceTest {
     private EmailVerificationService verification;   // mock 기본은 no-op = 인증 완료 상태
     @Mock
     private EmailDraftService emailDrafts;
+    @Mock
+    private SendingSuspensionService suspensionGuard;   // mock 기본 no-op = 정지 아님
 
     @InjectMocks
     private CampaignService service;

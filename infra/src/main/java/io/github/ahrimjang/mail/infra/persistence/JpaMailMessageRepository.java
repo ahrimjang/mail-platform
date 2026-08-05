@@ -177,4 +177,10 @@ public class JpaMailMessageRepository implements MailMessageRepository {
         m.setVariant(e.getVariant());
         return m;
     }
+
+    @Override
+    public WorkspaceBounceStats workspaceBounceStats(Long workspaceId, java.time.Instant since) {
+        Object[] row = jpa.workspaceBounceStats(workspaceId, since).get(0);
+        return new WorkspaceBounceStats(((Number) row[0]).longValue(), ((Number) row[1]).longValue());
+    }
 }

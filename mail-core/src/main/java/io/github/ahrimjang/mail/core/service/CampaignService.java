@@ -53,12 +53,14 @@ public class CampaignService {
     private final PlanLimits planLimits;
     private final EmailVerificationService verification;
     private final EmailDraftService emailDrafts;
+    private final SendingSuspensionService suspensionGuard;
 
     public CampaignService(CampaignRepository campaigns, MailMessageRepository messages, EmailEventRepository events,
                            MailQueue mailQueue, TemplateRepository templates, ContactRepository contacts,
                            ContactListRepository lists,
                            WorkspaceContext ctx, PlanLimits planLimits,
-                           EmailVerificationService verification, EmailDraftService emailDrafts) {
+                           EmailVerificationService verification, EmailDraftService emailDrafts,
+                           SendingSuspensionService suspensionGuard) {
         this.ctx = ctx;
         this.campaigns = campaigns;
         this.messages = messages;
@@ -70,11 +72,14 @@ public class CampaignService {
         this.planLimits = planLimits;
         this.verification = verification;
         this.emailDrafts = emailDrafts;
+        this.suspensionGuard = suspensionGuard;
     }
 
     public CampaignView create(CreateCampaignRequest request) {
         // 가입 이메일 소유 검증 전에는 발송 경로를 열지 않는다 (스팸 오남용 통로 차단)
         verification.assertCurrentUserVerified();
+        // 평판 방어 — 바운스율 임계 초과로 정지된 워크스페이스는 신규 등록 불가
+        suspensionGuard.assertNotSuspended(ctx.currentWorkspaceId());
         // 플랜의 월 발송량 한도 — 등록 시점에만 검사한다(발송 중 컷오프 금지,
         // 진행 중 캠페인은 끝까지). 정책: docs/BILLING-policy.md 4절.
         planLimits.assertCampaignRegistrationAllowed(ctx.currentWorkspaceId());

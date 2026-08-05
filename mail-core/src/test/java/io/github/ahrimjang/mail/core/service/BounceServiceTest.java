@@ -55,11 +55,14 @@ class BounceServiceTest {
     @Mock
     private io.github.ahrimjang.mail.core.port.CampaignRepository campaigns;
 
+    @Mock
+    private SendingSuspensionService suspension;   // mock 기본 no-op — 임계 판정은 자체 테스트에서
+
     private BounceService service;
 
     @BeforeEach
     void setUp() {
-        service = new BounceService(suppressions, messages, campaigns, events);
+        service = new BounceService(suppressions, messages, campaigns, events, suspension);
     }
 
     private MailMessage sentMessage() {

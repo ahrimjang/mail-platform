@@ -49,6 +49,10 @@ public class AuthService {
                 || r.password() == null || r.password().isBlank()) {
             throw new IllegalArgumentException("email and password are required");
         }
+        // 일회용 주소로 무료 발송량을 양산하는 계정 farming 차단 — 평판 방어의 입구
+        if (DisposableEmailDomains.isDisposable(r.email())) {
+            throw new IllegalArgumentException("일회용 이메일 주소로는 가입할 수 없어요. 실제 사용하는 주소를 입력해주세요.");
+        }
         if (users.existsByEmail(r.email())) {
             throw new IllegalStateException("email already registered: " + r.email());
         }

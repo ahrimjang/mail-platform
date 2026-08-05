@@ -186,6 +186,15 @@ class AuthServiceTest {
         }
     }
 
+    @Test
+    void signup_rejectsDisposableEmailDomains() {
+        assertThatThrownBy(() -> service.signup(new io.github.ahrimjang.mail.common.SignupRequest(
+                "farmer@mailinator.com", "password1", "농부", null)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("일회용");
+        verify(users, never()).save(any());
+    }
+
     // ── 구글 로그인 ──────────────────────────────────────────────────
 
     private static io.github.ahrimjang.mail.core.port.GoogleIdentityVerifier.GoogleIdentity gid(
