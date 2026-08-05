@@ -62,15 +62,15 @@ export default function Landing() {
       </header>
 
       <main className="op-fade">
-        {/* 히어로 */}
+        {/* 히어로 — 포지셔닝: 구독자 수 과금이 아닌 발송량 종량제 */}
         <section style={{ textAlign: "center", padding: "84px 24px 64px" }}>
           <h1 style={{ fontSize: 42, fontWeight: 800, letterSpacing: "-0.03em", margin: 0, lineHeight: 1.25 }}>
-            대량 이메일을<br />안정적으로, 빠르게.
+            구독자 수가 아니라,<br />보낸 만큼만.
           </h1>
-          <p style={{ color: "var(--op-muted)", fontSize: 16.5, lineHeight: 1.75, margin: "18px auto 0", maxWidth: 560 }}>
-            Outpace는 뉴스레터부터 수만 통짜리 캠페인까지 밀어내는 이메일 마케팅
-            플랫폼이에요. 등록은 즉시, 발송은 백그라운드에서 — 열람·클릭까지
-            자동으로 따라옵니다.
+          <p style={{ color: "var(--op-muted)", fontSize: 16.5, lineHeight: 1.75, margin: "18px auto 0", maxWidth: 580 }}>
+            대부분의 이메일 서비스는 구독자 수로 요금을 매겨요 — 한 통도 안 보낸
+            달에도요. Outpace는 <b>월 발송량 기준</b>입니다. 리스트가 2만 명이어도
+            공지 한 번 보내는 달엔 그만큼만, 안 보내는 달엔 무료 플랜 그대로.
           </p>
           <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 28, flexWrap: "wrap" }}>
             <Link className="op-btn op-btn-sm" to="/signup">무료로 시작하기</Link>
@@ -79,6 +79,42 @@ export default function Landing() {
           <p style={{ marginTop: 14, fontSize: 12.5, color: "var(--op-faint)" }}>
             카드 등록 없이 가입 즉시 월 1,000통 무료
           </p>
+        </section>
+
+        {/* 타겟 — 발송량 과금이 구조적으로 유리한 사용자 */}
+        <section style={{ background: "var(--op-panel)", padding: "56px 24px" }}>
+          <div className="op-container">
+            <h2 style={{ textAlign: "center", fontSize: 24, fontWeight: 800, letterSpacing: "-0.02em", margin: "0 0 10px" }}>
+              구독자는 많은데, 매일 보내진 않는다면
+            </h2>
+            <p style={{ textAlign: "center", color: "var(--op-muted)", fontSize: 14.5, margin: "0 0 26px" }}>
+              구독자 수 기준 요금제에선 이런 분들이 가장 손해를 봅니다 — Outpace가 정확히 이 자리를 위해 있어요.
+            </p>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16 }}>
+              <div className="op-card op-card-pad">
+                <div style={{ fontSize: 26, marginBottom: 10 }}>🏘️</div>
+                <h3 style={{ margin: "0 0 6px", fontSize: 16 }}>커뮤니티 · 동호회</h3>
+                <p style={{ margin: 0, fontSize: 13.5, color: "var(--op-muted)", lineHeight: 1.75 }}>
+                  회원 수천 명, 공지는 한 달에 한두 번. 명단 크기로 매달 내는 요금이 아까웠다면요.
+                </p>
+              </div>
+              <div className="op-card op-card-pad">
+                <div style={{ fontSize: 26, marginBottom: 10 }}>🏫</div>
+                <h3 style={{ margin: "0 0 6px", fontSize: 16 }}>학원 · 모임 · 단체</h3>
+                <p style={{ margin: 0, fontSize: 13.5, color: "var(--op-muted)", lineHeight: 1.75 }}>
+                  개강 안내, 행사 알림처럼 필요할 때만 보내는 곳. 안 보내는 달엔 0원이 맞잖아요.
+                </p>
+              </div>
+              <div className="op-card op-card-pad">
+                <div style={{ fontSize: 26, marginBottom: 10 }}>🚀</div>
+                <h3 style={{ margin: "0 0 6px", fontSize: 16 }}>제품 · 오픈소스 공지</h3>
+                <p style={{ margin: 0, fontSize: 13.5, color: "var(--op-muted)", lineHeight: 1.75 }}>
+                  릴리스 노트, 업데이트 알림. 사이트에 <Link to="/developers" className="op-linkbtn">구독 API</Link>로
+                  폼만 붙이면 명단이 자동으로 쌓입니다.
+                </p>
+              </div>
+            </div>
+          </div>
         </section>
 
         {/* 핵심 기능 */}
@@ -122,8 +158,10 @@ export default function Landing() {
           <h2 style={{ fontSize: 24, fontWeight: 800, letterSpacing: "-0.02em", margin: 0 }}>
             일단 무료로 보내보세요
           </h2>
-          <p style={{ color: "var(--op-muted)", margin: "12px auto 0", fontSize: 14.5, maxWidth: 480, lineHeight: 1.7 }}>
-            스타터는 무료로 월 1,000통. 발송량이 늘어나면 그때 요금제를 올리면 돼요.
+          <p style={{ color: "var(--op-muted)", margin: "12px auto 0", fontSize: 14.5, maxWidth: 500, lineHeight: 1.7 }}>
+            스타터는 무료로 월 1,000통 — 명단이 커져도 요금은 보낸 만큼만 늘어요.
+            이미 사이트가 있다면 <Link to="/developers" className="op-linkbtn">구독 API</Link>로
+            구독 폼부터 붙여보세요.
           </p>
           <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 24, flexWrap: "wrap" }}>
             <Link className="op-btn op-btn-sm" to="/signup">무료로 시작하기</Link>
@@ -136,6 +174,7 @@ export default function Landing() {
       <footer style={{ borderTop: "1px solid var(--op-border)", padding: "22px 24px", textAlign: "center",
                        fontSize: 12.5, color: "var(--op-faint)" }}>
         © 2026 Outpace · <Link to="/pricing" className="op-linkbtn" style={{ fontWeight: 600 }}>요금제</Link> ·{" "}
+        <Link to="/developers" className="op-linkbtn" style={{ fontWeight: 600 }}>구독 API</Link> ·{" "}
         <Link to="/terms" className="op-linkbtn" style={{ fontWeight: 600 }}>이용약관</Link> ·{" "}
         <Link to="/privacy" className="op-linkbtn" style={{ fontWeight: 600 }}>개인정보처리방침</Link> ·{" "}
         <a className="op-linkbtn" style={{ fontWeight: 600 }} href="mailto:ahrim1220@gmail.com?subject=Outpace 문의">문의</a>

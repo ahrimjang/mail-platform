@@ -23,6 +23,7 @@ import Landing from "./pages/Landing";
 import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
 import VerifyEmail from "./pages/VerifyEmail";
+import Developers from "./pages/Developers";
 
 /* Gate: send unauthenticated users to /login; render children otherwise. */
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -59,6 +60,8 @@ function AppRoutes() {
       <Route path="/terms" element={<Terms />} />
       {/* 가입 이메일 인증: 메일 링크로 진입하므로 게이트 없음 */}
       <Route path="/verify-email" element={<VerifyEmail />} />
+      {/* 구독 API 연동 가이드 — 공개 문서 */}
+      <Route path="/developers" element={<Developers />} />
 
       {/* App shell (top nav) wraps the primary screens. 비로그인 "/"는 소개 랜딩. */}
       <Route path="/" element={<ShellGate />}>
