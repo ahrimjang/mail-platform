@@ -76,7 +76,8 @@ public interface CampaignRepository {
      * SENDING -> COMPLETED once drained. No-op while EXPANDING, so fan-out in
      * progress is never completed early. Single atomic conditional UPDATE.
      */
-    void completeIfSending(Long id);
+    /** SENDING 에서만 COMPLETED 로 — @return 이 호출이 전이를 이겼는지 (알림 1회 발행의 근거). */
+    boolean completeIfSending(Long id);
 
     /** Stamp when a winner-flow A/B campaign's test batch should be evaluated. */
     void scheduleAbEvaluation(Long id, Instant evaluateAt);

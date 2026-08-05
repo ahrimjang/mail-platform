@@ -59,6 +59,7 @@ public class MailDispatchService {
     private final ContactRepository contacts;
     private final SendRateLimiter rateLimiter;
     private final MailQueue queue;
+    private final NotificationService notifications;
     private final String baseUrl;
 
     public MailDispatchService(MailMessageRepository messages,
@@ -70,9 +71,11 @@ public class MailDispatchService {
                                ContactRepository contacts,
                                SendRateLimiter rateLimiter,
                                MailQueue queue,
+                               NotificationService notifications,
                                @Value("${app.base-url:http://localhost:8080}") String baseUrl) {
         this.messages = messages;
         this.campaigns = campaigns;
+        this.notifications = notifications;
         this.sender = sender;
         this.suppressions = suppressions;
         this.trackingRewriter = trackingRewriter;
@@ -180,7 +183,10 @@ public class MailDispatchService {
         // with any PENDING/SENDING left is still draining. completeIfSending only
         // fires from SENDING, so a campaign mid-EXPANDING is never completed early.
         if (!messages.hasPendingOrSending(campaignId)) {
-            campaigns.completeIfSending(campaignId);
+            // 전이를 이긴 호출만 true — 워커 다중 기동에도 완료 알림은 정확히 1건
+            if (campaigns.completeIfSending(campaignId)) {
+                campaigns.findById(campaignId).ifPresent(notifications::campaignCompleted);
+            }
         }
     }
 }

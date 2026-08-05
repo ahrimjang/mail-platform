@@ -77,8 +77,8 @@ public class JpaCampaignRepository implements CampaignRepository {
     }
 
     @Override
-    public void completeIfSending(Long id) {
-        jpa.completeIfSending(id, Instant.now());
+    public boolean completeIfSending(Long id) {
+        return jpa.completeIfSending(id, Instant.now()) > 0;
     }
 
     @Override
@@ -113,6 +113,7 @@ public class JpaCampaignRepository implements CampaignRepository {
         entity.setWorkspaceId(c.getWorkspaceId());
         entity.setCreatedBy(c.getCreatedBy());
         entity.setEmailId(c.getEmailId());
+        entity.setReplyTo(c.getReplyTo());
         return entity;
     }
 
@@ -136,6 +137,7 @@ public class JpaCampaignRepository implements CampaignRepository {
         c.setDraftRecipients(e.getDraftRecipients());
         c.setTemplateId(e.getTemplateId());
         c.setEmailId(e.getEmailId());
+        c.setReplyTo(e.getReplyTo());
         c.setListId(e.getListId());
         c.setSegMinOpenPercent(e.getSegMinOpenPercent());
         c.setSegMinClickPercent(e.getSegMinClickPercent());

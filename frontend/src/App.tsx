@@ -9,6 +9,7 @@ import NewCampaign from "./pages/NewCampaign";
 import CampaignDetail from "./pages/CampaignDetail";
 import Templates from "./pages/Templates";
 import Emails from "./pages/Emails";
+import Notifications from "./pages/Notifications";
 import Recipients from "./pages/Recipients";
 import Analytics from "./pages/Analytics";
 import WorkspaceSettings from "./pages/WorkspaceSettings";
@@ -75,6 +76,7 @@ function AppRoutes() {
         <Route path="lists" element={<Lists />} />
         <Route path="analytics" element={<Analytics />} />
         <Route path="settings" element={<WorkspaceSettings />} />
+        <Route path="notifications" element={<Notifications />} />
       </Route>
 
       {/* Full-screen editors live outside the shell. */}

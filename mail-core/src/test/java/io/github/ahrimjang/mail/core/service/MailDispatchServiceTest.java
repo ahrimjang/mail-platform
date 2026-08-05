@@ -68,13 +68,17 @@ class MailDispatchServiceTest {
     @Mock
     private MailQueue queue;
 
+    @org.mockito.Mock
+    private NotificationService notifications;   // mock 기본 no-op — 완료 알림 검증 테스트에서만 확인
+
     private MailDispatchService service;
 
     @BeforeEach
     void setUp() {
         // Real assembly collaborators keep the produced HTML realistic; only ports are mocked.
         service = new MailDispatchService(messages, campaigns, sender, suppressions,
-                new TrackingRewriter(), new TemplateRenderer(), contacts, rateLimiter, queue, BASE_URL);
+                new TrackingRewriter(), new TemplateRenderer(), contacts, rateLimiter, queue,
+                notifications, BASE_URL);
         // Most tests run with an unlimited workspace; the throttle tests override this.
         org.mockito.Mockito.lenient().when(rateLimiter.tryAcquire(anyLong())).thenReturn(true);
     }
