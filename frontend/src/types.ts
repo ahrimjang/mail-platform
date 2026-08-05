@@ -203,6 +203,8 @@ export interface ContactListView {
 export interface ImportResult {
   imported: number;
   skipped: number;
+  rejected: number; // 배달 불가로 제외한 줄 (구문 오류·테스트 도메인·오타 의심)
+  samples: { email: string; reason: string; suggestion: string | null }[];
 }
 
 export interface SubscriptionView {

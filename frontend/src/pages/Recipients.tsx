@@ -203,6 +203,24 @@ function ImportModal({ lists, onClose, onImported }: {
         {result && (
           <div className="op-modal-result">
             가져오기 완료 — <b>{result.imported}명</b> 추가, <b>{result.skipped}명</b> 건너뜀
+            {result.rejected > 0 && <>, <b style={{ color: "var(--op-red)" }}>{result.rejected}명 제외</b></>}
+            {/* 제외 사유를 보여줘야 사용자가 명단을 고칠 수 있다 — 반송은 발송 평판을 깎는다 */}
+            {result.rejected > 0 && (
+              <div style={{ marginTop: 10, fontSize: 12.5, lineHeight: 1.8 }}>
+                <div style={{ color: "var(--op-muted)" }}>
+                  보낼 수 없는 주소는 제외했어요. 반송이 많으면 발송 평판이 나빠져 정상 메일도 스팸으로 분류될 수 있어요.
+                </div>
+                {result.samples.map((s) => (
+                  <div key={s.email} style={{ color: "var(--op-faint)" }}>
+                    <code>{s.email}</code> — {s.reason}
+                    {s.suggestion && <> (혹시 <code>{s.suggestion}</code>?)</>}
+                  </div>
+                ))}
+                {result.rejected > result.samples.length && (
+                  <div style={{ color: "var(--op-faint)" }}>… 외 {result.rejected - result.samples.length}건</div>
+                )}
+              </div>
+            )}
           </div>
         )}
         {error && <div className="op-modal-error">{error}</div>}

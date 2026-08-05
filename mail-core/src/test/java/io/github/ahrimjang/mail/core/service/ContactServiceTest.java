@@ -171,8 +171,27 @@ class ContactServiceTest {
 
         ImportResult result = service.importCsv(csv, null);
 
-        assertThat(result).isEqualTo(new ImportResult(3, 2));
+        // 중복은 skipped, 배달 불가 주소는 rejected 로 분리된다 — 후자는 사용자가
+        // 명단을 고칠 수 있게 사유·교정 후보와 함께 돌려준다
+        assertThat(result.imported()).isEqualTo(3);
+        assertThat(result.skipped()).isEqualTo(1);       // dup@x.com
+        assertThat(result.rejected()).isEqualTo(1);      // not-an-email
+        assertThat(result.samples()).singleElement()
+                .satisfies(row -> assertThat(row.email()).isEqualTo("not-an-email"));
         verify(contacts, times(3)).save(any(Contact.class));
+    }
+
+    @org.junit.jupiter.api.Test
+    void importCsv_rejectsTypoDomainsWithSuggestion() {
+        stubSaveAssignsIds();
+        when(contacts.findByWorkspaceAndEmail(eq(WS), anyString())).thenReturn(Optional.empty());
+
+        ImportResult result = service.importCsv("hong@gmial.com,Hong,Gil\ngood@gmail.com,Good,User\n", null);
+
+        assertThat(result.imported()).isEqualTo(1);
+        assertThat(result.rejected()).isEqualTo(1);
+        assertThat(result.samples()).singleElement()
+                .satisfies(row -> assertThat(row.suggestion()).isEqualTo("hong@gmail.com"));
     }
 
     @org.junit.jupiter.api.Test

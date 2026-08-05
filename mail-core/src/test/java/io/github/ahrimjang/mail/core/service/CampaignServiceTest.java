@@ -85,6 +85,8 @@ class CampaignServiceTest {
     private SendingSuspensionService suspensionGuard;   // mock 기본 no-op = 정지 아님
     @Mock
     private SenderPolicy senderPolicy;   // mock 기본 no-op = 발신 제한 없음
+    @Mock
+    private SendingWarmupService warmup;   // mock 기본 no-op = 워밍업 통과
 
     @InjectMocks
     private CampaignService service;
