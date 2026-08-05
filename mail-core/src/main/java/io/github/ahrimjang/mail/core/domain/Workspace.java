@@ -20,6 +20,8 @@ public class Workspace {
     /** PG 빌링키 — 카드 등록 시 발급. null = 결제 수단 미등록(유료 플랜 전환 불가). */
     private String billingKey;
     private String apiKey;   // 외부 구독 연동 API 키 (null = 미발급)
+    private Instant sendingSuspendedAt;   // 평판 방어 자동 정지 시각 (null = 정상)
+    private String suspensionReason;
     private Instant createdAt;
 
     public Workspace() {
@@ -74,6 +76,26 @@ public class Workspace {
 
     public void setApiKey(String apiKey) {
         this.apiKey = apiKey;
+    }
+
+    public Instant getSendingSuspendedAt() {
+        return sendingSuspendedAt;
+    }
+
+    public void setSendingSuspendedAt(Instant sendingSuspendedAt) {
+        this.sendingSuspendedAt = sendingSuspendedAt;
+    }
+
+    public String getSuspensionReason() {
+        return suspensionReason;
+    }
+
+    public void setSuspensionReason(String suspensionReason) {
+        this.suspensionReason = suspensionReason;
+    }
+
+    public boolean isSendingSuspended() {
+        return sendingSuspendedAt != null;
     }
 
     public Integer getSendRatePerSec() {

@@ -14,6 +14,17 @@ public interface MailMessageJpaRepository extends JpaRepository<MailMessageEntit
 
     long countByCampaignId(Long campaignId);
 
+    /** 평판 방어용 — 워크스페이스의 최근 발송 시도(SENT+BOUNCED)와 바운스 수. */
+    @org.springframework.data.jpa.repository.Query(
+            "select count(m), coalesce(sum(case when m.status = io.github.ahrimjang.mail.common.MessageStatus.BOUNCED then 1 else 0 end), 0) "
+            + "from MailMessageEntity m, CampaignEntity c "
+            + "where m.campaignId = c.id and c.workspaceId = :workspaceId "
+            + "and m.status in (io.github.ahrimjang.mail.common.MessageStatus.SENT, io.github.ahrimjang.mail.common.MessageStatus.BOUNCED) "
+            + "and m.updatedAt >= :since")
+    java.util.List<Object[]> workspaceBounceStats(
+            @org.springframework.data.repository.query.Param("workspaceId") Long workspaceId,
+            @org.springframework.data.repository.query.Param("since") java.time.Instant since);
+
     long countByCampaignIdAndStatus(Long campaignId, MessageStatus status);
 
     boolean existsByCampaignIdAndStatusIn(Long campaignId, java.util.Collection<MessageStatus> statuses);

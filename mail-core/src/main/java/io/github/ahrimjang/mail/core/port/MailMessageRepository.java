@@ -115,4 +115,13 @@ public interface MailMessageRepository {
     /** Snapshot of delivery progress for a campaign. SENDING messages are in-flight, not yet terminal. */
     record MessageCounts(long total, long pending, long sending, long sent, long failed, long bounced, long suppressed) {
     }
+
+    /** 평판 방어용 — 워크스페이스의 최근 발송 시도(SENT+BOUNCED) 대비 바운스 집계. */
+    WorkspaceBounceStats workspaceBounceStats(Long workspaceId, java.time.Instant since);
+
+    record WorkspaceBounceStats(long attempted, long bounced) {
+        public double bounceRate() {
+            return attempted == 0 ? 0 : (double) bounced / attempted;
+        }
+    }
 }

@@ -22,6 +22,8 @@ public class JpaWorkspaceRepository implements WorkspaceRepository {
                 workspace.getId(), workspace.getName(), workspace.getPlan().name(),
                 workspace.getSendRatePerSec(), workspace.getBillingKey(), workspace.getCreatedAt());
         entity.setApiKey(workspace.getApiKey());
+        entity.setSendingSuspendedAt(workspace.getSendingSuspendedAt());
+        entity.setSuspensionReason(workspace.getSuspensionReason());
         return toDomain(jpa.save(entity));
     }
 
@@ -43,6 +45,8 @@ public class JpaWorkspaceRepository implements WorkspaceRepository {
         w.setSendRatePerSec(e.getSendRatePerSec());
         w.setBillingKey(e.getBillingKey());
         w.setApiKey(e.getApiKey());
+        w.setSendingSuspendedAt(e.getSendingSuspendedAt());
+        w.setSuspensionReason(e.getSuspensionReason());
         w.setCreatedAt(e.getCreatedAt());
         return w;
     }

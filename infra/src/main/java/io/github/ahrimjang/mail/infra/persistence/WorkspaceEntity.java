@@ -36,6 +36,13 @@ public class WorkspaceEntity {
     @Column(name = "api_key", length = 64)
     private String apiKey;
 
+    /** 평판 방어 자동 발송 정지 (V32, null = 정상) */
+    @Column(name = "sending_suspended_at")
+    private Instant sendingSuspendedAt;
+
+    @Column(name = "suspension_reason")
+    private String suspensionReason;
+
     @Column(nullable = false)
     private Instant createdAt;
 
@@ -78,6 +85,22 @@ public class WorkspaceEntity {
 
     public void setApiKey(String apiKey) {
         this.apiKey = apiKey;
+    }
+
+    public Instant getSendingSuspendedAt() {
+        return sendingSuspendedAt;
+    }
+
+    public void setSendingSuspendedAt(Instant sendingSuspendedAt) {
+        this.sendingSuspendedAt = sendingSuspendedAt;
+    }
+
+    public String getSuspensionReason() {
+        return suspensionReason;
+    }
+
+    public void setSuspensionReason(String suspensionReason) {
+        this.suspensionReason = suspensionReason;
     }
 
     public Instant getCreatedAt() {

@@ -31,15 +31,18 @@ public class BounceService {
     private final MailMessageRepository messages;
     private final CampaignRepository campaigns;
     private final EmailEventPublisher events;
+    private final SendingSuspensionService suspension;
 
     public BounceService(SuppressionRepository suppressions,
                          MailMessageRepository messages,
                          CampaignRepository campaigns,
-                         EmailEventPublisher events) {
+                         EmailEventPublisher events,
+                         SendingSuspensionService suspension) {
         this.suppressions = suppressions;
         this.messages = messages;
         this.campaigns = campaigns;
         this.events = events;
+        this.suspension = suspension;
     }
 
     public void handle(BounceNotification n) {
@@ -65,6 +68,8 @@ public class BounceService {
                             .orElse(null);
             if (workspaceId != null) {
                 suppressions.save(Suppression.of(workspaceId, n.email(), n.type().name().toLowerCase()));
+                // 평판 방어 — 이 워크스페이스의 바운스율이 임계를 넘었으면 자동 정지
+                suspension.checkAfterBounce(workspaceId);
             }
         }
         // SOFT_BOUNCE: transient — do nothing (retryable)

@@ -35,12 +35,15 @@ public class TransactionalService {
     /** Who is acting, for which tenant — resolved by the API adapter per request. */
     private final WorkspaceContext ctx;
     private final EmailVerificationService verification;
+    private final SendingSuspensionService suspensionGuard;
 
     public TransactionalService(TemplateRepository templates, CampaignRepository campaigns,
                                 MailMessageRepository messages, MailQueue mailQueue, TemplateRenderer renderer,
-                           WorkspaceContext ctx, EmailVerificationService verification) {
+                           WorkspaceContext ctx, EmailVerificationService verification,
+                           SendingSuspensionService suspensionGuard) {
         this.ctx = ctx;
         this.verification = verification;
+        this.suspensionGuard = suspensionGuard;
         this.templates = templates;
         this.campaigns = campaigns;
         this.messages = messages;
@@ -55,6 +58,7 @@ public class TransactionalService {
     public Long send(TransactionalRequest request) {
         // 캠페인 등록과 같은 게이트 — 미인증 계정은 발송 경로가 잠긴다
         verification.assertCurrentUserVerified();
+        suspensionGuard.assertNotSuspended(ctx.currentWorkspaceId());
         if (request.recipient() == null || !request.recipient().contains("@")) {
             throw new IllegalArgumentException("valid recipient is required");
         }
