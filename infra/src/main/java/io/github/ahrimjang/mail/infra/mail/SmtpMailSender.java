@@ -28,7 +28,7 @@ public class SmtpMailSender implements MailSender {
 
     @Override
     public void send(String recipient, String subject, String body, String messageId,
-                     String senderName, String senderEmail) throws MailSendException {
+                     String senderName, String senderEmail, String replyTo) throws MailSendException {
         if (recipient == null || !recipient.contains("@")) {
             throw new MailSendException("invalid recipient address: " + recipient);
         }
@@ -49,6 +49,10 @@ public class SmtpMailSender implements MailSender {
                 } else {
                     h.setFrom(senderEmail);
                 }
+            }
+            // 발신은 서비스 도메인, 답장은 고객 주소로 — SES 검증 도메인 제약의 짝
+            if (replyTo != null && !replyTo.isBlank()) {
+                h.setReplyTo(replyTo);
             }
             if (messageId != null) {
                 msg.setHeader("X-Mail-Message-Id", messageId);

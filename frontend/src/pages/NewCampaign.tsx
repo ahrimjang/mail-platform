@@ -58,6 +58,7 @@ export default function NewCampaign() {
   const [description, setDescription] = useState("");
   const [senderName, setSenderName] = useState("Acme 팀");
   const [senderEmail, setSenderEmail] = useState("hello@acme.io");
+  const [replyTo, setReplyTo] = useState("");
   const [subject, setSubject] = useState("이번 달 새 소식과 단독 혜택을 확인하세요");
   const [body, setBody] = useState("안녕하세요, 이번 달 소식입니다. {{name}}님을 위한 단독 혜택을 준비했어요.");
   const [recipients, setRecipients] = useState("alice@example.com\nbob@example.com");
@@ -150,6 +151,7 @@ export default function NewCampaign() {
         setDescription(d.description ?? "");
         setSenderName(d.senderName ?? "");
         setSenderEmail(d.senderEmail ?? "");
+        setReplyTo(d.replyTo ?? "");
         setSubject(d.subject ?? "");
         setBody(d.body ?? "");
         // 초안은 제목·본문 스냅샷을 함께 저장하므로 항상 직접 입력으로 복원한다
@@ -343,6 +345,7 @@ export default function NewCampaign() {
       listId: audienceSource === "list" && listId ? Number(listId) : null,
       senderName: senderName || null,
       senderEmail: senderEmail || null,
+      replyTo: replyTo.trim() || null,
       scheduledAt,
       abSubjectB: abEnabled && (winnerAllowed ? abContentSource === "direct" : true) && abSubjectB.trim() !== "" ? abSubjectB : null,
       // 본문 B·이메일 B·승자 플로우는 프로부터 — 스탠다드는 제목 A/B(반반 분배)로 제출
@@ -748,7 +751,22 @@ export default function NewCampaign() {
           <label className="op-field" style={{ marginBottom: 0 }}>
             <span className="op-flabel">발신 이메일</span>
             <input className="op-input" value={senderEmail} onChange={(e) => setSenderEmail(e.target.value)} />
+            <span className="op-hint">운영 환경에서는 서비스 발송 도메인의 주소만 쓸 수 있어요.</span>
           </label>
+        </div>
+        <div className="op-grid2" style={{ marginTop: 14 }}>
+          <label className="op-field" style={{ marginBottom: 0 }}>
+            <span className="op-flabel">회신 주소 (Reply-To · 선택)</span>
+            <input className="op-input" placeholder="답장을 받을 주소 — 비우면 발신 주소로"
+                   value={replyTo} onChange={(e) => setReplyTo(e.target.value)} />
+          </label>
+          <div className="op-field" style={{ marginBottom: 0 }}>
+            <span className="op-flabel">&nbsp;</span>
+            <p style={{ margin: "10px 0 0", fontSize: 12.5, color: "var(--op-faint)", lineHeight: 1.6 }}>
+              수신자가 답장을 누르면 이 주소로 갑니다. 발신은 서비스 도메인으로 나가도
+              회신은 여러분의 메일함으로 받을 수 있어요.
+            </p>
+          </div>
         </div>
       </div>
 

@@ -152,8 +152,13 @@ public class MailDispatchService {
         String html = trackedBody + unsubscribeFooter(message.getUnsubToken())
                 + trackingRewriter.openPixel(message.getTrackingToken(), baseUrl);
         try {
-            sender.send(message.getRecipient(), subject, html, String.valueOf(message.getId()),
-                    campaign.getSenderName(), campaign.getSenderEmail());
+            if (campaign.getReplyTo() != null) {
+                sender.send(message.getRecipient(), subject, html, String.valueOf(message.getId()),
+                        campaign.getSenderName(), campaign.getSenderEmail(), campaign.getReplyTo());
+            } else {
+                sender.send(message.getRecipient(), subject, html, String.valueOf(message.getId()),
+                        campaign.getSenderName(), campaign.getSenderEmail());
+            }
             message.markSent();
         } catch (Exception e) {
             // ERROR + throwable so the failure is observable: the stack trace ships to

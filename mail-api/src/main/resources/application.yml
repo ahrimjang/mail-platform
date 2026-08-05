@@ -65,6 +65,11 @@ app:
   # 재설정 메일 등 시스템 메일의 링크가 가리키는 콘솔 주소 —
   # 운영은 공개 도메인(APP_BASE_URL 과 동일 오리진), 개발 기본은 Vite.
   console-url: ${APP_CONSOLE_URL:http://localhost:5175}
+  mail:
+    # 발신 주소 허용 도메인. 미설정(개발 기본)이면 제한 없음 — MailHog 는 아무
+    # 주소나 받는다. 운영은 SES 검증 도메인으로 반드시 설정(예: outpacemail.com),
+    # 아니면 허용 밖 발신 주소가 발송 시점에 SES 554 로 대량 실패한다.
+    sender-domain: ${APP_SENDER_DOMAIN:}
   google:
     # 구글 로그인 (OAuth 클라이언트 ID). 미설정 시 구글 로그인 시도만 실패하고
     # 이메일+비밀번호 경로는 그대로 동작. 프론트는 VITE_GOOGLE_CLIENT_ID 로 같은 값.

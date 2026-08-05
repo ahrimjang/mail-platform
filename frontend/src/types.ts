@@ -265,6 +265,7 @@ export interface CampaignDraftView {
   listId: number | null;
   senderName: string | null;
   senderEmail: string | null;
+  replyTo: string | null; // 회신 주소 — 발신은 서비스 도메인, 답장은 이 주소로 (V33)
   scheduledAt: string | null;
   endsAt: string | null;
   abSubjectB: string | null;

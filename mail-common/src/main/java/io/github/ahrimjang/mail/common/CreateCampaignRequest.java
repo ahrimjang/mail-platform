@@ -69,9 +69,10 @@ public record CreateCampaignRequest(
         Integer segMinClickPercent,
         Instant endsAt,
         Long emailId,
-        Long abEmailId
+        Long abEmailId,
+        String replyTo   // 회신 주소 — 발신은 서비스 도메인, 답장은 이 주소로 (V33)
 ) {
-    /** emailId 도입(V27) 이전 시그니처 호환 — 이메일 미선택으로 위임. */
+    /** emailId(V27)·replyTo(V33) 도입 이전 시그니처 호환 — 미설정으로 위임. */
     public CreateCampaignRequest(String subject, String body, List<String> recipients, Long templateId,
                                  Long listId, String senderName, String senderEmail, Instant scheduledAt,
                                  String abSubjectB, String abBodyB, Long abTemplateId, Integer abSplitPercent,
@@ -81,6 +82,6 @@ public record CreateCampaignRequest(
         this(subject, body, recipients, templateId, listId, senderName, senderEmail, scheduledAt,
                 abSubjectB, abBodyB, abTemplateId, abSplitPercent, abTestPercent, abEvalMetric,
                 abEvalWaitMinutes, name, description, segMinOpenPercent, segMinClickPercent, endsAt,
-                null, null);
+                null, null, null);
     }
 }

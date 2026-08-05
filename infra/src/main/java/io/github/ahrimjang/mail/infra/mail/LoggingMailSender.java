@@ -22,7 +22,7 @@ public class LoggingMailSender implements MailSender {
 
     @Override
     public void send(String recipient, String subject, String body, String messageId,
-                     String senderName, String senderEmail) throws MailSendException {
+                     String senderName, String senderEmail, String replyTo) throws MailSendException {
         if (recipient == null || !recipient.contains("@")) {
             throw new MailSendException("invalid recipient address: " + recipient);
         }

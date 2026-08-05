@@ -77,6 +77,10 @@ public class CampaignEntity {
     @Column(name = "email_id")
     private Long emailId;
 
+    /** 회신 주소 (V33) — 발신은 서비스 도메인, 답장은 고객 주소로 */
+    @Column(name = "reply_to")
+    private String replyTo;
+
     /** Contact list the recipients were fanned out from; null = raw addresses. */
     private Long listId;
 
@@ -248,6 +252,14 @@ public class CampaignEntity {
 
     public void setEmailId(Long emailId) {
         this.emailId = emailId;
+    }
+
+    public String getReplyTo() {
+        return replyTo;
+    }
+
+    public void setReplyTo(String replyTo) {
+        this.replyTo = replyTo;
     }
 
     public Long getListId() {
