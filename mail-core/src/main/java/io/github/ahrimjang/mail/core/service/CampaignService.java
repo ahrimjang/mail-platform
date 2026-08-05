@@ -55,13 +55,15 @@ public class CampaignService {
     private final EmailDraftService emailDrafts;
     private final SendingSuspensionService suspensionGuard;
     private final SenderPolicy senderPolicy;
+    private final SendingWarmupService warmup;
 
     public CampaignService(CampaignRepository campaigns, MailMessageRepository messages, EmailEventRepository events,
                            MailQueue mailQueue, TemplateRepository templates, ContactRepository contacts,
                            ContactListRepository lists,
                            WorkspaceContext ctx, PlanLimits planLimits,
                            EmailVerificationService verification, EmailDraftService emailDrafts,
-                           SendingSuspensionService suspensionGuard, SenderPolicy senderPolicy) {
+                           SendingSuspensionService suspensionGuard, SenderPolicy senderPolicy,
+                           SendingWarmupService warmup) {
         this.ctx = ctx;
         this.campaigns = campaigns;
         this.messages = messages;
@@ -75,6 +77,15 @@ public class CampaignService {
         this.emailDrafts = emailDrafts;
         this.suspensionGuard = suspensionGuard;
         this.senderPolicy = senderPolicy;
+        this.warmup = warmup;
+    }
+
+    /** 워밍업 판정을 위한 이번 캠페인의 대상 수 — 리스트면 멤버 수, 애드혹이면 주소 수. */
+    private long targetCountOf(CreateCampaignRequest request) {
+        if (request.listId() != null) {
+            return contacts.countByListId(request.listId());
+        }
+        return request.recipients() == null ? 0 : request.recipients().size();
     }
 
     public CampaignView create(CreateCampaignRequest request) {
@@ -85,6 +96,8 @@ public class CampaignService {
         // SES 발신 도메인 제약 — 운영에서 허용 밖 발신 주소는 등록 시점에 거른다
         senderPolicy.assertSenderAllowed(request.senderEmail());
         senderPolicy.assertReplyToValid(request.replyTo());
+        // 신규 워크스페이스 워밍업 — 첫 발송부터 대량으로 나가면 바운스율 정지가 늦는다
+        warmup.assertBatchAllowed(ctx.currentWorkspaceId(), targetCountOf(request));
         // 플랜의 월 발송량 한도 — 등록 시점에만 검사한다(발송 중 컷오프 금지,
         // 진행 중 캠페인은 끝까지). 정책: docs/BILLING-policy.md 4절.
         planLimits.assertCampaignRegistrationAllowed(ctx.currentWorkspaceId());
@@ -219,6 +232,17 @@ public class CampaignService {
         } else {
             if (request.recipients() == null || request.recipients().isEmpty()) {
                 throw new IllegalArgumentException("recipients must not be empty");
+            }
+            // 배달 불가가 확실한 주소는 큐에 넣지 않는다 — 바운스는 사후 복구가 안 된다
+            var unsendable = request.recipients().stream()
+                    .filter(r -> !EmailAddressValidator.isSendable(r))
+                    .limit(5)
+                    .toList();
+            if (!unsendable.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "보낼 수 없는 주소가 있어요: " + String.join(", ", unsendable)
+                                + (request.recipients().size() > 5 ? " …" : "")
+                                + " — 형식을 확인하거나 목록에서 빼주세요.");
             }
             // Ad-hoc recipient lists are bounded by the request body — expand inline.
             List<MailMessage> queued = request.recipients().stream()

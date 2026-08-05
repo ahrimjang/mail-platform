@@ -187,6 +187,9 @@ public class ContactService {
         }
         int imported = 0;
         int skipped = 0;
+        int rejected = 0;
+        // 거부 사례는 앞 10건만 — 사용자가 명단을 고칠 단서로 충분하고 응답이 커지지 않는다
+        List<ImportResult.RejectedRow> samples = new java.util.ArrayList<>();
         // 플랜의 연락처 한도를 임포트 예산으로 — 기존 주소 갱신은 예산을 안 쓰고,
         // 신규 생성이 예산을 소진하면 그 지점에서 중단한다(지금까지 추가분은 유지).
         Long capacity = planLimits.remainingContactCapacity(workspaceId);
@@ -196,8 +199,14 @@ public class ContactService {
             }
             String[] parts = line.split(",", 3);
             String email = parts[0].trim();
-            if (!email.contains("@")) {
-                skipped++;
+            // 배달 불가가 확실한 주소는 발송 전에 거른다 — 바운스는 사후 복구가 안 된다
+            EmailAddressValidator.Verdict verdict = EmailAddressValidator.check(email);
+            if (verdict != EmailAddressValidator.Verdict.OK) {
+                rejected++;
+                if (samples.size() < 10) {
+                    samples.add(new ImportResult.RejectedRow(email, reasonOf(verdict),
+                            EmailAddressValidator.suggestionFor(email)));
+                }
                 continue;
             }
             Optional<Contact> existing = contacts.findByWorkspaceAndEmail(workspaceId, email);
@@ -227,7 +236,16 @@ public class ContactService {
                 lists.addMember(listId, contact.getId());
             }
         }
-        return new ImportResult(imported, skipped);
+        return new ImportResult(imported, skipped, rejected, List.copyOf(samples));
+    }
+
+    private static String reasonOf(EmailAddressValidator.Verdict verdict) {
+        return switch (verdict) {
+            case MALFORMED -> "주소 형식이 올바르지 않아요";
+            case INVALID_DOMAIN -> "테스트·예시 도메인이라 배달되지 않아요";
+            case LIKELY_TYPO -> "도메인 오타로 보여요";
+            case OK -> "";
+        };
     }
 
     private boolean owned(Contact c) {

@@ -73,6 +73,9 @@ app:
     # 주소나 받는다. 운영은 SES 검증 도메인으로 반드시 설정(예: outpacemail.com),
     # 아니면 허용 밖 발신 주소가 발송 시점에 SES 554 로 대량 실패한다.
     sender-domain: ${APP_SENDER_DOMAIN:}
+    # 신규 워크스페이스 워밍업 — 누적 발송 200통 미만이면 캠페인당 수신자 50명 상한.
+    # 발송 평판 방어용이라 운영에서는 켠 채로 둘 것(끄면 첫 캠페인부터 대량 발송 가능).
+    warmup-enabled: ${APP_MAIL_WARMUP_ENABLED:true}
   google:
     # 구글 로그인 (OAuth 클라이언트 ID). 미설정 시 구글 로그인 시도만 실패하고
     # 이메일+비밀번호 경로는 그대로 동작. 프론트는 VITE_GOOGLE_CLIENT_ID 로 같은 값.
