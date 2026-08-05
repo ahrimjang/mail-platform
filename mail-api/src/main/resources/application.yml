@@ -65,6 +65,9 @@ app:
   # 재설정 메일 등 시스템 메일의 링크가 가리키는 콘솔 주소 —
   # 운영은 공개 도메인(APP_BASE_URL 과 동일 오리진), 개발 기본은 Vite.
   console-url: ${APP_CONSOLE_URL:http://localhost:5175}
+  beta:
+    # 베타 가입 정원 (워크스페이스 수 기준). 0/미설정 = 무제한 — 해제는 환경변수 제거.
+    signup-cap: ${APP_BETA_SIGNUP_CAP:0}
   mail:
     # 발신 주소 허용 도메인. 미설정(개발 기본)이면 제한 없음 — MailHog 는 아무
     # 주소나 받는다. 운영은 SES 검증 도메인으로 반드시 설정(예: outpacemail.com),

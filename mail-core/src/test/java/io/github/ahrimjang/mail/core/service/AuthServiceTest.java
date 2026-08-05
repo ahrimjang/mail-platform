@@ -63,7 +63,7 @@ class AuthServiceTest {
     @BeforeEach
     void setUp() {
         attempts = new LoginAttemptGuard();   // 실물 사용 — 잠금 상호작용까지 함께 검증
-        service = new AuthService(users, workspaces, hasher, tokens, attempts, verification, google);
+        service = new AuthService(users, workspaces, hasher, tokens, attempts, verification, google, 0);
     }
 
     @BeforeEach
@@ -184,6 +184,34 @@ class AuthServiceTest {
             assertThatThrownBy(() -> service.login(new LoginRequest("me@x.com", "wrong"), IP))
                     .isInstanceOf(IllegalArgumentException.class);
         }
+    }
+
+    @Test
+    void signup_blockedWhenBetaCapReached() {
+        AuthService capped = new AuthService(users, workspaces, hasher, tokens, attempts, verification, google, 10);
+        when(users.existsByEmail("late@x.com")).thenReturn(false);
+        when(workspaces.count()).thenReturn(10L);   // 정원 도달
+
+        assertThatThrownBy(() -> capped.signup(new io.github.ahrimjang.mail.common.SignupRequest(
+                "late@x.com", "password1", "지각생", null)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("정원");
+        verify(workspaces, never()).save(any());
+        verify(users, never()).save(any());
+    }
+
+    @Test
+    void signup_allowedBelowBetaCap() {
+        AuthService capped = new AuthService(users, workspaces, hasher, tokens, attempts, verification, google, 10);
+        when(users.existsByEmail("ok@x.com")).thenReturn(false);
+        when(workspaces.count()).thenReturn(9L);   // 아직 자리 있음
+        when(hasher.hash("password1")).thenReturn("h");
+        when(users.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(tokens.issue(any())).thenReturn("jwt");
+
+        capped.signup(new io.github.ahrimjang.mail.common.SignupRequest("ok@x.com", "password1", "막차", null));
+
+        verify(workspaces).save(any());
     }
 
     @Test

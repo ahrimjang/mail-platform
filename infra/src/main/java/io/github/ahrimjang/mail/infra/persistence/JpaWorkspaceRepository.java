@@ -37,6 +37,11 @@ public class JpaWorkspaceRepository implements WorkspaceRepository {
         return jpa.findByApiKey(apiKey).map(this::toDomain);
     }
 
+    @Override
+    public long count() {
+        return jpa.count();
+    }
+
     private Workspace toDomain(WorkspaceEntity e) {
         Workspace w = new Workspace();
         w.setId(e.getId());
