@@ -5,9 +5,15 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
+# 구글 로그인 버튼은 빌드 시점 값으로 켜진다 — 미설정이면 버튼만 안 그려짐
+ARG VITE_GOOGLE_CLIENT_ID=
+ENV VITE_GOOGLE_CLIENT_ID=$VITE_GOOGLE_CLIENT_ID
 RUN npm run build
 
 FROM nginx:1.27-alpine
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
-EXPOSE 80
+COPY nginx-common.conf /etc/nginx/snippets/outpace.conf
+# certs 는 마운트 자리 — 비어 있으면 include 글롭이 매치 없이 지나가 80만 뜬다
+RUN mkdir -p /etc/nginx/certs
+EXPOSE 80 443
