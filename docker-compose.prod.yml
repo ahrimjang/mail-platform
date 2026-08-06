@@ -13,9 +13,13 @@
 name: mail-platform-prod
 
 services:
+  # 4GB 단일 노드라 서비스별 mem_limit 로 총량을 통제한다. JVM 의
+  # -XX:MaxRAMPercentage 는 이 한도를 기준으로 힙을 잡으므로(한도가 없으면
+  # 호스트 전체 4GB 를 제 몫으로 착각) 한도가 곧 OOM 방지선이다.
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    mem_limit: 512m
     environment:
       POSTGRES_DB: maildb
       POSTGRES_USER: maildb
@@ -31,6 +35,7 @@ services:
   rabbitmq:
     image: rabbitmq:3-management
     restart: unless-stopped
+    mem_limit: 512m
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-guest}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
@@ -46,7 +51,10 @@ services:
   kafka:
     image: apache/kafka:3.8.1
     restart: unless-stopped
+    mem_limit: 768m
     environment:
+      # 기본 힙 1G 는 4GB 노드에 과함 — 브로커 1대·토픽 1개 규모의 값으로 고정
+      KAFKA_HEAP_OPTS: -Xmx512M -Xms256M
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
@@ -72,9 +80,11 @@ services:
   kafka-ui:
     image: provectuslabs/kafka-ui:v0.7.2
     restart: unless-stopped
+    mem_limit: 384m
     ports:
       - "8088:8080"
     environment:
+      JAVA_OPTS: -Xmx256m
       KAFKA_CLUSTERS_0_NAME: mail-platform
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
       DYNAMIC_CONFIG_ENABLED: "false"
@@ -86,6 +96,7 @@ services:
   mailhog:
     image: mailhog/mailhog
     restart: unless-stopped
+    mem_limit: 128m
     ports:
       - "8025:8025"   # 받은편지함 UI (운영은 방화벽으로 막을 것)
 
@@ -94,6 +105,7 @@ services:
       context: .
       target: api
     restart: unless-stopped
+    mem_limit: 768m
     environment:
       DB_URL: jdbc:postgresql://postgres:5432/maildb
       DB_USERNAME: maildb
@@ -143,6 +155,7 @@ services:
       context: .
       target: worker
     restart: unless-stopped
+    mem_limit: 640m
     environment:
       DB_URL: jdbc:postgresql://postgres:5432/maildb
       DB_USERNAME: maildb
@@ -175,6 +188,7 @@ services:
       args:
         VITE_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
     restart: unless-stopped
+    mem_limit: 128m
     ports:
       - "80:80"
       - "443:443"   # TLS 는 certs/ 에 tls.conf+인증서가 있을 때만 열린다 (nginx-tls.conf.example)
@@ -187,12 +201,14 @@ services:
   prometheus:
     image: prom/prometheus:v2.53.0
     restart: unless-stopped
+    mem_limit: 256m
     volumes:
       - ./monitoring/prometheus.prod.yml:/etc/prometheus/prometheus.yml:ro
 
   grafana:
     image: grafana/grafana:11.1.0
     restart: unless-stopped
+    mem_limit: 256m
     ports:
       - "3000:3000"   # 운영은 방화벽/IP 제한 또는 프록시 뒤로
     environment:
