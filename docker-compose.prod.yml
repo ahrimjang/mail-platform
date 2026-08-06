@@ -111,6 +111,17 @@ services:
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost}
       APP_JWT_SECRET: ${APP_JWT_SECRET:-dev-only-not-a-real-secret-key-0123456789-abcdefghijklmnopqrstuvwxyz}
       APP_WEBHOOK_SECRET: ${APP_WEBHOOK_SECRET:-dev-webhook-secret}
+      APP_WEBHOOK_SNS_VERIFY_SIGNATURE: ${APP_WEBHOOK_SNS_VERIFY_SIGNATURE:-true}
+      # 시스템 메일 링크가 가리키는 콘솔 주소 — 운영은 APP_BASE_URL 과 같은 오리진
+      APP_CONSOLE_URL: ${APP_CONSOLE_URL:-http://localhost}
+      # 평판·정원 가드 (운영 값은 .env — .env.example 참고)
+      APP_SENDER_DOMAIN: ${APP_SENDER_DOMAIN:-}
+      APP_BETA_SIGNUP_CAP: ${APP_BETA_SIGNUP_CAP:-0}
+      APP_MAIL_WARMUP_ENABLED: ${APP_MAIL_WARMUP_ENABLED:-true}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      # 기본값은 토스 문서의 공용 테스트 키(실결제 없음) — application.yml 과 동일
+      TOSS_CLIENT_KEY: ${TOSS_CLIENT_KEY:-test_ck_docs_Ovk5rk1EwkEbP0W43n07xlzm}
+      TOSS_SECRET_KEY: ${TOSS_SECRET_KEY:-test_sk_docs_OaPz8L5KdmQXkzRz3y47BMw6}
     volumes:
       - uploads-data:/app/uploads
     depends_on:
@@ -161,9 +172,14 @@ services:
   front:
     build:
       context: ./frontend
+      args:
+        VITE_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
     restart: unless-stopped
     ports:
       - "80:80"
+      - "443:443"   # TLS 는 certs/ 에 tls.conf+인증서가 있을 때만 열린다 (nginx-tls.conf.example)
+    volumes:
+      - ./certs:/etc/nginx/certs:ro
     depends_on:
       api:
         condition: service_healthy
