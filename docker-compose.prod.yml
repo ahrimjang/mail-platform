@@ -101,7 +101,10 @@ services:
     ports:
       - "127.0.0.1:8025:8025"   # 받은편지함 UI — SSH 터널로만 접근
 
+  # image 는 CI(GitHub Actions)가 빌드해 ghcr 에 올리는 이름 — 서버는 pull 만 한다.
+  # 로컬 검증은 여전히 --build 로 같은 이름을 직접 빌드하면 된다.
   api:
+    image: ghcr.io/ahrimjang/mail-platform-api:latest
     build:
       context: .
       target: api
@@ -152,6 +155,7 @@ services:
       start_period: 40s
 
   worker:
+    image: ghcr.io/ahrimjang/mail-platform-worker:latest
     build:
       context: .
       target: worker
@@ -184,6 +188,7 @@ services:
         condition: service_healthy
 
   front:
+    image: ghcr.io/ahrimjang/mail-platform-front:latest
     build:
       context: ./frontend
       args:

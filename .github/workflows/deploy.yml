@@ -1,0 +1,92 @@
+# master 푸시 → 이미지 3종(api/worker/front)을 GitHub 러너가 빌드해 ghcr 에 올리고,
+# 서버에 SSH 로 들어가 pull + 재기동한다. 서버는 빌드를 전혀 하지 않는다
+# (4GB 노드에서 Gradle/npm 빌드가 운영 컨테이너와 메모리를 다투는 문제 회피 — OPS-LOG 참고).
+#
+# 필요 시크릿(저장소 Settings → Secrets and variables → Actions):
+#   LIGHTSAIL_HOST     서버 고정 IP
+#   LIGHTSAIL_SSH_KEY  Lightsail pem 내용 전체
+# 선택 변수(Variables): GOOGLE_CLIENT_ID — 프론트 빌드에 주입(미설정이면 구글 버튼 없음)
+# 서버 1회 준비: read:packages 토큰으로 `docker login ghcr.io` (프라이빗 이미지 pull 권한)
+name: deploy
+
+on:
+  push:
+    branches: [master]
+
+# 연속 푸시 시 배포가 겹치지 않게 직렬화(진행 중인 배포는 끊지 않는다)
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # api/worker 는 같은 Dockerfile 의 build 스테이지를 공유 — gha 캐시로
+      # 두 번째 빌드는 jar 산출까지 재사용된다. sha 태그는 롤백용.
+      - name: api 이미지
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: api
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}-api:latest
+            ghcr.io/${{ github.repository }}-api:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: worker 이미지
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: worker
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}-worker:latest
+            ghcr.io/${{ github.repository }}-worker:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: front 이미지
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: true
+          build-args: |
+            VITE_GOOGLE_CLIENT_ID=${{ vars.GOOGLE_CLIENT_ID }}
+          tags: |
+            ghcr.io/${{ github.repository }}-front:latest
+            ghcr.io/${{ github.repository }}-front:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: 서버 pull + 재기동
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.LIGHTSAIL_HOST }}
+          username: ubuntu
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          script_stop: true
+          script: |
+            cd ~/mail-platform
+            git pull
+            docker compose -f docker-compose.prod.yml pull api worker front
+            docker compose -f docker-compose.prod.yml up -d --no-build
+            docker image prune -f
+            docker compose -f docker-compose.prod.yml ps
