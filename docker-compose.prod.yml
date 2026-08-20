@@ -82,7 +82,8 @@ services:
     restart: unless-stopped
     mem_limit: 384m
     ports:
-      - "8088:8080"
+      # 루프백 바인딩 — 외부 노출 금지, SSH 터널로만 접근 (방화벽과 이중 방어)
+      - "127.0.0.1:8088:8080"
     environment:
       JAVA_OPTS: -Xmx256m
       KAFKA_CLUSTERS_0_NAME: mail-platform
@@ -98,7 +99,7 @@ services:
     restart: unless-stopped
     mem_limit: 128m
     ports:
-      - "8025:8025"   # 받은편지함 UI (운영은 방화벽으로 막을 것)
+      - "127.0.0.1:8025:8025"   # 받은편지함 UI — SSH 터널로만 접근
 
   api:
     build:
@@ -210,7 +211,7 @@ services:
     restart: unless-stopped
     mem_limit: 256m
     ports:
-      - "3000:3000"   # 운영은 방화벽/IP 제한 또는 프록시 뒤로
+      - "127.0.0.1:3000:3000"   # SSH 터널로만 접근 (방화벽과 이중 방어)
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "false"
       GF_SECURITY_ADMIN_USER: admin
