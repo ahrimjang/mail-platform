@@ -115,6 +115,7 @@ textarea.op-input { height: auto; padding: 13px 15px; line-height: 1.6; resize: 
   display: inline-flex; align-items: center; justify-content: center; gap: 7px;
   border: none; border-radius: 12px; background: var(--op-grad-primary); color: #fff;
   font-weight: 700; font-size: 15px; cursor: pointer; font-family: inherit;
+  white-space: nowrap;   /* 좁은 화면에서 버튼 라벨이 두 줄로 꺾이지 않게 */
   box-shadow: 0 1px 2px rgba(37, 99, 235, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.18);
   transition: filter 0.12s, transform 0.1s, box-shadow 0.12s;
 }
@@ -1015,4 +1016,49 @@ textarea.op-input.rp { height: auto; padding: 9px 11px; font-size: 13px; line-he
   .op-workspace { flex-direction: column; }
   .op-rpanel { width: 100%; flex: 1 1 auto; border-left: none; border-top: 1px solid var(--op-border); }
   .op-code-pane, .op-preview-pane { width: 100%; flex: 1 1 auto; }
+}
+
+/* ------------------------------- 모바일 셸 -------------------------------- */
+/* 720px 이하에서 op-navlinks 가 숨는 대신 햄버거 + 드로어가 네비를 맡는다. */
+.op-hamburger {
+  display: none; align-items: center; justify-content: center;
+  width: 36px; height: 36px; border: 1px solid var(--op-border); border-radius: 10px;
+  background: #fff; color: var(--op-ink-2); cursor: pointer; flex: 0 0 auto;
+}
+.op-mobilenav {
+  display: none; flex-direction: column; padding: 6px 10px 10px;
+  background: #fff; border-bottom: 1px solid var(--op-border);
+  position: sticky; top: 60px; z-index: 9;
+}
+.op-mobilenav-link {
+  display: block; width: 100%; text-align: left; padding: 11px 12px;
+  border: none; background: none; border-radius: 10px; cursor: pointer;
+  font-size: 14px; font-weight: 600; color: var(--op-ink-2);
+}
+.op-mobilenav-link.active { background: var(--op-primary-soft, #eff6ff); color: var(--op-primary); }
+.op-mobilenav-link:active { background: #f4f4f5; }
+
+@media (max-width: 720px) {
+  .op-hamburger { display: inline-flex; }
+  .op-mobilenav { display: flex; }
+  .op-topnav { padding: 0 14px; }
+  .op-topnav-left { gap: 12px; }
+  .op-topnav-right { gap: 8px; }
+  .op-main { padding: 20px 14px 40px; }
+  /* 캠페인 검색은 모바일 상단바에서 생략 — 벨·아바타 자리를 지킨다 */
+  .op-nav-search { display: none; }
+  /* 그리드 표는 좁히는 대신 컨테이너 안에서 가로 스크롤 — 열이 뭉개지는 것보다 낫다 */
+  .op-card:has(.op-thead), .op-panel:has(.op-thead) { overflow-x: auto; }
+  .op-thead, .op-trow { min-width: 560px; }
+  /* 탭 줄도 넘치면 그 자리에서 스크롤 */
+  .op-tabs { overflow-x: auto; }
+  /* 랜딩 헤더 버튼 — 좁은 폭에 맞게 축소 */
+  .op-topnav .op-btn-sm { height: 38px; padding: 0 13px; font-size: 13.5px; }
+}
+
+@media (max-width: 480px) {
+  /* 초소형 화면에선 랜딩 헤더의 요금제 버튼 생략 — 히어로에 같은 링크가 있다 */
+  .op-topnav-right > a.op-btn-ghost:first-child { display: none; }
+  /* 오버레이/모달은 화면 폭에 맞춤 */
+  .op-modal { width: calc(100vw - 28px) !important; min-width: 0 !important; }
 }

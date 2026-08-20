@@ -24,6 +24,8 @@ export default function AppShell() {
   // 가볍게 재확인해서 다른 탭에서 인증을 마치면 배너가 사라지게 한다.
   const [emailVerified, setEmailVerified] = useState<boolean | null>(null);
   const [resent, setResent] = useState(false);
+  // 모바일 햄버거 — 720px 이하에서 op-navlinks 가 숨고 이 드로어가 대신한다
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
@@ -95,6 +97,11 @@ export default function AppShell() {
     <div className="op-root op-shell">
       <header className="op-topnav">
         <div className="op-topnav-left">
+          <button className="op-hamburger" aria-label="메뉴" onClick={() => setMobileNavOpen((o) => !o)}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+              <path d="M3 6h18M3 12h18M3 18h18" />
+            </svg>
+          </button>
           <div className="op-logo" onClick={() => nav("/")}>
             <div className="op-logo-badge"><span className="tri" /></div>
             <span>Outpace</span>
@@ -183,6 +190,25 @@ export default function AppShell() {
           </div>
         </div>
       </header>
+      {mobileNavOpen && (
+        <nav className="op-mobilenav" onClick={() => setMobileNavOpen(false)}>
+          {[
+            { label: "대시보드", to: "/", active: isDash },
+            { label: "캠페인", to: "/campaigns", active: isCamp },
+            { label: "이메일", to: "/emails", active: isEml },
+            { label: "수신자", to: "/recipients", active: isRcp },
+            { label: "리스트", to: "/lists", active: isList },
+            { label: "분석", to: "/analytics", active: isAnal },
+            ...(role === "ADMIN" ? [{ label: "관리", to: "/settings", active: isAdminPage }] : []),
+            { label: "요금제 안내", to: "/pricing", active: false },
+            { label: "구독 API 가이드", to: "/developers", active: false },
+          ].map((l) => (
+            <button key={l.to} className={`op-mobilenav-link${l.active ? " active" : ""}`} onClick={() => nav(l.to)}>
+              {l.label}
+            </button>
+          ))}
+        </nav>
+      )}
       {emailVerified === false && (
         <div style={{ background: "#fef9c3", borderBottom: "1px solid #fde047", padding: "9px 24px",
                       fontSize: 13, textAlign: "center", color: "#713f12" }}>
