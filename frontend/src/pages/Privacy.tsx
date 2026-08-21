@@ -122,7 +122,7 @@ export default function Privacy() {
       <h3>9. 개인정보 보호책임자 및 문의처</h3>
       <p>
         개인정보 처리에 관한 문의·불만·피해구제 요청은 아래로 연락해 주세요.<br />
-        이메일: <a href="mailto:ahrim1220@gmail.com?subject=개인정보 문의">ahrim1220@gmail.com</a>
+        이메일: <a href="mailto:support@outpacemail.com?subject=개인정보 문의">support@outpacemail.com</a>
       </p>
 
       <h3>10. 방침의 변경</h3>

@@ -102,8 +102,10 @@ export default function Terms() {
         제공·운영할 뿐, 회원이 발송하는 콘텐츠의 작성 주체가 아니며 회원과 수신자
         사이에 이루어지는 거래·약속 등 법률관계의 당사자가 아닙니다. 콘텐츠와
         그로 인한 법률관계에 대한 책임은 회원에게 있습니다. 수신자 등 제3자는
-        위법하거나 부적절한 이메일을 문의처로 신고할 수 있으며, 서비스는 접수된
-        신고를 확인하여 제9조의 조치를 취할 수 있습니다.
+        위법하거나 부적절한 이메일을 신고 창구(
+        <a href="mailto:abuse@outpacemail.com?subject=이메일 신고">abuse@outpacemail.com</a>
+        )로 신고할 수 있으며, 서비스는 접수된 신고를 확인하여 제9조의 조치를
+        취할 수 있습니다.
       </p>
 
       <h3>제11조 (서비스의 의무와 변경·중단)</h3>
@@ -152,7 +154,7 @@ export default function Terms() {
         아님을 명시했습니다(제10조 신설). 개정 약관은 2026년 8월 27일부터 시행됩니다.
       </p>
       <p>
-        문의: <a href="mailto:ahrim1220@gmail.com?subject=Outpace 이용약관 문의">ahrim1220@gmail.com</a>
+        문의: <a href="mailto:support@outpacemail.com?subject=Outpace 이용약관 문의">support@outpacemail.com</a>
       </p>
     </PolicyPage>
   );

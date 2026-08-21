@@ -166,7 +166,7 @@ export default function Landing() {
           <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 24, flexWrap: "wrap" }}>
             <Link className="op-btn op-btn-sm" to="/signup">무료로 시작하기</Link>
             <a className="op-btn op-btn-sm op-btn-ghost"
-               href="mailto:ahrim1220@gmail.com?subject=Outpace 도입 문의">도입 문의</a>
+               href="mailto:support@outpacemail.com?subject=Outpace 도입 문의">도입 문의</a>
           </div>
         </section>
       </main>
@@ -177,7 +177,7 @@ export default function Landing() {
         <Link to="/developers" className="op-linkbtn" style={{ fontWeight: 600 }}>구독 API</Link> ·{" "}
         <Link to="/terms" className="op-linkbtn" style={{ fontWeight: 600 }}>이용약관</Link> ·{" "}
         <Link to="/privacy" className="op-linkbtn" style={{ fontWeight: 600 }}>개인정보처리방침</Link> ·{" "}
-        <a className="op-linkbtn" style={{ fontWeight: 600 }} href="mailto:ahrim1220@gmail.com?subject=Outpace 문의">문의</a>
+        <a className="op-linkbtn" style={{ fontWeight: 600 }} href="mailto:support@outpacemail.com?subject=Outpace 문의">문의</a>
       </footer>
     </div>
   );

@@ -115,7 +115,7 @@ export default function Pricing() {
   async function choose(plan: PlanView) {
     setNotice(null);
     if (plan.name === "ENTERPRISE") {
-      window.location.href = "mailto:ahrim1220@gmail.com?subject=Outpace 엔터프라이즈 도입 문의";
+      window.location.href = "mailto:support@outpacemail.com?subject=Outpace 엔터프라이즈 도입 문의";
       return;
     }
     if (!token) {
@@ -295,7 +295,7 @@ export default function Pricing() {
           </div>
           <p style={{ textAlign: "center", marginTop: 18, fontSize: 13, color: "var(--op-faint)" }}>
             더 궁금하신 게 있으신가요?{" "}
-            <a className="op-linkbtn" href="mailto:ahrim1220@gmail.com?subject=Outpace 문의">메일로 물어보세요</a>
+            <a className="op-linkbtn" href="mailto:support@outpacemail.com?subject=Outpace 문의">메일로 물어보세요</a>
           </p>
         </section>
 
@@ -311,7 +311,7 @@ export default function Pricing() {
             {token
               ? <Link className="op-btn op-btn-sm" to="/">대시보드로 가기</Link>
               : <Link className="op-btn op-btn-sm" to="/signup">무료로 시작하기</Link>}
-            <a className="op-btn op-btn-sm op-btn-ghost" href="mailto:ahrim1220@gmail.com?subject=Outpace 엔터프라이즈 도입 문의">도입 문의</a>
+            <a className="op-btn op-btn-sm op-btn-ghost" href="mailto:support@outpacemail.com?subject=Outpace 엔터프라이즈 도입 문의">도입 문의</a>
           </div>
         </section>
       </main>

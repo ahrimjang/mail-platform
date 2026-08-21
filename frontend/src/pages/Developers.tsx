@@ -135,7 +135,7 @@ app.post("/my-subscribe", async (req, res) => {
         © 2026 Outpace · <Link to="/pricing" className="op-linkbtn" style={{ fontWeight: 600 }}>요금제</Link> ·{" "}
         <Link to="/terms" className="op-linkbtn" style={{ fontWeight: 600 }}>이용약관</Link> ·{" "}
         <Link to="/privacy" className="op-linkbtn" style={{ fontWeight: 600 }}>개인정보처리방침</Link> ·{" "}
-        <a className="op-linkbtn" style={{ fontWeight: 600 }} href="mailto:ahrim1220@gmail.com?subject=Outpace 문의">문의</a>
+        <a className="op-linkbtn" style={{ fontWeight: 600 }} href="mailto:support@outpacemail.com?subject=Outpace 문의">문의</a>
       </footer>
     </div>
   );

@@ -40,7 +40,7 @@ export default function PolicyPage({ title, updated, children }: {
                        fontSize: 12.5, color: "var(--op-faint)" }}>
         © 2026 Outpace · <Link to="/terms" className="op-linkbtn" style={{ fontWeight: 600 }}>이용약관</Link> ·{" "}
         <Link to="/privacy" className="op-linkbtn" style={{ fontWeight: 600 }}>개인정보처리방침</Link> ·{" "}
-        <a className="op-linkbtn" style={{ fontWeight: 600 }} href="mailto:ahrim1220@gmail.com?subject=Outpace 문의">문의</a>
+        <a className="op-linkbtn" style={{ fontWeight: 600 }} href="mailto:support@outpacemail.com?subject=Outpace 문의">문의</a>
       </footer>
     </div>
   );
