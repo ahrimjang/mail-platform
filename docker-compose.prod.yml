@@ -70,11 +70,14 @@ services:
     volumes:
       - kafka-data:/var/lib/kafka/data
     healthcheck:
-      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
-      interval: 10s
+      # broker-api-versions.sh 는 검사마다 JVM 을 새로 띄운다 — 2vCPU 노드에서
+      # 배포 중 CPU 가 포화되면 멀쩡한 브로커가 연속 타임아웃으로 unhealthy 판정을
+      # 받아 배포를 무산시켰다(OPS-LOG 2026-08-21 추가). 리스너 포트 TCP 응답으로 대체.
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/9092' 2>/dev/null"]
+      interval: 30s
       timeout: 10s
       retries: 10
-      start_period: 20s
+      start_period: 30s
 
   # Kafka 웹 콘솔 — 토픽·소비자 그룹·LAG (운영은 방화벽/IP 제한 권장)
   kafka-ui:
