@@ -151,8 +151,10 @@ services:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8080/api/health >/dev/null || exit 1"]
       interval: 15s
       timeout: 5s
-      retries: 10
-      start_period: 40s
+      # 2vCPU 버스트 노드에서 배포 직후(이미지 pull + JVM 2개 동시 기동)에는
+      # 기동이 4분까지 늘어진 실측이 있다(OPS-LOG 2026-08-21) — 예산을 7분으로.
+      retries: 24
+      start_period: 60s
 
   worker:
     image: ghcr.io/ahrimjang/mail-platform-worker:latest
@@ -183,9 +185,12 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
-      # 스키마(Flyway)는 api 가 소유 — 워커는 validate 만 하므로 api 이후에 뜨는 게 안전
+      # 스키마(Flyway)는 api 소유 — 워커는 validate 만 한다. healthy 대기 대신
+      # started 로 두는 이유: api 헬스 판정이 늦어져도 워커가 볼모로 잡히지 않게.
+      # 마이그레이션 전에 떠서 validate 에 실패하면 restart 정책이 재시도하므로
+      # 스키마가 준비되는 즉시 자가 회복한다.
       api:
-        condition: service_healthy
+        condition: service_started
 
   front:
     image: ghcr.io/ahrimjang/mail-platform-front:latest
@@ -202,7 +207,10 @@ services:
       - ./certs:/etc/nginx/certs:ro
     depends_on:
       api:
-        condition: service_healthy
+        # healthy 가 아니라 started — api 가 늦게 떠도 정적 페이지(랜딩·약관)는
+        # 살아 있어야 한다. api 준비 전의 /api 요청은 nginx 가 502 로 답할 뿐이고,
+        # healthy 대기였다면 사이트 전체가 죽는다(OPS-LOG 2026-08-21 521 장애).
+        condition: service_started
 
   prometheus:
     image: prom/prometheus:v2.53.0

@@ -33,7 +33,33 @@ cd ~/mail-platform && git pull && docker compose -f docker-compose.prod.yml up -
 
 ---
 
-## 2026-08-06 — 첫 배포 직후 메모리 고갈로 서버 전체 마비
+## 2026-08-21 — 자동 배포 중 api 기동 지연이 사이트 전면 다운(521)으로 번짐
+
+**증상**: 문의처 교체 커밋의 자동 배포가 "dependency failed to start: api is
+unhealthy"로 실패. 이후 https://outpacemail.com 전체가 Cloudflare 521(원본 응답
+없음). 다운타임 약 10분.
+
+**원인**: 두 가지가 겹침.
+- api 재기동이 이번엔 234초 걸렸다(평소 30초 안팎). 배포 직후엔 이미지 pull +
+  구/신 JVM 교대 + 워커 재기동이 2vCPU 를 동시에 짓눌러 기동이 늘어진다.
+  헬스체크 예산(start 40s + 15s×10회 ≈ 190초)이 이보다 짧아 unhealthy 판정.
+- front(nginx)가 `depends_on: api: service_healthy` — api 판정 실패로 compose 가
+  front 기동을 포기했고, nginx 가 없으니 정적 페이지까지 전부 죽었다. worker 도
+  같은 조건이라 함께 내려가 있었다(발송 정지 상태였던 셈).
+
+**조치**:
+1. 서버에서 `up -d` 재실행 — api 는 그 사이 스스로 healthy 가 됐으므로 front/worker
+   즉시 기동, 사이트 복구
+2. api 헬스체크 예산을 7분(start 60s + 15s×24회)으로 확대 — 실측 234초의 여유분
+3. front 의존을 `service_started` 로 완화 — api 가 늦어도 랜딩·약관은 살아 있고,
+   준비 전 /api 만 502
+4. worker 도 `service_started` — 마이그레이션 전이면 validate 실패로 재시작을
+   반복하다 스키마 준비 즉시 자가 회복(restart: unless-stopped)
+
+**재발 방지**: 배포로 인한 전면 다운 경로 자체가 제거됐다 — 최악의 경우에도
+"api 준비될 때까지 API 만 502". 교훈: 단일 노드에서 `depends_on: healthy` 는
+"의존이 아픈 동안 나도 죽겠다"는 선언이다. 사용자 대면 서비스(front)에는 쓰지 말 것.
+헬스체크 예산은 평시가 아니라 **최악 실측** 기준으로 잡을 것.
 
 **증상**: 배포 당일 가입 요청(`POST /api/auth/signup`)이 Cloudflare 502 반환.
 정적 페이지는 정상(랜딩·가입 화면은 뜸). 진단하려던 중 SSH 접속까지 안 됨 —
