@@ -39,7 +39,8 @@ public class SnsSubscriptionConfirmer {
 
     /** Follow the SubscribeURL; returns true when the subscription was confirmed. */
     public boolean confirm(String subscribeUrl) {
-        if (!SnsSignatureVerifier.isAmazonCertUrl(subscribeUrl)) {
+        // SubscribeURL 은 .pem 이 아니므로 호스트만 검증(SSRF 방지). 인증서 URL 검증과 분리.
+        if (!SnsSignatureVerifier.isSnsUrl(subscribeUrl)) {
             log.warn("sns subscription rejected: untrusted subscribe url {}", subscribeUrl);
             return false;
         }

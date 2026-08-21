@@ -59,6 +59,12 @@ app:
   webhook:
     # Shared secret bounce providers must echo in X-Webhook-Token.
     secret: ${APP_WEBHOOK_SECRET:dev-webhook-secret}
+    sns:
+      # SES→SNS 서명 검증 (운영은 켠 채로 둘 것).
+      verify-signature: ${APP_WEBHOOK_SNS_VERIFY_SIGNATURE:true}
+      # 수용할 SNS TopicArn 허용목록(쉼표 구분). 비우면 무제한(개발 기본) —
+      # 운영은 우리 바운스/컴플레인 토픽 ARN 을 반드시 지정(AUDIT SEC-2).
+      topic-arn: ${APP_WEBHOOK_SNS_TOPIC_ARN:}
   uploads:
     # Local template-image storage; served publicly at /uploads/**.
     dir: ${APP_UPLOADS_DIR:uploads}

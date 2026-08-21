@@ -70,20 +70,34 @@ public class SnsSignatureVerifier {
         }
     }
 
-    /** Only HTTPS URLs on an amazonaws.com host may supply the certificate. */
-    static boolean isAmazonCertUrl(String url) {
+    // SNS 는 서명 인증서도 SubscribeURL 도 오직 sns.<region>.amazonaws.com(.cn) 에서만
+    // 제공한다. ".amazonaws.com 으로 끝나면 허용"은 공격자의 S3 버킷(evil.s3.amazonaws.com)에
+    // 올린 자기 인증서까지 통과시켜 서명 검증을 무력화한다(AUDIT SEC-2). 호스트를 SNS 전용으로
+    // 좁히면, 그 호스트는 AWS 만 TLS 로 서빙하므로 공격자가 콘텐츠를 놓을 수 없다.
+    private static final java.util.regex.Pattern SNS_HOST =
+            java.util.regex.Pattern.compile("^sns\\.[a-z0-9-]+\\.amazonaws\\.com(\\.cn)?$");
+
+    /** HTTPS URL on an SNS host — SubscribeURL 검증용(.pem 요건 없음). */
+    static boolean isSnsUrl(String url) {
         if (url == null) {
             return false;
         }
         try {
             URI uri = URI.create(url);
             String host = uri.getHost();
-            return "https".equals(uri.getScheme())
-                    && host != null
-                    && (host.endsWith(".amazonaws.com") || host.endsWith(".amazonaws.com.cn"));
+            return "https".equals(uri.getScheme()) && host != null && SNS_HOST.matcher(host).matches();
         } catch (Exception e) {
             return false;
         }
+    }
+
+    /** SNS 호스트가 .pem 으로 제공하는 서명 인증서 URL 만 허용. */
+    static boolean isAmazonCertUrl(String url) {
+        if (!isSnsUrl(url)) {
+            return false;
+        }
+        String path = URI.create(url).getPath();
+        return path != null && path.endsWith(".pem");
     }
 
     private static PublicKey fetchAmazonCertKey(String certUrl) throws Exception {

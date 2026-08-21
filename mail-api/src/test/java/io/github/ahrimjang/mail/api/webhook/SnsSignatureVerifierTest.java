@@ -80,8 +80,19 @@ class SnsSignatureVerifierTest {
     @Test
     void certUrlValidation_coversTheEdges() {
         assertThat(SnsSignatureVerifier.isAmazonCertUrl("https://sns.us-east-1.amazonaws.com/x.pem")).isTrue();
+        assertThat(SnsSignatureVerifier.isAmazonCertUrl("https://sns.cn-north-1.amazonaws.com.cn/x.pem")).isTrue();
         assertThat(SnsSignatureVerifier.isAmazonCertUrl("https://sns.amazonaws.com.evil.com/x.pem")).isFalse();
         assertThat(SnsSignatureVerifier.isAmazonCertUrl("http://sns.amazonaws.com/x.pem")).isFalse();
         assertThat(SnsSignatureVerifier.isAmazonCertUrl(null)).isFalse();
+    }
+
+    @Test
+    void rejectsCertUrlOnNonSnsAmazonHosts() {
+        // AUDIT SEC-2: ".amazonaws.com 으로 끝나면 허용"이던 시절엔 공격자가 자기 S3 버킷에
+        // 올린 인증서로 서명 검증을 통과시킬 수 있었다. SNS 전용 호스트만 허용해야 한다.
+        assertThat(SnsSignatureVerifier.isAmazonCertUrl("https://evil.s3.amazonaws.com/cert.pem")).isFalse();
+        assertThat(SnsSignatureVerifier.isAmazonCertUrl("https://s3.amazonaws.com/evil/cert.pem")).isFalse();
+        // 인증서가 아닌 경로(.pem 아님)도 거부
+        assertThat(SnsSignatureVerifier.isAmazonCertUrl("https://sns.us-east-1.amazonaws.com/x.txt")).isFalse();
     }
 }

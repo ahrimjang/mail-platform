@@ -38,6 +38,6 @@ class SnsSubscriptionConfirmerTest {
     void aFailedFetchReportsFalseInsteadOfThrowing() {
         SnsSubscriptionConfirmer confirmer = new SnsSubscriptionConfirmer(url -> 500);
 
-        assertThat(confirmer.confirm("https://sns.amazonaws.com/confirm")).isFalse();
+        assertThat(confirmer.confirm("https://sns.ap-northeast-2.amazonaws.com/?Action=ConfirmSubscription")).isFalse();
     }
 }
