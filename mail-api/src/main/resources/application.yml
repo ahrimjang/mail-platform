@@ -52,6 +52,9 @@ management:
       application: mail-api
 
 app:
+  # 운영 표식 — true 이면 개발 기본 시크릿이 그대로일 때 기동을 실패시킨다(SecretsGuard).
+  # 프로드 compose 가 켠다. 로컬(false)은 무설정 동작 유지.
+  require-secrets: ${APP_REQUIRE_SECRETS:false}
   jwt:
     # Dev-only fallback — production MUST set APP_JWT_SECRET (HS512 needs >= 64 bytes).
     secret: ${APP_JWT_SECRET:dev-only-not-a-real-secret-key-0123456789-abcdefghijklmnopqrstuvwxyz}

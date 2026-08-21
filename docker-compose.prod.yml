@@ -130,6 +130,8 @@ services:
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost}
       APP_JWT_SECRET: ${APP_JWT_SECRET:-dev-only-not-a-real-secret-key-0123456789-abcdefghijklmnopqrstuvwxyz}
       APP_WEBHOOK_SECRET: ${APP_WEBHOOK_SECRET:-dev-webhook-secret}
+      # 운영 표식 — .env 의 시크릿이 누락돼 기본값으로 폴백하면 기동을 중단시킨다(SecretsGuard)
+      APP_REQUIRE_SECRETS: ${APP_REQUIRE_SECRETS:-true}
       APP_WEBHOOK_SNS_VERIFY_SIGNATURE: ${APP_WEBHOOK_SNS_VERIFY_SIGNATURE:-true}
       # 시스템 메일 링크가 가리키는 콘솔 주소 — 운영은 APP_BASE_URL 과 같은 오리진
       APP_CONSOLE_URL: ${APP_CONSOLE_URL:-http://localhost}
