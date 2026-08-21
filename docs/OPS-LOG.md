@@ -7,7 +7,8 @@
 
 - **서버**: Lightsail 4GB/2vCPU (서울, `outpace-prod`, 고정 IP 15.165.115.152) — 스왑 2GB
 - **스택**: `docker compose -f docker-compose.prod.yml` — postgres/rabbitmq/kafka/api/worker/front(nginx) + mailhog(SES 전환 전)/kafka-ui/prometheus/grafana
-- **입구**: Cloudflare(Proxy, SSL Full) → nginx 443(Origin 인증서, `certs/`) → api:8080
+- **입구**: Cloudflare(Proxy, SSL Full, Authenticated Origin Pulls/Global) → nginx 443
+  (Origin 인증서 + CF 클라이언트 인증서 검증) → api:8080. 오리진 직접 접속은 400 차단
 - **방화벽**: 22/80/443만 개방 — Grafana(3000)·MailHog(8025)는 SSH 터널로만 접근
 
 ## 진단 런북 (서버에서)
@@ -30,6 +31,31 @@ curl -s -i http://localhost/api/health
 docker compose -f docker-compose.prod.yml up -d
 cd ~/mail-platform && git pull && docker compose -f docker-compose.prod.yml up -d --build
 ```
+
+---
+
+## 2026-08-21 — Authenticated Origin Pulls 적용(오리진 직접 접속 차단), 토글 오선택으로 순단
+
+**배경**: 감사(AUDIT-2026-08-21 SEC-1)에서 오리진 IP 직접 접속이 열려 있어 nginx 속도제한
+(`CF-Connecting-IP` 키)·WAF·캐시가 우회 가능함을 실측 확인. 방화벽 IP 대역 15개 대신
+mTLS(Authenticated Origin Pulls)로 "Cloudflare 경유만 허용"을 적용.
+
+**증상**: `ssl_verify_client on` 적용 직후 Cloudflare 경유까지 400(사이트 다운). 즉시
+`optional` 로 revert해 복구. 진단 헤더(`add_header X-SSL-Verify $ssl_client_verify`)로
+확인하니 `NONE` — Cloudflare가 클라이언트 인증서를 아예 안 보내고 있었다.
+
+**원인**: 대시보드에서 **Zone-level** 토글을 켰는데, 이건 사용자가 **커스텀 인증서를
+업로드해야** 작동한다("No certificates uploaded" → 제시할 인증서 없음). 서버에 설치한 CA는
+Cloudflare **공유(shared)** CA(`origin-pull.cloudflare.net`)라 **Global** 토글과 짝이다.
+
+**조치**: Global 토글 ON(Zone-level OFF) → 헤더 재확인 `SUCCESS` → `optional`→`on` 승격.
+실측: CF 경유 200, 오리진 직접 `https://15.165.115.152` → 400 차단. CA는
+`certs/cloudflare-origin-pull-ca.pem`, tls.conf에 `ssl_client_certificate`+`ssl_verify_client on`.
+이 한 조치로 SEC-1/8/9 동시 완화.
+
+**재발 방지**: 적용 순서 원칙 — ①CF 토글 먼저(무해) ②nginx 검증은 반드시 `optional`로
+먼저 켜서 헤더로 `SUCCESS` 확인한 뒤 ③`on` 승격. `on`을 곧바로 켜면 CF가 인증서를 안
+보내는 상태에서 전면 400이 된다. Global(shared) vs Zone-level(custom 업로드 필요) 구분이 함정.
 
 ---
 

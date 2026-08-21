@@ -13,5 +13,14 @@ server {
     ssl_certificate     /etc/nginx/certs/origin.pem;
     ssl_certificate_key /etc/nginx/certs/origin.key;
 
+    # Authenticated Origin Pulls — Cloudflare(Global/shared 인증서)만 오리진에 접속 가능.
+    # 인증서 없는 직접 접속은 TLS 단계에서 400 으로 차단(SEC-1/8/9 방어). CA 는 서버에서
+    #   curl -fsS https://developers.cloudflare.com/ssl/static/authenticated_origin_pull_ca.pem \
+    #     -o certs/cloudflare-origin-pull-ca.pem
+    # 로 받아 두고, Cloudflare 대시보드 SSL/TLS → Origin Server → Authenticated Origin
+    # Pulls 의 "Global" 토글을 켠다(Zone-level 은 커스텀 인증서 업로드가 필요하니 사용 안 함).
+    ssl_client_certificate /etc/nginx/certs/cloudflare-origin-pull-ca.pem;
+    ssl_verify_client on;
+
     include /etc/nginx/snippets/outpace.conf;
 }
