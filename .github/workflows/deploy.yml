@@ -95,7 +95,11 @@ jobs:
           script_stop: true
           script: |
             cd ~/mail-platform
-            git pull
+            # git pull 은 이력이 재작성되면 divergent 로 실패한다(force-push 후 겪음).
+            # 서버는 원격을 그대로 따르는 소비자이므로 항상 원격에 강제로 맞춘다.
+            # 로컬 미추적 파일(.env, certs/)은 reset --hard 가 건드리지 않는다.
+            git fetch origin
+            git reset --hard origin/master
             docker compose -f docker-compose.prod.yml pull api worker front
             docker compose -f docker-compose.prod.yml up -d --no-build
             docker image prune -f
