@@ -47,3 +47,6 @@ frontend/dist/
 frontend/*.tsbuildinfo
 # 실제 환경변수 값 (배포용 — .env.example 참고)
 .env
+
+# 보안 감사 보고서 — 열린 취약점의 공격 시나리오 포함, 저장소에 올리지 않는다(로컬 전용)
+docs/AUDIT-*.md
