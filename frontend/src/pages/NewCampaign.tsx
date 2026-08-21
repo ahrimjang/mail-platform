@@ -54,14 +54,16 @@ export default function NewCampaign() {
   const bodyARef = useRef<HTMLTextAreaElement>(null);
   const bodyBRef = useRef<HTMLTextAreaElement>(null);
 
-  const [name, setName] = useState("월간 뉴스레터 7월호");
+  // 초기값은 전부 비운다 — 예시는 placeholder 로만 보여준다. 더미 발신 주소·수신자가
+  // 초기값이면 신규 사용자가 그대로 발송 버튼을 눌러 오발송할 수 있다(감사 UX-1).
+  const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [senderName, setSenderName] = useState("Acme 팀");
-  const [senderEmail, setSenderEmail] = useState("hello@acme.io");
+  const [senderName, setSenderName] = useState("");
+  const [senderEmail, setSenderEmail] = useState("");
   const [replyTo, setReplyTo] = useState("");
-  const [subject, setSubject] = useState("이번 달 새 소식과 단독 혜택을 확인하세요");
-  const [body, setBody] = useState("안녕하세요, 이번 달 소식입니다. {{name}}님을 위한 단독 혜택을 준비했어요.");
-  const [recipients, setRecipients] = useState("alice@example.com\nbob@example.com");
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
+  const [recipients, setRecipients] = useState("");
   const [timing, setTiming] = useState<Timing>("now");
   const [scheduledLocal, setScheduledLocal] = useState(""); // datetime-local value
   // Campaign period: opens/clicks observed after this end are not recorded.
@@ -550,7 +552,7 @@ export default function NewCampaign() {
                 className="op-input"
                 value={subj}
                 onChange={(e) => setSubj(e.target.value)}
-                placeholder={variantB ? "B안 제목 — 비우면 A와 동일" : undefined}
+                placeholder={variantB ? "B안 제목 — 비우면 A와 동일" : "메일 제목"}
               />
             </label>
             <div className="op-field" style={{ marginBottom: 0 }}>
@@ -567,7 +569,7 @@ export default function NewCampaign() {
                 rows={4}
                 value={bod}
                 onChange={(e) => setBod(e.target.value)}
-                placeholder={variantB ? "B안 본문 (선택) — 비우면 본문은 공통" : undefined}
+                placeholder={variantB ? "B안 본문 (선택) — 비우면 본문은 공통" : "안녕하세요 {{name}}님, ..."}
               />
             </div>
           </>
@@ -731,7 +733,7 @@ export default function NewCampaign() {
         <h3 className="op-sect-title">기본 정보</h3>
         <label className="op-field">
           <span className="op-flabel">캠페인 이름</span>
-          <input className="op-input" value={name} onChange={(e) => setName(e.target.value)} />
+          <input className="op-input" placeholder="예: 3월 뉴스레터" value={name} onChange={(e) => setName(e.target.value)} />
         </label>
         <label className="op-field">
           <span className="op-flabel">캠페인 설명</span>
@@ -746,11 +748,11 @@ export default function NewCampaign() {
         <div className="op-grid2">
           <label className="op-field" style={{ marginBottom: 0 }}>
             <span className="op-flabel">발신자 이름</span>
-            <input className="op-input" value={senderName} onChange={(e) => setSenderName(e.target.value)} />
+            <input className="op-input" placeholder="예: 우리 동호회" value={senderName} onChange={(e) => setSenderName(e.target.value)} />
           </label>
           <label className="op-field" style={{ marginBottom: 0 }}>
             <span className="op-flabel">발신 이메일</span>
-            <input className="op-input" value={senderEmail} onChange={(e) => setSenderEmail(e.target.value)} />
+            <input className="op-input" placeholder="예: news@outpacemail.com" value={senderEmail} onChange={(e) => setSenderEmail(e.target.value)} />
             <span className="op-hint">운영 환경에서는 서비스 발송 도메인의 주소만 쓸 수 있어요.</span>
           </label>
         </div>

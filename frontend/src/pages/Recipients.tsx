@@ -104,7 +104,10 @@ function AddContactModal({ onClose, onSaved }: { onClose: () => void; onSaved: (
         }),
       });
       if (res.ok) { onSaved(); onClose(); }
-      else setError("저장에 실패했습니다. 이미 등록된 이메일인지 확인해 주세요.");
+      else {
+        const d = await res.json().catch(() => ({} as { error?: string }));
+        setError(d.error ?? "저장에 실패했습니다. 이미 등록된 이메일인지 확인해 주세요.");
+      }
     } catch {
       setError("요청 중 오류가 발생했습니다.");
     } finally {
@@ -169,7 +172,12 @@ function ImportModal({ lists, onClose, onImported }: {
         body: csv,
       });
       if (res.ok) { setResult(await res.json()); onImported(); }
-      else setError("가져오기에 실패했습니다.");
+      else {
+        // 서버가 부분성공/한도초과 등을 한국어로 설명한다("320명은 추가됐어요 …").
+        // 그 메시지를 버리면 사용자가 실패로 오인해 재시도(중복)하게 된다(감사 UX-4).
+        const d = await res.json().catch(() => ({} as { error?: string }));
+        setError(d.error ?? "가져오기에 실패했습니다.");
+      }
     } catch {
       setError("요청 중 오류가 발생했습니다.");
     } finally {
