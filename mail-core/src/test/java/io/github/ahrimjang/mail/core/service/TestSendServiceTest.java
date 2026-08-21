@@ -35,6 +35,8 @@ class TestSendServiceTest {
     private MailSender sender;
     @Mock
     private WorkspaceContext ctx;
+    @Mock
+    private EmailVerificationService verification;   // assertCurrentUserVerified: void mock = 통과
 
     private TestSendService service;
 
@@ -42,8 +44,10 @@ class TestSendServiceTest {
     void setUp() {
         // Real renderer on purpose: sample-variable substitution is part of the contract.
         // 빈 도메인 = 발신 정책 미적용 (개발 기본과 동일) — 정책 자체는 SenderPolicyTest 에서
-        service = new TestSendService(templates, new TemplateRenderer(), sender, ctx, new SenderPolicy(""));
+        service = new TestSendService(templates, new TemplateRenderer(), sender, ctx, new SenderPolicy(""), verification);
         lenient().when(ctx.currentWorkspaceId()).thenReturn(WS);
+        // 테스트 발송은 본인 가입 주소로만 — 테스트의 수신자와 일치시킨다
+        lenient().when(ctx.currentUserEmail()).thenReturn("me@acme.com");
     }
 
     @Test
@@ -80,6 +84,25 @@ class TestSendServiceTest {
     void send_rejectsAnInvalidRecipientBeforeTouchingAnything() {
         assertThatThrownBy(() -> service.send(new TestSendRequest("not-an-email", "s", "b", null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class);
+        verify(sender, never()).send(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void send_refusesRecipientOtherThanOwnSignupEmail() {
+        // AUDIT SEC-6: 임의 주소로 보내는 스팸/메일폭탄 통로 차단 — 본인 주소만 허용.
+        assertThatThrownBy(() -> service.send(new TestSendRequest(
+                "victim@stranger.com", "s", "<p>b</p>", null, "Acme", "hello@acme.io")))
+                .isInstanceOf(IllegalArgumentException.class);
+        verify(sender, never()).send(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void send_blocksWhenEmailNotVerified() {
+        org.mockito.Mockito.doThrow(new IllegalStateException("verify first"))
+                .when(verification).assertCurrentUserVerified();
+
+        assertThatThrownBy(() -> service.send(new TestSendRequest("me@acme.com", "s", "<p>b</p>", null, null, null)))
+                .isInstanceOf(IllegalStateException.class);
         verify(sender, never()).send(any(), any(), any(), any(), any(), any());
     }
 }

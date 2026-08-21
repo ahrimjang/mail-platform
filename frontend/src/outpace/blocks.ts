@@ -295,6 +295,25 @@ export function blocksToHtmlBody(blocks: Block[]): string {
   return `${BLOCKS_PREFIX}${b64encode(payload)}-->\n${renderBlocksHtml(blocks)}`;
 }
 
+/**
+ * 저장된 마커의 rich 필드를 로드 시점에 다시 새니타이즈한다. sanitizeRich 는 인라인
+ * 편집 커밋(blur) 때만 돌므로, API 로 직접 심어진 악성 마커(예: OPERATOR 가 body 에
+ * <img onerror>)는 ADMIN 이 에디터를 여는 순간 실행될 수 있었다(AUDIT SEC-7). 로드
+ * 경로에도 강제해 마커를 신뢰하지 않는다.
+ */
+function sanitizeBlockRichFields(b: Block): Block {
+  switch (b.type) {
+    case "text":
+      return { ...b, body: sanitizeRich(b.body ?? "") };
+    case "two":
+      return { ...b, leftBody: sanitizeRich(b.leftBody ?? ""), rightBody: sanitizeRich(b.rightBody ?? "") };
+    case "footer":
+      return { ...b, text: sanitizeRich(b.text ?? "") };
+    default:
+      return b;
+  }
+}
+
 /** Recover blocks from a saved htmlBody; null when it wasn't made by this editor. */
 export function parseBlocksMarker(htmlBody: string): Block[] | null {
   if (!htmlBody.startsWith(BLOCKS_PREFIX)) return null;
@@ -302,9 +321,11 @@ export function parseBlocksMarker(htmlBody: string): Block[] | null {
   if (end < 0) return null;
   try {
     const parsed = JSON.parse(b64decode(htmlBody.slice(BLOCKS_PREFIX.length, end)));
-    if (Array.isArray(parsed)) return (parsed as Block[]).map(upgradeV1); // v1 marker
-    if (parsed && parsed.v === MARKER_VERSION && Array.isArray(parsed.blocks)) return parsed.blocks as Block[];
-    return null;
+    let blocks: Block[] | null = null;
+    if (Array.isArray(parsed)) blocks = (parsed as Block[]).map(upgradeV1); // v1 marker
+    else if (parsed && parsed.v === MARKER_VERSION && Array.isArray(parsed.blocks)) blocks = parsed.blocks as Block[];
+    // 마커는 신뢰하지 않는다 — rich 필드를 로드 시점에 재새니타이즈.
+    return blocks ? blocks.map(sanitizeBlockRichFields) : null;
   } catch {
     return null;
   }

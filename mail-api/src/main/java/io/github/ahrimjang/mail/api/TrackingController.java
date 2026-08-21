@@ -35,8 +35,13 @@ public class TrackingController {
     }
 
     @GetMapping("/api/track/click/{token}")
-    public ResponseEntity<Void> click(@PathVariable String token, @RequestParam("u") String url) {
-        tracking.recordClick(token, url);
+    public ResponseEntity<Void> click(@PathVariable String token,
+                                      @RequestParam("u") String url,
+                                      @RequestParam(value = "s", required = false) String signature) {
+        // 서명이 유효한(= 우리가 발행한) 링크만 리다이렉트한다. 아니면 400 — 오픈 리다이렉트 차단.
+        if (!tracking.recordClick(token, url, signature)) {
+            return ResponseEntity.badRequest().build();
+        }
         return ResponseEntity.status(HttpStatus.FOUND).location(URI.create(url)).build();
     }
 }

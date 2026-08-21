@@ -12,7 +12,8 @@ class TrackingRewriterTest {
     private static final String BASE_URL = "http://localhost:8080";
     private static final String TOKEN = "tok-123";
 
-    private final TrackingRewriter rewriter = new TrackingRewriter();
+    private final TrackingLinkSigner signer = new TrackingLinkSigner("test-secret");
+    private final TrackingRewriter rewriter = new TrackingRewriter(signer);
 
     @Test
     void rewriteLinks_routesHttpsLinkThroughClickEndpointWithEncodedUrl() {
@@ -22,8 +23,9 @@ class TrackingRewriterTest {
         String out = rewriter.rewriteLinks(html, TOKEN, BASE_URL);
 
         String encoded = URLEncoder.encode(url, StandardCharsets.UTF_8);
+        String sig = signer.sign(TOKEN, url);
         assertThat(out).isEqualTo(
-                "<a href=\"" + BASE_URL + "/api/track/click/" + TOKEN + "?u=" + encoded + "\">go</a>");
+                "<a href=\"" + BASE_URL + "/api/track/click/" + TOKEN + "?u=" + encoded + "&s=" + sig + "\">go</a>");
     }
 
     @Test

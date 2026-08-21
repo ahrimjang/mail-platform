@@ -77,7 +77,7 @@ class MailDispatchServiceTest {
     void setUp() {
         // Real assembly collaborators keep the produced HTML realistic; only ports are mocked.
         service = new MailDispatchService(messages, campaigns, sender, suppressions,
-                new TrackingRewriter(), new TemplateRenderer(), contacts, rateLimiter, queue,
+                new TrackingRewriter(new TrackingLinkSigner("test-secret")), new TemplateRenderer(), contacts, rateLimiter, queue,
                 notifications, BASE_URL);
         // Most tests run with an unlimited workspace; the throttle tests override this.
         org.mockito.Mockito.lenient().when(rateLimiter.tryAcquire(anyLong())).thenReturn(true);

@@ -28,20 +28,30 @@ public class TestSendService {
     private final MailSender sender;
     private final WorkspaceContext ctx;
     private final SenderPolicy senderPolicy;
+    private final EmailVerificationService verification;
 
     public TestSendService(TemplateRepository templates, TemplateRenderer renderer,
-                           MailSender sender, WorkspaceContext ctx, SenderPolicy senderPolicy) {
+                           MailSender sender, WorkspaceContext ctx, SenderPolicy senderPolicy,
+                           EmailVerificationService verification) {
         this.templates = templates;
         this.renderer = renderer;
         this.sender = sender;
         this.ctx = ctx;
         this.senderPolicy = senderPolicy;
+        this.verification = verification;
     }
 
     /** Send one rendered test mail; returns the recipient it went to. */
     public String send(TestSendRequest request) {
         if (request.recipient() == null || !request.recipient().contains("@")) {
             throw new IllegalArgumentException("valid recipient is required");
+        }
+        // 캠페인과 동일한 인증 게이트 — 소유 확인 안 된 계정이 임의 주소로 발송하는 통로가
+        // 되면 안 된다(AUDIT SEC-6). 테스트 발송은 본인 가입 주소로만 허용한다.
+        verification.assertCurrentUserVerified();
+        if (!request.recipient().trim().equalsIgnoreCase(ctx.currentUserEmail())) {
+            throw new IllegalArgumentException(
+                    "테스트 발송은 가입한 본인 이메일(" + ctx.currentUserEmail() + ")로만 보낼 수 있어요.");
         }
         // 본 발송과 같은 발신 도메인 정책 — 테스트에서 미리 걸러져야 본 발송에서 안 놀란다
         senderPolicy.assertSenderAllowed(request.senderEmail());
