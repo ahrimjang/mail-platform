@@ -12,6 +12,16 @@ name: deploy
 on:
   push:
     branches: [master]
+    # 문서·로컬 도구만 바뀐 푸시는 배포하지 않는다 — 내용이 같아도 재빌드는
+    # 이미지 다이제스트를 바꿔 api 컨테이너를 교체하므로(수 분간 /api 502)
+    # 배포는 실제로 서비스에 실리는 변경에만 태운다.
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "loadtest/**"
+      - "jenkins/**"
+      - "Jenkinsfile"
+      - ".claude/**"
 
 # 연속 푸시 시 배포가 겹치지 않게 직렬화(진행 중인 배포는 끊지 않는다)
 concurrency:
