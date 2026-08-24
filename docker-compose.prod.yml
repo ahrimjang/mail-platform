@@ -20,6 +20,9 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     mem_limit: 512m
+    ports:
+      # 루프백 바인딩 — 외부 노출 없이 SSH 터널로만 접근(GUI 클라이언트용). 방화벽과 이중 방어.
+      - "127.0.0.1:5432:5432"
     environment:
       POSTGRES_DB: maildb
       POSTGRES_USER: maildb
