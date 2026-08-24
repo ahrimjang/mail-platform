@@ -5,7 +5,7 @@
 
 ## 운영 환경 요약
 
-- **서버**: Lightsail 4GB/2vCPU (서울, `outpace-prod`, 고정 IP 15.165.115.152) — 스왑 2GB
+- **서버**: Lightsail 4GB/2vCPU (서울, `outpace-prod`, 고정 IP <서버-IP>) — 스왑 2GB
 - **스택**: `docker compose -f docker-compose.prod.yml` — postgres/rabbitmq/kafka/api/worker/front(nginx) + mailhog(SES 전환 전)/kafka-ui/prometheus/grafana
 - **입구**: Cloudflare(Proxy, SSL Full, Authenticated Origin Pulls/Global) → nginx 443
   (Origin 인증서 + CF 클라이언트 인증서 검증) → api:8080. 오리진 직접 접속은 400 차단
@@ -49,7 +49,7 @@ mTLS(Authenticated Origin Pulls)로 "Cloudflare 경유만 허용"을 적용.
 Cloudflare **공유(shared)** CA(`origin-pull.cloudflare.net`)라 **Global** 토글과 짝이다.
 
 **조치**: Global 토글 ON(Zone-level OFF) → 헤더 재확인 `SUCCESS` → `optional`→`on` 승격.
-실측: CF 경유 200, 오리진 직접 `https://15.165.115.152` → 400 차단. CA는
+실측: CF 경유 200, 오리진 직접 `https://<서버-IP>` → 400 차단. CA는
 `certs/cloudflare-origin-pull-ca.pem`, tls.conf에 `ssl_client_certificate`+`ssl_verify_client on`.
 이 한 조치로 SEC-1/8/9 동시 완화.
 

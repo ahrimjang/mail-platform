@@ -8,7 +8,7 @@ Outpace 운영의 일상 절차서. 장애 이력·진단 런북은 [OPS-LOG.md]
 | 대상 | 방법 |
 |---|---|
 | 서비스 | https://outpacemail.com (Cloudflare → nginx 443) |
-| 서버 SSH | `ssh -i ~/.ssh/LightsailDefaultKey-ap-northeast-2.pem ubuntu@15.165.115.152` |
+| 서버 SSH | `ssh -i ~/.ssh/LightsailDefaultKey-ap-northeast-2.pem ubuntu@<서버-IP>` |
 | Grafana | SSH 터널 후 http://localhost:3000 (admin / `.env`의 `GRAFANA_ADMIN_PASSWORD`) |
 | MailHog | SSH 터널 후 http://localhost:8025 (SES 전환 전까지의 수신함) |
 | DB | 서버에서 `docker compose -f docker-compose.prod.yml exec postgres psql -U maildb maildb` |
@@ -16,7 +16,7 @@ Outpace 운영의 일상 절차서. 장애 이력·진단 런북은 [OPS-LOG.md]
 SSH 터널(모니터링용 포트 묶음) — PC에서 창을 열어둔 동안만 유효:
 
 ```bash
-ssh -i C:\Users\user\.ssh\LightsailDefaultKey-ap-northeast-2.pem -L 3000:localhost:3000 -L 8025:localhost:8025 ubuntu@15.165.115.152
+ssh -i C:\Users\user\.ssh\LightsailDefaultKey-ap-northeast-2.pem -L 3000:localhost:3000 -L 8025:localhost:8025 ubuntu@<서버-IP>
 ```
 
 시크릿 소재: 서버 `~/mail-platform/.env`(chmod 600) · TLS 인증서 `~/mail-platform/certs/` ·
