@@ -29,7 +29,7 @@ public class UserEntity {
     @Column(nullable = false, unique = true)
     private String email;
 
-    @Column(nullable = false)
+    /** 소셜 가입자는 비밀번호가 없다 — V26 이 DB 제약도 nullable 로 풀었다. */
     private String passwordHash;
 
     private String displayName;
