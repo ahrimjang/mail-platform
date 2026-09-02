@@ -10,6 +10,9 @@
 name: deploy
 
 on:
+  # 수동 실행 — 코드 변경 없이 재배포가 필요할 때(예: Variables/시크릿만 바뀌어
+  # 프론트 빌드에 다시 주입해야 할 때). 빈 커밋은 paths-ignore 때문에 트리거되지 않는다.
+  workflow_dispatch:
   push:
     branches: [master]
     # 문서·로컬 도구만 바뀐 푸시는 배포하지 않는다 — 내용이 같아도 재빌드는
