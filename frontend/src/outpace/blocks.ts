@@ -192,7 +192,7 @@ function plainToRich(s: string): string {
 
 function padOf(b: Block): string {
   const d = DEFAULTS[b.type];
-  return `${b.padY ?? d.padY}px ${b.padX ?? d.padX}px`;
+  return `${safeNum(b.padY, d.padY, 0, 200)}px ${safeNum(b.padX, d.padX, 0, 200)}px`;
 }
 
 /** Only http(s) or app-relative URLs may become background images. */
@@ -202,10 +202,40 @@ export function safeImageUrl(url: string | undefined): string | null {
   return /^(https?:\/\/|\/)/i.test(trimmed) ? trimmed : null;
 }
 
+/* --------------------------- 스타일 값 화이트리스트 --------------------------
+   마커(JSON)는 API 로 임의 주입될 수 있으므로 신뢰하지 않는다. 스타일 값이
+   그대로 문자열 보간되면 `"` 로 style 속성을 탈출해 임의 태그를 발송 HTML 에
+   심을 수 있고, url 은 javascript: 스킴이 들어갈 수 있다. 렌더 직전에 형식을
+   강제해 "값이 이상하면 기본값" 으로 떨어뜨린다. */
+
+/** #hex(3/4/6/8) 또는 rgb(a)() 만 허용 — 아니면 fallback. */
+function safeColor(v: string | undefined, fallback: string): string {
+  if (!v) return fallback;
+  const s = v.trim();
+  return /^#[0-9a-fA-F]{3,8}$/.test(s) || /^rgba?\([\d\s.,%]+\)$/.test(s) ? s : fallback;
+}
+
+/** 정렬은 열거값만. */
+function safeAlign(v: string | undefined): Align {
+  return v === "center" || v === "right" ? v : "left";
+}
+
+/** 유한한 숫자만 — 범위를 벗어나거나 숫자가 아니면 fallback. */
+function safeNum(v: number | undefined, fallback: number, min = 0, max = 4000): number {
+  return typeof v === "number" && Number.isFinite(v) && v >= min && v <= max ? v : fallback;
+}
+
+/** 링크는 http(s)/mailto/앱 상대경로만 — javascript: 등은 무해한 '#' 으로. */
+export function safeLinkUrl(url: string | undefined): string {
+  if (!url) return "#";
+  const s = url.trim();
+  return /^(https?:\/\/|mailto:|\/)/i.test(s) ? s : "#";
+}
+
 /** Inline background declaration for a block (color + optional cover image). */
 function bgOf(b: Block): string {
   const img = safeImageUrl(b.bgImage);
-  return `background-color:${b.bg}`
+  return `background-color:${safeColor(b.bg, "#ffffff")}`
     + (img ? `;background-image:url('${escAttr(img)}');background-size:cover;background-position:center` : "");
 }
 
@@ -214,7 +244,7 @@ function bgOf(b: Block): string {
  * (content still expands past it); top alignment matches the canvas.
  */
 function hOf(b: Block): string {
-  return b.minH ? `;height:${b.minH}px;vertical-align:top` : "";
+  return b.minH ? `;height:${safeNum(b.minH, 0, 0, 4000)}px;vertical-align:top` : "";
 }
 
 function blockHtml(b: Block): string {
@@ -224,22 +254,29 @@ function blockHtml(b: Block): string {
       const heading = b.heading.trim()
         ? `<h2 style="margin:0 0 12px;font-size:22px;letter-spacing:-0.02em;color:#18181b">${esc(b.heading)}</h2>`
         : "";
-      return `<td style="padding:${padOf(b)};${bgOf(b)}${hOf(b)};text-align:${b.align}">${heading}<p style="margin:0;font-size:${b.fontSize ?? d.fontSize}px;color:${b.color ?? d.color};line-height:1.75">${b.body}</p></td>`;
+      return `<td style="padding:${padOf(b)};${bgOf(b)}${hOf(b)};text-align:${safeAlign(b.align)}">${heading}<p style="margin:0;font-size:${safeNum(b.fontSize, d.fontSize, 8, 96)}px;color:${safeColor(b.color, d.color)};line-height:1.75">${b.body}</p></td>`;
     }
-    case "image":
+    case "image": {
       if (!b.url.trim()) {
         return `<td style="padding:0;${bgOf(b)}${hOf(b)}"></td>`;
       }
-      return `<td style="padding:${padOf(b)};${bgOf(b)}${hOf(b)}"><img src="${escAttr(b.url)}" alt="${escAttr(b.alt)}" width="600" style="display:block;width:100%;height:auto${b.opacity != null && b.opacity < 100 ? `;opacity:${b.opacity / 100}` : ""}"></td>`;
+      // 이미지 src 도 스킴 화이트리스트 — 배경(safeImageUrl)만 검사하던 비대칭 제거
+      const src = safeImageUrl(b.url);
+      if (!src) {
+        return `<td style="padding:0;${bgOf(b)}${hOf(b)}"></td>`;
+      }
+      const opacity = safeNum(b.opacity, 100, 10, 100);
+      return `<td style="padding:${padOf(b)};${bgOf(b)}${hOf(b)}"><img src="${escAttr(src)}" alt="${escAttr(b.alt)}" width="600" style="display:block;width:100%;height:auto${opacity < 100 ? `;opacity:${opacity / 100}` : ""}"></td>`;
+    }
     case "button": {
       const d = DEFAULTS.button;
-      return `<td style="padding:${padOf(b)};${bgOf(b)}${hOf(b)};text-align:${b.align}"><a href="${escAttr(b.url)}" style="display:inline-block;background:${b.btnColor ?? d.btnColor};color:#ffffff;font-size:14.5px;font-weight:bold;padding:13px 32px;border-radius:${b.btnRadius ?? d.btnRadius}px;text-decoration:none">${esc(b.label)}</a></td>`;
+      return `<td style="padding:${padOf(b)};${bgOf(b)}${hOf(b)};text-align:${safeAlign(b.align)}"><a href="${escAttr(safeLinkUrl(b.url))}" style="display:inline-block;background:${safeColor(b.btnColor, d.btnColor)};color:#ffffff;font-size:14.5px;font-weight:bold;padding:13px 32px;border-radius:${safeNum(b.btnRadius, d.btnRadius, 0, 999)}px;text-decoration:none">${esc(b.label)}</a></td>`;
     }
     case "two": {
       const d = DEFAULTS.two;
-      const fs = b.fontSize ?? d.fontSize;
+      const fs = safeNum(b.fontSize, d.fontSize, 8, 96);
       const col = (title: string, body: string) =>
-        `<td width="48%" valign="top"><h3 style="margin:0 0 6px;font-size:14px;color:#18181b">${esc(title)}</h3><p style="margin:0;font-size:${fs}px;color:${b.color ?? d.color};line-height:1.6">${body}</p></td>`;
+        `<td width="48%" valign="top"><h3 style="margin:0 0 6px;font-size:14px;color:#18181b">${esc(title)}</h3><p style="margin:0;font-size:${fs}px;color:${safeColor(b.color, d.color)};line-height:1.6">${body}</p></td>`;
       return `<td style="padding:${padOf(b)};${bgOf(b)}${hOf(b)}"><table width="100%" cellpadding="0" cellspacing="0"><tr>`
         + col(b.leftTitle, b.leftBody)
         + `<td width="4%"></td>`
@@ -250,7 +287,7 @@ function blockHtml(b: Block): string {
       return `<td style="padding:${padOf(b)};${bgOf(b)}${hOf(b)}"><hr style="border:none;border-top:1px solid #e4e4e7;margin:0"></td>`;
     case "footer": {
       const d = DEFAULTS.footer;
-      return `<td style="padding:${padOf(b)};${bgOf(b)}${hOf(b)};text-align:center"><p style="margin:0;font-size:12px;color:${b.color ?? d.color};line-height:1.75">${b.text}</p></td>`;
+      return `<td style="padding:${padOf(b)};${bgOf(b)}${hOf(b)};text-align:center"><p style="margin:0;font-size:12px;color:${safeColor(b.color, d.color)};line-height:1.75">${b.text}</p></td>`;
     }
   }
 }
