@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../outpace/auth";
 import BrandPanel from "../components/BrandPanel";
+import GoogleSignInButton from "../components/GoogleSignInButton";
 
 export default function Signup() {
   const nav = useNavigate();
@@ -48,7 +49,7 @@ export default function Signup() {
     <div className="op-root op-split">
       <BrandPanel
         heading={<>몇 분이면<br />첫 캠페인을 보냅니다.</>}
-        checks={["카드 등록 없이 무료로 시작", "월 1만 건까지 무료 발송", "5분 만에 발송 환경 구성"]}
+        checks={["카드 등록 없이 무료로 시작", "월 1,000통까지 무료 발송", "5분 만에 발송 환경 구성"]}
       />
       <div className="op-authpane">
         <form className="op-authform" onSubmit={submit}>
@@ -94,13 +95,8 @@ export default function Signup() {
           {error && <p className="error">{error}</p>}
 
           <div className="op-divider-or"><span>또는</span></div>
-          <button
-            type="button"
-            className="op-btn op-btn-block op-btn-ghost"
-            onClick={() => setError("소셜 로그인은 데모에서 지원되지 않습니다. 이메일로 가입하세요.")}
-          >
-            Google로 시작하기
-          </button>
+          {/* 구글 가입은 로그인과 동일한 엔드포인트 — 계정이 없으면 즉석 가입된다 */}
+          <GoogleSignInButton onError={setError} />
 
           <p className="op-switch">
             이미 계정이 있으신가요?{" "}

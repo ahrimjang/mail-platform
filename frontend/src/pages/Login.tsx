@@ -1,11 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../outpace/auth";
 import BrandPanel from "../components/BrandPanel";
-
-/* VITE_GOOGLE_CLIENT_ID 가 설정된 배포에서만 진짜 구글 버튼을 그린다 —
-   미설정(로컬 기본)이면 기존 안내 버튼으로 폴백. */
-const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
+import GoogleSignInButton from "../components/GoogleSignInButton";
 
 export default function Login() {
   const nav = useNavigate();
@@ -14,46 +11,6 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const googleSlot = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!GOOGLE_CLIENT_ID) return;
-    const script = document.createElement("script");
-    script.src = "https://accounts.google.com/gsi/client";
-    script.async = true;
-    script.onload = () => {
-      const gsi = (window as any).google?.accounts?.id;
-      if (!gsi || !googleSlot.current) return;
-      gsi.initialize({
-        client_id: GOOGLE_CLIENT_ID,
-        callback: async (resp: { credential: string }) => {
-          setError(null);
-          try {
-            const res = await fetch("/api/auth/google", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ idToken: resp.credential }),
-            });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok) {
-              setError(data.error ?? "Google 로그인에 실패했습니다.");
-              return;
-            }
-            login(data.token, data.email, data.role, data.workspaceName);
-            nav("/", { replace: true });
-          } catch {
-            setError("Google 로그인에 실패했습니다.");
-          }
-        },
-      });
-      gsi.renderButton(googleSlot.current, {
-        theme: "outline", size: "large", text: "continue_with", locale: "ko", width: 360,
-      });
-    };
-    document.head.appendChild(script);
-    return () => { document.head.removeChild(script); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -122,17 +79,7 @@ export default function Login() {
           {error && <p className="error">{error}</p>}
 
           <div className="op-divider-or"><span>또는</span></div>
-          {GOOGLE_CLIENT_ID ? (
-            <div ref={googleSlot} style={{ display: "flex", justifyContent: "center" }} />
-          ) : (
-            <button
-              type="button"
-              className="op-btn op-btn-block op-btn-ghost"
-              onClick={() => setError("소셜 로그인은 준비 중입니다. 이메일로 로그인하세요.")}
-            >
-              Google로 계속하기
-            </button>
-          )}
+          <GoogleSignInButton onError={setError} />
 
           <p className="op-switch">
             계정이 없으신가요?{" "}
