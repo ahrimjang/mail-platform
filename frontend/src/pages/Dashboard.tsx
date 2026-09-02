@@ -45,7 +45,7 @@ function Sparkline({ values }: { values: number[] }) {
 
 export default function Dashboard() {
   const nav = useNavigate();
-  const { email } = useAuth();
+  const { email, role, workspaceName } = useAuth();
   const [campaigns, setCampaigns] = useState<CampaignView[]>([]);
   const [stats, setStats] = useState<DashboardView | null>(null);
   const [, setLoaded] = useState(false);   // 첫 로드 완료 신호 (현재 표시엔 미사용)
@@ -121,13 +121,29 @@ export default function Dashboard() {
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, 6);
   const name = (email?.split("@")[0] || "회원");
+  // 구글 즉석 가입은 회사명을 묻지 않고 "<로컬파트> 워크스페이스"로 자동 생성한다.
+  // 그대로 두면 콘솔 곳곳에 어설픈 이름이 남으므로 ADMIN 에게 한 번 짚어준다.
+  const autoNamedWorkspace = !!workspaceName && workspaceName === `${name} 워크스페이스`;
+  const hasSent = campaigns.length > 0 || (stats?.daily ?? []).some((d) => d.sent > 0);
 
   return (
     <div className="op-container op-fade">
+      {autoNamedWorkspace && role === "ADMIN" && (
+        <div className="op-card op-card-pad" style={{ marginBottom: 16, display: "flex", gap: 12,
+                     alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
+          <div style={{ fontSize: 13.5, color: "var(--op-ink-2)" }}>
+            워크스페이스 이름이 <b>{workspaceName}</b>으로 자동 지정됐어요 — 팀·회사 이름으로 바꿔두면
+            콘솔과 발송 화면에서 알아보기 쉬워요.
+          </div>
+          <button className="op-btn op-btn-sm op-btn-ghost" onClick={() => nav("/settings")}>
+            이름 바꾸기
+          </button>
+        </div>
+      )}
       <div className="op-pagehead">
         <div>
           <h2>안녕하세요, {name}님</h2>
-          <p>오늘도 안정적으로 발송되고 있어요.</p>
+          <p>{hasSent ? "오늘도 안정적으로 발송되고 있어요." : "첫 캠페인을 준비해볼까요?"}</p>
         </div>
         <button className="op-btn op-btn-sm" onClick={() => nav("/campaigns/new")}>
           <span className="op-btn-plus">+</span>새 캠페인
