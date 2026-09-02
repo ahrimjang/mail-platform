@@ -278,13 +278,51 @@ class AuthServiceTest {
     }
 
     @Test
-    void login_passwordlessGoogleAccount_getsGuidanceInsteadOfBcrypt() {
+    void google_unverifiedEmail_isRejectedOnBothPaths() {
+        // 구글이 소유를 검증하지 않은 주소를 받아주면, 그 주소를 주장하는 것만으로
+        // 남의 워크스페이스에 비밀번호 없이 들어갈 수 있다(계정 탈취).
+        when(google.verify("id-token")).thenReturn(gid("victim@company.com", false));
+
+        assertThatThrownBy(() -> service.loginWithGoogle("id-token"))
+                .isInstanceOf(IllegalArgumentException.class);
+        verify(users, never()).findByEmail(any());   // 조회조차 하지 않는다
+        verify(users, never()).save(any());
+        verify(tokens, never()).issue(any());
+    }
+
+    @Test
+    void google_blankEmail_isRejected() {
+        // 빈 이메일을 허용하면 서로 다른 사용자가 같은 "" 계정으로 병합된다.
+        when(google.verify("id-token")).thenReturn(gid("", true));
+
+        assertThatThrownBy(() -> service.loginWithGoogle("id-token"))
+                .isInstanceOf(IllegalArgumentException.class);
+        verify(users, never()).save(any());
+    }
+
+    @Test
+    void google_disposableDomain_cannotSignUp() {
+        // 일반 가입에만 있던 입구 방어 — 구글 경로로도 우회할 수 없어야 한다.
+        when(google.verify("id-token")).thenReturn(gid("throwaway@mailinator.com", true));
+        when(users.findByEmail("throwaway@mailinator.com")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.loginWithGoogle("id-token"))
+                .isInstanceOf(IllegalArgumentException.class);
+        verify(users, never()).save(any());
+        verify(workspaces, never()).save(any());
+    }
+
+    @Test
+    void login_passwordlessGoogleAccount_failsLikeAnyOtherBadLogin() {
+        // 소셜 계정임을 알려주면 친절하지만, 임의 주소로 "가입 여부 + 소셜 여부"를
+        // 무제한 조회할 수 있는 계정 열거 오라클이 된다. 문구는 일반 실패와 동일하게,
+        // 실패 카운트도 함께 올린다.
         User social = User.registerSocial("g@gmail.com", "구글유저", "GOOGLE", "g-sub-123");
         when(users.findByEmail("g@gmail.com")).thenReturn(Optional.of(social));
 
         assertThatThrownBy(() -> service.login(new LoginRequest("g@gmail.com", "whatever"), IP))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Google");
+                .hasMessageNotContaining("Google");
         verify(hasher, never()).matches(any(), any());   // null 해시로 BCrypt 에 안 들어간다
     }
 }

@@ -55,6 +55,10 @@ app:
   # 운영 표식 — true 이면 개발 기본 시크릿이 그대로일 때 기동을 실패시킨다(SecretsGuard).
   # 프로드 compose 가 켠다. 로컬(false)은 무설정 동작 유지.
   require-secrets: ${APP_REQUIRE_SECRETS:false}
+  tracking:
+    # 클릭 링크 서명키 — 워커가 서명하고 api 가 검증하므로 **두 프로세스가 같은 값**이어야
+    # 한다(다르면 모든 클릭이 400). 운영 compose 가 양쪽에 동일 값을 주입한다.
+    signing-key: ${APP_TRACKING_SIGNING_KEY:dev-only-not-a-real-secret-key-0123456789-abcdefghijklmnopqrstuvwxyz}
   jwt:
     # Dev-only fallback — production MUST set APP_JWT_SECRET (HS512 needs >= 64 bytes).
     secret: ${APP_JWT_SECRET:dev-only-not-a-real-secret-key-0123456789-abcdefghijklmnopqrstuvwxyz}

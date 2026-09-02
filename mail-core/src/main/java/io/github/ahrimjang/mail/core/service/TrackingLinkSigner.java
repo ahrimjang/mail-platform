@@ -15,8 +15,12 @@ import java.util.Base64;
  * <p>클릭 리다이렉트는 공개 엔드포인트라, 서명이 없으면 누구나
  * {@code /api/track/click/<아무토큰>?u=https://피싱} 로 우리 도메인 평판을 빌린 오픈
  * 리다이렉트를 만들 수 있다(AUDIT SEC-5). 발송 시점에 (토큰, URL)에 HMAC 서명을 붙이고
- * 리다이렉트 때 검증해 <b>우리가 실제로 발행한 링크만</b> 통과시킨다. 서명 키는 JWT 시크릿을
- * 재사용한다(운영에선 SecretsGuard 가 기본값 폴백을 막는다). 컨텍스트 프리픽스로 용도를 분리.
+ * 리다이렉트 때 검증해 <b>우리가 실제로 발행한 링크만</b> 통과시킨다.
+ *
+ * <p><b>서명은 워커(발송)가, 검증은 api(리다이렉트)가 한다 — 두 프로세스가 반드시 같은
+ * 키를 봐야 한다.</b> 한쪽만 주입되면 모든 클릭 링크가 조용히 400 으로 죽는다(실제로 겪음).
+ * 그래서 JWT 시크릿을 빌려 쓰지 않고 전용 키 {@code APP_TRACKING_SIGNING_KEY} 를 두고,
+ * 운영 compose 가 api·worker 양쪽 env 에 같은 값을 넣는다(미설정 시 JWT 시크릿으로 폴백).
  */
 @Component
 public class TrackingLinkSigner {
@@ -26,7 +30,7 @@ public class TrackingLinkSigner {
 
     private final byte[] key;
 
-    public TrackingLinkSigner(@Value("${app.jwt.secret:dev-only-not-a-real-secret-key-0123456789-abcdefghijklmnopqrstuvwxyz}") String secret) {
+    public TrackingLinkSigner(@Value("${app.tracking.signing-key:dev-only-not-a-real-secret-key-0123456789-abcdefghijklmnopqrstuvwxyz}") String secret) {
         this.key = secret.getBytes(StandardCharsets.UTF_8);
     }
 

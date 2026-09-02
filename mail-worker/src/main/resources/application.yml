@@ -81,3 +81,7 @@ app:
   # Public base URL baked into tracking/unsubscribe links — MUST be the externally
   # reachable address in production, or recipients' opens/clicks dead-end.
   base-url: ${APP_BASE_URL:http://localhost:8080}
+  tracking:
+    # 클릭 링크 서명키 — 워커가 서명하고 api 가 검증하므로 **두 프로세스가 같은 값**이어야
+    # 한다(다르면 모든 클릭이 400). 운영 compose 가 양쪽에 동일 값을 주입한다.
+    signing-key: ${APP_TRACKING_SIGNING_KEY:dev-only-not-a-real-secret-key-0123456789-abcdefghijklmnopqrstuvwxyz}

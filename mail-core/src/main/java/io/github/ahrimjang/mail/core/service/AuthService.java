@@ -101,9 +101,12 @@ public class AuthService {
         // 잠긴 계정/IP 는 비밀번호 검증(BCrypt 비용)까지 가지 않고 여기서 끊는다
         attempts.checkAllowed(r.email(), clientIp);
         User user = users.findByEmail(r.email()).orElse(null);
-        // 소셜 가입 계정은 비밀번호가 없다 — BCrypt 비교 전에 안내로 끊는다
+        // 소셜 가입 계정은 비밀번호가 없다 — BCrypt 비교 전에 끊되, 실패 카운트는 함께
+        // 올리고 문구도 일반 실패와 같게 한다. 다른 문구를 주면 "이 주소가 가입돼 있고
+        // 소셜 계정이다"를 무제한으로 물어보는 계정 열거 오라클이 된다.
         if (user != null && user.getPasswordHash() == null) {
-            throw new IllegalArgumentException("이 계정은 Google 로그인으로 가입됐어요. 'Google로 계속하기'를 이용해주세요.");
+            attempts.onFailure(r.email(), clientIp);
+            throw new IllegalArgumentException("이메일 또는 비밀번호가 올바르지 않아요.");
         }
         if (user == null || !hasher.matches(r.password(), user.getPasswordHash())) {
             attempts.onFailure(r.email(), clientIp);
@@ -126,8 +129,23 @@ public class AuthService {
     public AuthResponse loginWithGoogle(String idToken) {
         var identity = google.verify(idToken);
 
+        // 이메일이 없는(또는 빈) 아이덴티티는 거부 — 빈 문자열로 조회하면 서로 다른
+        // 사용자가 같은 "" 계정으로 병합된다.
+        if (identity.email() == null || identity.email().isBlank()) {
+            throw new IllegalArgumentException("Google 계정에서 이메일을 확인할 수 없어요.");
+        }
+        // 구글이 소유를 검증하지 않은 주소는 신뢰하지 않는다 — 검증되지 않은 주소로
+        // 남의 계정을 주장하면 비밀번호 없이 워크스페이스를 탈취할 수 있다.
+        if (!identity.emailVerified()) {
+            throw new IllegalArgumentException("Google 계정의 이메일이 인증되지 않았어요. 인증 후 다시 시도해주세요.");
+        }
+
         User user = users.findByEmail(identity.email()).orElse(null);
         if (user == null) {
+            // 일반 가입과 같은 입구 방어 — 일회용 도메인은 구글 경로로도 못 들어온다
+            if (DisposableEmailDomains.isDisposable(identity.email())) {
+                throw new IllegalArgumentException("일회용 이메일 주소로는 가입할 수 없어요.");
+            }
             assertBetaCapacity();   // 구글 즉석 가입도 같은 정원을 탄다
             // 즉석 가입 — 일반 가입과 같은 구도 (워크스페이스 = 테넌트, 첫 계정 = ADMIN)
             Workspace workspace = workspaces.save(
@@ -136,24 +154,21 @@ public class AuthService {
                     "GOOGLE", identity.subject());
             created.setWorkspaceId(workspace.getId());
             created.setRole("ADMIN");
-            if (identity.emailVerified()) {
-                created.setEmailVerifiedAt(java.time.Instant.now());
-            }
+            // 위에서 emailVerified 를 강제했으므로 여기 도달하면 구글이 소유를 검증한 주소다
+            created.setEmailVerifiedAt(java.time.Instant.now());
             User saved = users.save(created);
-            if (!saved.isEmailVerified()) {
-                verification.send(saved);   // 드문 케이스: 구글이 미검증 메일이라 답한 경우
-            }
             return new AuthResponse(tokens.issue(saved), saved.getEmail(), saved.getDisplayName(),
                     workspace.getName(), saved.getRole(), saved.isEmailVerified());
         }
 
-        // 기존 계정 연결 로그인 — 같은 메일함 소유를 구글이 검증했으므로 안전.
+        // 기존 계정 연결 로그인 — 진입부에서 emailVerified 를 강제했으므로 같은 메일함
+        // 소유를 구글이 검증한 경우만 여기 온다.
         boolean dirty = false;
         if (user.getProviderSubject() == null) {
             user.setProviderSubject(identity.subject());
             dirty = true;
         }
-        if (!user.isEmailVerified() && identity.emailVerified()) {
+        if (!user.isEmailVerified()) {
             user.setEmailVerifiedAt(java.time.Instant.now());   // 구글 검증으로 우리 인증도 갈음
             dirty = true;
         }

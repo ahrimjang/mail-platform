@@ -136,6 +136,10 @@ services:
       # 운영 표식 — .env 의 시크릿이 누락돼 기본값으로 폴백하면 기동을 중단시킨다(SecretsGuard)
       APP_REQUIRE_SECRETS: ${APP_REQUIRE_SECRETS:-true}
       APP_WEBHOOK_SNS_VERIFY_SIGNATURE: ${APP_WEBHOOK_SNS_VERIFY_SIGNATURE:-true}
+      # 수용할 SNS 토픽 허용목록 — 비우면 서명만 맞으면 남의 계정 토픽도 통과한다(SEC-2)
+      APP_WEBHOOK_SNS_TOPIC_ARN: ${APP_WEBHOOK_SNS_TOPIC_ARN:-}
+      # 클릭 링크 서명키 — worker 와 반드시 같은 값(아래 worker env 참고)
+      APP_TRACKING_SIGNING_KEY: ${APP_TRACKING_SIGNING_KEY:-$APP_JWT_SECRET}
       # 시스템 메일 링크가 가리키는 콘솔 주소 — 운영은 APP_BASE_URL 과 같은 오리진
       APP_CONSOLE_URL: ${APP_CONSOLE_URL:-http://localhost}
       # 평판·정원 가드 (운영 값은 .env — .env.example 참고)
@@ -186,6 +190,9 @@ services:
       SMTP_AUTH: ${SMTP_AUTH:-false}
       SMTP_STARTTLS: ${SMTP_STARTTLS:-false}
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost}
+      # 클릭 링크 서명키 — api 와 **같은 값**이어야 한다(워커가 서명, api 가 검증).
+      # 값이 어긋나면 발송된 메일의 모든 클릭이 400 으로 죽는다.
+      APP_TRACKING_SIGNING_KEY: ${APP_TRACKING_SIGNING_KEY:-$APP_JWT_SECRET}
     depends_on:
       postgres:
         condition: service_healthy

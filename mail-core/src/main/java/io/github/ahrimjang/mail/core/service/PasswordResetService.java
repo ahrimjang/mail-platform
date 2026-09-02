@@ -63,6 +63,12 @@ public class PasswordResetService {
             log.info("재설정 요청: 미가입 주소 (무시)");
             return;
         }
+        // 소셜 전용 계정(비밀번호 없음)에는 토큰을 발급하지 않는다 — 발급하면 재설정만으로
+        // 비밀번호 로그인이 가능한 계정으로 바뀌어 인증 표면이 늘어난다. 응답은 동일(열거 방지).
+        if (user.getPasswordHash() == null) {
+            log.info("재설정 요청: 소셜 전용 계정 (무시) user={}", user.getId());
+            return;
+        }
         Instant now = Instant.now();
         boolean cooling = tokens.latestIssuedAt(user.getId())
                 .map(t -> now.isBefore(t.plus(RESEND_COOLDOWN)))
