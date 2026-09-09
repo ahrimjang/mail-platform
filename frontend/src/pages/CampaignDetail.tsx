@@ -131,10 +131,15 @@ export default function CampaignDetail() {
     // Live progress needs a tight poll only while the campaign is active; a
     // finished campaign still gets slow refreshes (opens/clicks keep arriving),
     // and a hidden tab doesn't poll at all.
+    //
+    // 단 첫 조회는 가시성과 무관하게 한 번 한다 — 백그라운드 탭에서 열면 화면이
+    // "불러오는 중"에 멈춰 있었다(폴링 억제가 초기 로드까지 막았다).
     let timer: number;
+    let firstRun = true;
     async function tick() {
       if (cancelled) return;
-      if (!document.hidden) {
+      if (firstRun || !document.hidden) {
+        firstRun = false;
         await refresh();
       }
       if (cancelled) return;
@@ -212,13 +217,26 @@ export default function CampaignDetail() {
           <p className="op-detail-meta">{meta.join(" · ")}</p>
           {campaign.description && <p className="op-detail-meta">{campaign.description}</p>}
         </div>
-        {/* cancellable only while the scheduled release is still deferred */}
-        {campaign.status === "QUEUED" && campaign.scheduledAt
-          && new Date(campaign.scheduledAt).getTime() > Date.now() && (
-          <button className="op-btn op-btn-sm op-btn-ghost danger" onClick={() => setCancelOpen(true)}>
-            예약 취소
-          </button>
-        )}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {/* 결과를 본 다음 할 일 — 여기 없으면 캠페인 목록 → 새 캠페인 → 불러오기까지
+              세 화면을 거쳐야 하고, 그 경로는 승자와 무관하게 A안을 복사했다. */}
+          {campaign.status !== "DRAFT" && (
+            <button
+              className="op-btn op-btn-sm op-btn-ghost"
+              onClick={() => nav(`/campaigns/new?fromCampaign=${campaign.id}`
+                + (campaign.abWinner ? `&variant=${campaign.abWinner}` : ""))}
+            >
+              {campaign.abWinner ? `승자 ${campaign.abWinner}안으로 재발송` : "이 내용으로 다시 보내기"}
+            </button>
+          )}
+          {/* cancellable only while the scheduled release is still deferred */}
+          {campaign.status === "QUEUED" && campaign.scheduledAt
+            && new Date(campaign.scheduledAt).getTime() > Date.now() && (
+            <button className="op-btn op-btn-sm op-btn-ghost danger" onClick={() => setCancelOpen(true)}>
+              예약 취소
+            </button>
+          )}
+        </div>
       </div>
 
       {/* 캠페인 정보 — 기간·시각·출처를 한 곳에 (기존 메타 라인에서 승격) */}

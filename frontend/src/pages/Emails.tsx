@@ -136,8 +136,12 @@ export default function Emails() {
               );
             })}
             {loaded && templates.length === 0 && (
-              <p style={{ fontSize: 13, color: "var(--op-faint)", margin: 0 }}>
-                사용할 템플릿이 없어요. 템플릿 관리에서 먼저 만들어 주세요.
+              <p style={{ fontSize: 13, color: "var(--op-faint)", margin: 0, display: "flex",
+                          alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                사용할 템플릿이 없어요. 위의 &lsquo;직접 만들기&rsquo;로 시작하거나
+                <button className="op-btn op-btn-sm op-btn-ghost" onClick={() => nav("/templates")}>
+                  템플릿 만들기
+                </button>
               </p>
             )}
           </div>

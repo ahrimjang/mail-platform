@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import ActivityChart from "../components/ActivityChart";
 import { api } from "../api";
-import type { CampaignView, DashboardView } from "../types";
+import type { CampaignView, DashboardView, EmailDraftView, SendingPreflightView } from "../types";
 import { useAuth } from "../outpace/auth";
 import { badgeClass, fmt, pctOf, statusLabel } from "../outpace/format";
 
@@ -41,6 +41,62 @@ function Sparkline({ values }: { values: number[] }) {
   );
 }
 
+/* ------------------------------ first-run steps ----------------------------- */
+
+/** 첫 발송까지 필요한 단계 — 순서대로 하나씩 해결하게 안내한다. */
+interface Step {
+  label: string;
+  hint: string;
+  done: boolean;
+  /** 이동할 화면 — 빈 값이면 버튼 없이 안내만(예: 인증은 상단 배너에서 처리). */
+  to: string;
+  cta: string;
+}
+
+/* 신규 워크스페이스는 KPI 가 전부 0 이라 아무 정보를 주지 못한다. "새 캠페인" 하나만
+   두면 이메일도 리스트도 없는 상태로 작성 폼에 도착해 막힌다 — 준비물부터 짚어준다. */
+function Onboarding({ steps, onGo }: { steps: Step[]; onGo: (to: string) => void }) {
+  const next = steps.find((s) => !s.done);
+  const doneCount = steps.filter((s) => s.done).length;
+  return (
+    <div className="op-card op-card-pad" style={{ marginBottom: 16 }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, marginBottom: 14 }}>
+        <span style={{ fontSize: 15, fontWeight: 700 }}>첫 발송까지 {steps.length - doneCount}단계 남았어요</span>
+        <span className="faint" style={{ fontSize: 12 }}>{doneCount}/{steps.length} 완료</span>
+      </div>
+      <div style={{ display: "grid", gap: 8 }}>
+        {steps.map((s) => {
+          const isNext = s === next;
+          return (
+            <div key={s.label}
+                 style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 12px",
+                          borderRadius: 10, border: "1px solid var(--op-border)",
+                          background: isNext ? "var(--op-primary-soft)" : "transparent",
+                          opacity: s.done ? 0.6 : 1 }}>
+              <span style={{ width: 20, height: 20, borderRadius: "50%", flexShrink: 0,
+                             display: "flex", alignItems: "center", justifyContent: "center",
+                             fontSize: 12, fontWeight: 800, color: "#fff",
+                             background: s.done ? "var(--op-green-700)" : "var(--op-faint)" }}>
+                {s.done ? "✓" : ""}
+              </span>
+              <span style={{ minWidth: 0, flex: 1 }}>
+                <span style={{ display: "block", fontSize: 13.5, fontWeight: 600,
+                               textDecoration: s.done ? "line-through" : undefined }}>{s.label}</span>
+                <span style={{ display: "block", fontSize: 12, color: "var(--op-faint)" }}>{s.hint}</span>
+              </span>
+              {!s.done && s.to !== "" && (
+                <button className={`op-btn op-btn-sm${isNext ? "" : " op-btn-ghost"}`} onClick={() => onGo(s.to)}>
+                  {s.cta}
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /* -------------------------------- dashboard -------------------------------- */
 
 export default function Dashboard() {
@@ -49,6 +105,9 @@ export default function Dashboard() {
   const [campaigns, setCampaigns] = useState<CampaignView[]>([]);
   const [stats, setStats] = useState<DashboardView | null>(null);
   const [, setLoaded] = useState(false);   // 첫 로드 완료 신호 (현재 표시엔 미사용)
+  // 첫 발송 체크리스트 재료 — 폴링 대상이 아니라 진입 시 한 번만 본다
+  const [emailCount, setEmailCount] = useState<number | null>(null);
+  const [preflight, setPreflight] = useState<SendingPreflightView | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -70,6 +129,18 @@ export default function Dashboard() {
     refresh();
     const id = setInterval(refresh, 5000);
     return () => { cancelled = true; clearInterval(id); };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([api("/api/emails"), api("/api/campaigns/preflight")])
+      .then(async ([eRes, pRes]) => {
+        if (cancelled) return;
+        if (eRes.ok) setEmailCount(((await eRes.json()) as EmailDraftView[]).length);
+        if (pRes.ok) setPreflight(await pRes.json());
+      })
+      .catch(() => { /* 체크리스트만 안 뜬다 */ });
+    return () => { cancelled = true; };
   }, []);
 
   // 실데이터만 — 신규 워크스페이스는 정직하게 0에서 시작한다 (목업 폴백 제거)
@@ -126,6 +197,40 @@ export default function Dashboard() {
   const autoNamedWorkspace = !!workspaceName && workspaceName === `${name} 워크스페이스`;
   const hasSent = campaigns.length > 0 || (stats?.daily ?? []).some((d) => d.sent > 0);
 
+  /* 첫 발송 체크리스트 — 준비물이 다 갖춰지면 사라진다. 재료가 아직 안 왔으면
+     (emailCount/preflight null) 그리지 않는다 — 다 안 한 것처럼 보이면 오해를 준다. */
+  const steps: Step[] | null = emailCount === null || preflight === null || stats === null ? null : [
+    {
+      label: "가입 이메일 인증",
+      hint: "받은편지함의 인증 메일을 확인해주세요 — 화면 위 배너에서 다시 받을 수 있어요",
+      done: preflight.emailVerified,
+      to: "",
+      cta: "",
+    },
+    {
+      label: "수신자 올리기",
+      hint: "CSV 로 가져오거나 한 명씩 추가할 수 있어요",
+      done: stats.contacts > 0,
+      to: "/recipients",
+      cta: "수신자 추가",
+    },
+    {
+      label: "보낼 이메일 만들기",
+      hint: "템플릿을 불러와 다듬거나 처음부터 작성",
+      done: emailCount > 0,
+      to: "/emails?tab=create",
+      cta: "이메일 만들기",
+    },
+    {
+      label: "나에게 테스트 발송 후 첫 캠페인",
+      hint: "작성 화면의 '테스트 발송'으로 실물을 먼저 확인하세요",
+      done: hasSent,
+      to: "/campaigns/new",
+      cta: "캠페인 만들기",
+    },
+  ];
+  const showOnboarding = steps !== null && steps.some((s) => !s.done);
+
   return (
     <div className="op-container op-fade">
       {autoNamedWorkspace && role === "ADMIN" && (
@@ -149,6 +254,8 @@ export default function Dashboard() {
           <span className="op-btn-plus">+</span>새 캠페인
         </button>
       </div>
+
+      {showOnboarding && <Onboarding steps={steps} onGo={(to) => nav(to)} />}
 
       <div className="op-kpis">
         <div className="op-kpi has-spark">
