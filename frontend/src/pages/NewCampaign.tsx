@@ -6,7 +6,10 @@ import VariableMenu from "../components/VariableMenu";
 import Portal from "../components/Portal";
 import { fmt } from "../outpace/format";
 import { renderPreview } from "../outpace/starters";
-import type { CampaignContentView, CampaignDraftView, CampaignView, ContactListView, EmailDraftView } from "../types";
+import { isRecipientFile, parseRecipients } from "../outpace/recipients";
+import { looksLikeHtml, plainTextToHtml } from "../outpace/plaintext";
+import { useDirtyTracker, useUnsavedGuard } from "../outpace/unsaved";
+import type { CampaignContentView, CampaignDraftView, CampaignView, ContactListView, EmailDraftView, SendingPreflightView } from "../types";
 
 type Timing = "now" | "scheduled";
 type ContentSource = "direct" | "email";
@@ -40,7 +43,14 @@ export default function NewCampaign() {
   const legacyTemplateId = searchParams.get("templateId") ?? "";
   // ?draftId= — resume a draft saved from this form; 임시저장 then updates it.
   const draftId = searchParams.get("draftId");
+  // ?fromCampaign=&variant= — 캠페인 상세에서 넘어온 재발송(승자 반영)
+  const fromCampaignId = searchParams.get("fromCampaign");
+  const fromVariant: "A" | "B" = searchParams.get("variant") === "B" ? "B" : "A";
+  // 재발송으로 시작한 경우 출처를 화면에 적어둔다 — 무엇을 다시 보내는지 보이게
+  const [resentFrom, setResentFrom] = useState<CampaignView | null>(null);
   const [savingDraft, setSavingDraft] = useState(false);
+  // 초안 복원이 끝나기 전에 기준선을 잡으면 복원된 내용이 전부 "변경"으로 잡힌다
+  const [draftLoaded, setDraftLoaded] = useState(!draftId);
   // 불러오기: start from a past campaign (settings + content snapshot) or a draft.
   const [importOpen, setImportOpen] = useState(false);
   const [importList, setImportList] = useState<CampaignView[] | null>(null);
@@ -53,6 +63,10 @@ export default function NewCampaign() {
   const recipientsRef = useRef<HTMLTextAreaElement>(null);
   const bodyARef = useRef<HTMLTextAreaElement>(null);
   const bodyBRef = useRef<HTMLTextAreaElement>(null);
+  // CSV 가져오기 — 드롭존 클릭으로 열리는 숨은 파일 입력
+  const csvInputRef = useRef<HTMLInputElement>(null);
+  const [dropActive, setDropActive] = useState(false);
+  const [csvNote, setCsvNote] = useState<string | null>(null);
 
   // 초기값은 전부 비운다 — 예시는 placeholder 로만 보여준다. 더미 발신 주소·수신자가
   // 초기값이면 신규 사용자가 그대로 발송 버튼을 눌러 오발송할 수 있다(감사 UX-1).
@@ -73,6 +87,9 @@ export default function NewCampaign() {
   // entering the test, the winner metric and the evaluation wait. The A:B split
   // inside the test group is fixed at 50:50 (the backend defaults it).
   const [abEnabled, setAbEnabled] = useState(false);
+  // 등록 게이트 상태 — 발신 도메인·워밍업 상한·남은 발송량을 작성 전에 보여준다.
+  // (마지막 클릭에서 처음 거절당하지 않도록. 집행은 여전히 서버 게이트가 한다.)
+  const [preflight, setPreflight] = useState<SendingPreflightView | null>(null);
   // 플랜 기능 게이팅 — 로드 전엔 잠그지 않는다(최종 방어는 백엔드 409)
   const [plan, setPlan] = useState<string | null>(null);
   const planRank = plan ? ({ STARTER: 0, STANDARD: 1, PRO: 2, ENTERPRISE: 3 }[plan] ?? 3) : 3;
@@ -129,10 +146,59 @@ export default function NewCampaign() {
     return () => { cancelled = true; clearTimeout(timer); };
   }, [segEnabled, listId, segOpenPct, segClickPct]);
 
-  // 플랜 조회 — A/B·세그먼트 섹션의 잠금 판정용
+  /* 파일을 페이지 아무 곳에나 놓아도 브라우저가 그 파일로 이동해버리지 않게 막는다.
+     이동하면 작성 중인 캠페인 폼이 통째로 사라진다 — 드롭존이 "끌어다 놓기"를 권하는
+     화면에서 가장 흔한 사고다. 드롭존 자신의 핸들러는 여기서 막히지 않는다
+     (stopPropagation 없이 document 리스너보다 먼저 처리된다). */
   useEffect(() => {
-    api("/api/workspace")
-      .then(async (res) => { if (res.ok) setPlan((await res.json()).plan); })
+    function swallow(e: DragEvent) {
+      if (e.dataTransfer?.types?.includes("Files")) {
+        e.preventDefault();
+      }
+    }
+    window.addEventListener("dragover", swallow);
+    window.addEventListener("drop", swallow);
+    return () => {
+      window.removeEventListener("dragover", swallow);
+      window.removeEventListener("drop", swallow);
+    };
+  }, []);
+
+  /** 읽은 텍스트에서 주소를 거둬 수신자 입력에 덧붙인다(직접 입력 모드로 전환). */
+  function appendRecipientText(text: string, source: string) {
+    const found = parseRecipients(text);
+    if (found.emails.length === 0) {
+      setCsvNote(`${source}에서 이메일 주소를 찾지 못했어요. 주소가 담긴 열이 있는지 확인해주세요.`);
+      return;
+    }
+    setAudienceSource("direct");
+    setRecipients((prev) => (prev.trim() === "" ? "" : prev.replace(/\s*$/, "\n")) + found.emails.join("\n"));
+    const skipped = found.invalid.length + found.unparsedLines.length;
+    setCsvNote(`${source}에서 ${fmt(found.emails.length)}개 주소를 넣었어요`
+      + (skipped > 0 ? ` · 주소가 아닌 ${fmt(skipped)}줄은 건너뜀` : "")
+      + (found.duplicates > 0 ? ` · 중복 ${fmt(found.duplicates)}건 제거` : ""));
+  }
+
+  function readRecipientFile(file: File) {
+    if (!isRecipientFile(file)) {
+      setCsvNote("CSV·TXT 파일만 읽을 수 있어요. 엑셀 파일은 CSV 로 내보낸 뒤 넣어주세요.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => appendRecipientText(String(reader.result ?? ""), file.name);
+    reader.onerror = () => setCsvNote("파일을 읽지 못했어요.");
+    reader.readAsText(file, "utf-8");
+  }
+
+  // 플랜 + 등록 게이트 조회 — A/B·세그먼트 잠금 판정과 사전 안내에 함께 쓴다
+  useEffect(() => {
+    api("/api/campaigns/preflight")
+      .then(async (res) => {
+        if (!res.ok) return;
+        const view: SendingPreflightView = await res.json();
+        setPreflight(view);
+        setPlan(view.plan);
+      })
       .catch(() => { /* 실패 시 잠그지 않음 — 백엔드가 최종 방어 */ });
   }, []);
 
@@ -147,7 +213,8 @@ export default function NewCampaign() {
     };
     api(`/api/campaigns/drafts/${draftId}`)
       .then(async (res) => {
-        if (!res.ok || cancelled) return;
+        if (cancelled) return;
+        if (!res.ok) { setDraftLoaded(true); return; }
         const d: CampaignDraftView = await res.json();
         setName(d.name ?? "");
         setDescription(d.description ?? "");
@@ -183,8 +250,9 @@ export default function NewCampaign() {
           setSegOpenPct(d.segMinOpenPercent ?? 0);
           setSegClickPct(d.segMinClickPercent ?? 0);
         }
+        setDraftLoaded(true);
       })
-      .catch(() => { /* a missing/launched draft just leaves the blank form */ });
+      .catch(() => { setDraftLoaded(true); /* a missing/launched draft just leaves the blank form */ });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftId]);
@@ -200,6 +268,30 @@ export default function NewCampaign() {
       .catch(() => { /* pickers just stay empty */ });
     return () => { cancelled = true; };
   }, []);
+
+  /* ?fromCampaign=&variant= — 캠페인 상세의 "승자로 재발송"·"다시 보내기" 핸드오프.
+     A/B 결과를 확인한 사용자가 이긴 안을 전원에게 보내는 경로다. 여기가 없으면
+     불러오기 모달을 거쳐야 하고, 그 모달은 승자와 무관하게 A안을 복사했다. */
+  useEffect(() => {
+    if (!fromCampaignId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [cRes, contentRes] = await Promise.all([
+          api(`/api/campaigns/${fromCampaignId}`),
+          api(`/api/campaigns/${fromCampaignId}/content`),
+        ]);
+        if (!cRes.ok || cancelled) return;
+        const source: CampaignView = await cRes.json();
+        const content: CampaignContentView | null = contentRes.ok ? await contentRes.json() : null;
+        if (cancelled) return;
+        applyCampaign(source, content, fromVariant, "winner");
+        setResentFrom(source);
+      } catch { /* 실패하면 빈 폼 — 사용자가 직접 작성한다 */ }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromCampaignId]);
 
   // 템플릿 에디터의 레거시 핸드오프(?templateId=) — 템플릿을 복사한 이메일을
   // 만들어 선택 상태로 전환한다 (캠페인은 이메일만 소비하는 개념).
@@ -223,19 +315,61 @@ export default function NewCampaign() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const emails = useMemo(
-    () => recipients.split(/[\n,]/).map((r) => r.trim()).filter(Boolean),
-    [recipients],
-  );
+  // 이름 컬럼·헤더 줄이 섞인 붙여넣기에서도 주소만 거둔다 — 구분자로 다 쪼개면
+  // 이름이 수신자로 잡혀 화면의 "N명"과 실제 발송 대상이 어긋난다.
+  const parsed = useMemo(() => parseRecipients(recipients), [recipients]);
+  const emails = parsed.emails;
+
+  /* 작성 중 이탈 보호. 이 폼은 자동 저장이 없고 등록·임시저장만이 내용을 남긴다 —
+     뒤로 한 번에 발신 정보부터 본문까지 전부 사라지던 자리다. */
+  const formSnapshot = useMemo(() => JSON.stringify({
+    name, description, senderName, senderEmail, replyTo, subject, body, recipients,
+    timing, scheduledLocal, periodEnabled, endsLocal, contentSource, emailId,
+    audienceSource, listId, segEnabled, segOpenPct, segClickPct,
+    abEnabled, abSubjectB, abBodyB, abContentSource, abEmailId, abTestPercent, abMetric, abEvalWait,
+  }), [name, description, senderName, senderEmail, replyTo, subject, body, recipients,
+       timing, scheduledLocal, periodEnabled, endsLocal, contentSource, emailId,
+       audienceSource, listId, segEnabled, segOpenPct, segClickPct,
+       abEnabled, abSubjectB, abBodyB, abContentSource, abEmailId, abTestPercent, abMetric, abEvalWait]);
+  const { dirty, markSaved } = useDirtyTracker(formSnapshot, draftLoaded);
+  const confirmLeave = useUnsavedGuard(dirty);
+  /** 폼을 떠나기 전 확인 — 임시저장을 안내한다. */
+  function leaveTo(to: string) {
+    if (confirmLeave("작성 중인 내용이 저장되지 않았어요. 나가면 사라집니다 — 남겨두려면 '임시저장'을 눌러주세요. 그래도 나갈까요?")) {
+      nav(to);
+    }
+  }
   const selectedEmail = emailDrafts.find((t) => String(t.id) === emailId) ?? null;
   const selectedAbEmail = emailDrafts.find((t) => String(t.id) === abEmailId) ?? null;
   const selectedList = lists.find((l) => String(l.id) === listId) ?? null;
-  const audienceCount = audienceSource === "list" ? selectedList?.memberCount ?? 0 : emails.length;
   const abWaitLabel = AB_WAIT_OPTIONS.find((o) => o.minutes === abEvalWait)?.label ?? `${abEvalWait}분`;
 
+  /* 실제 발송 대상 수. 참여도 세그먼트를 켜면 리스트 전체가 아니라 조건을 통과한
+     인원만 나가므로, 버튼·확인 모달이 리스트 인원을 그대로 쓰면 숫자가 어긋난다. */
+  const listCount = selectedList?.memberCount ?? 0;
+  const segNarrows = audienceSource === "list" && segEnabled && segPreview !== null;
+  const audienceCount = audienceSource === "list"
+    ? (segNarrows ? (segPreview as number) : listCount)
+    : emails.length;
+
+  /* 등록 게이트 사전 판정 — 서버와 같은 기준을 화면에서 먼저 보여준다. */
+  const senderDomain = preflight?.senderDomain ?? null;
+  /** 도메인이 고정된 경우 사용자가 편집하는 부분(아이디)만 떼어낸다. */
+  const senderLocal = senderDomain != null && senderEmail.includes("@")
+    ? senderEmail.slice(0, senderEmail.lastIndexOf("@"))
+    : senderEmail;
+  const warmupCap = preflight?.warmupActive ? preflight.warmupBatchLimit : null;
+  const overWarmup = warmupCap != null && audienceCount > warmupCap;
+  const monthlyRemaining = preflight == null || preflight.monthlySendLimit == null
+    ? null
+    : Math.max(0, preflight.monthlySendLimit - preflight.monthlySent);
+  const overMonthly = monthlyRemaining === 0;
+
   // What the recipient will get: direct input or the selected email's snapshot.
+  // 직접 입력 본문은 발송 시 HTML 로 감싸지므로 미리보기·테스트도 같은 변환을 거친다 —
+  // 세 곳이 어긋나면 "미리보기는 멀쩡한데 받은 메일은 한 덩어리"가 된다.
   const previewSubject = contentSource === "email" ? selectedEmail?.subject ?? "" : subject;
-  const previewHtml = contentSource === "email" ? selectedEmail?.htmlBody ?? "" : body;
+  const previewHtml = contentSource === "email" ? selectedEmail?.htmlBody ?? "" : plainTextToHtml(body);
   const canPreview = contentSource === "direct" || !!selectedEmail;
 
   // Lazy-load the campaign list the first time the import modal opens.
@@ -266,10 +400,63 @@ export default function NewCampaign() {
 
   /**
    * Fill the form from a past campaign: settings from the view, subject/body
-   * from the (already previewed) content snapshot. Times (예약/기간) are
-   * deliberately not copied — they belong to the original run. Drafts reroute
-   * to their resume flow.
+   * from the content snapshot. Times (예약/기간) are deliberately not copied —
+   * they belong to the original run.
+   *
+   * @param variant 어느 안의 내용을 주 내용(A안)으로 삼을지. B를 고르면 A/B 쌍이
+   *                맞바꿔 담기므로 내용이 유실되지 않는다.
+   * @param mode    "copy" 는 A/B 구성을 그대로 유지(같은 실험 재현),
+   *                "winner" 는 고른 안 하나만 담고 A/B 를 끈다(이긴 안을 전원에게).
    */
+  function applyCampaign(c: CampaignView, content: CampaignContentView | null,
+                         variant: "A" | "B", mode: "copy" | "winner") {
+    const hasB = !!(content?.abSubjectB || content?.abBodyB);
+    // 고른 안의 내용 — B안은 덮어쓰지 않은 항목을 A안과 공유한다(제목만 A/B 인 경우)
+    const pickedSubject = variant === "B" ? content?.abSubjectB ?? content?.subject : content?.subject;
+    const pickedBody = variant === "B" ? content?.abBodyB ?? content?.htmlBody : content?.htmlBody;
+    const otherSubject = variant === "B" ? content?.subject : content?.abSubjectB;
+    const otherBody = variant === "B" ? content?.htmlBody : content?.abBodyB;
+
+    setName(c.name ? `${c.name} (복사)` : "");
+    setDescription(c.description ?? "");
+    setSenderName(c.senderName ?? "");
+    setSenderEmail(c.senderEmail ?? "");
+    // The snapshot is the source of truth for what was actually sent, so the
+    // copy edits it directly instead of re-linking the template.
+    setContentSource("direct");
+    setEmailId("");
+    setSubject(pickedSubject ?? c.subject ?? "");
+    setBody(pickedBody ?? "");
+    setAudienceSource(c.listId != null ? "list" : "direct");
+    setListId(c.listId != null ? String(c.listId) : "");
+    if (c.segMinOpenPercent != null || c.segMinClickPercent != null) {
+      setSegEnabled(true);
+      setSegOpenPct(c.segMinOpenPercent ?? 0);
+      setSegClickPct(c.segMinClickPercent ?? 0);
+    } else {
+      setSegEnabled(false);
+    }
+    if (mode === "copy" && hasB) {
+      setAbEnabled(true);
+      setAbContentSource("direct");
+      setAbSubjectB(otherSubject ?? "");
+      setAbBodyB(otherBody ?? "");
+      if (c.abTestPercent != null) setAbTestPercent(c.abTestPercent);
+      if (c.abEvalMetric === "OPEN" || c.abEvalMetric === "CLICK") setAbMetric(c.abEvalMetric);
+    } else {
+      // 승자 재발송·단일 캠페인 복제 — 이미 판정이 난 실험을 되풀이하지 않는다
+      setAbEnabled(false);
+      setAbSubjectB("");
+      setAbBodyB("");
+    }
+    setTiming("now");
+    setScheduledLocal("");
+    setPeriodEnabled(false);
+    setEndsLocal("");
+    window.scrollTo({ top: 0 });
+  }
+
+  /** 불러오기 모달의 적용 — 초안은 이어서 편집 흐름으로 되돌린다. */
   function importCampaign(c: CampaignView) {
     if (c.status === "DRAFT") {
       setImportOpen(false);
@@ -278,42 +465,8 @@ export default function NewCampaign() {
     }
     setImporting(true);
     try {
-      const content = importContents[c.id] ?? null;
-      setName(c.name ? `${c.name} (복사)` : "");
-      setDescription(c.description ?? "");
-      setSenderName(c.senderName ?? "");
-      setSenderEmail(c.senderEmail ?? "");
-      // The snapshot is the source of truth for what was actually sent, so the
-      // copy edits it directly instead of re-linking the template.
-      setContentSource("direct");
-      setEmailId("");
-      setSubject(content?.subject ?? c.subject ?? "");
-      setBody(content?.htmlBody ?? "");
-      setAudienceSource(c.listId != null ? "list" : "direct");
-      setListId(c.listId != null ? String(c.listId) : "");
-      if (c.segMinOpenPercent != null || c.segMinClickPercent != null) {
-        setSegEnabled(true);
-        setSegOpenPct(c.segMinOpenPercent ?? 0);
-        setSegClickPct(c.segMinClickPercent ?? 0);
-      } else {
-        setSegEnabled(false);
-      }
-      if (content?.abSubjectB || content?.abBodyB) {
-        setAbEnabled(true);
-        setAbContentSource("direct");
-        setAbSubjectB(content.abSubjectB ?? "");
-        setAbBodyB(content.abBodyB ?? "");
-        if (c.abTestPercent != null) setAbTestPercent(c.abTestPercent);
-        if (c.abEvalMetric === "OPEN" || c.abEvalMetric === "CLICK") setAbMetric(c.abEvalMetric);
-      } else {
-        setAbEnabled(false);
-      }
-      setTiming("now");
-      setScheduledLocal("");
-      setPeriodEnabled(false);
-      setEndsLocal("");
+      applyCampaign(c, importContents[c.id] ?? null, importVariant, "copy");
       setImportOpen(false);
-      window.scrollTo({ top: 0 });
     } finally {
       setImporting(false);
     }
@@ -333,15 +486,21 @@ export default function NewCampaign() {
     });
   }
 
-  /** The request body both 발송 등록 and 임시저장 send — drafts skip validation. */
-  function payloadOf(scheduledAt: string | null, endsAt: string | null) {
+  /**
+   * The request body both 발송 등록 and 임시저장 send — drafts skip validation.
+   *
+   * @param forSend true 면 직접 입력 평문을 발송용 HTML 로 감싼다. 초안 저장은 감싸지
+   *                않는다 — 감싸면 이어서 편집할 때 본문 칸에 태그가 들어차기 때문이다.
+   */
+  function payloadOf(scheduledAt: string | null, endsAt: string | null, forSend: boolean) {
+    const wrap = (text: string) => (forSend ? plainTextToHtml(text) : text);
     return {
       name: name || null,
       description: description || null,
       // 이메일 선택 시에도 제목·본문 스냅샷을 함께 싣는다 — 등록은 서버가 emailId 를
       // 우선하므로 무해하고, 임시저장(초안)은 스냅샷 덕에 내용이 보존된다.
       subject: contentSource === "direct" ? subject : selectedEmail?.subject ?? null,
-      body: contentSource === "direct" ? body : selectedEmail?.htmlBody ?? null,
+      body: contentSource === "direct" ? wrap(body) : selectedEmail?.htmlBody ?? null,
       emailId: contentSource === "email" && emailId ? Number(emailId) : null,
       recipients: audienceSource === "direct" ? emails : null,
       listId: audienceSource === "list" && listId ? Number(listId) : null,
@@ -351,7 +510,7 @@ export default function NewCampaign() {
       scheduledAt,
       abSubjectB: abEnabled && (winnerAllowed ? abContentSource === "direct" : true) && abSubjectB.trim() !== "" ? abSubjectB : null,
       // 본문 B·이메일 B·승자 플로우는 프로부터 — 스탠다드는 제목 A/B(반반 분배)로 제출
-      abBodyB: abEnabled && winnerAllowed && abContentSource === "direct" && abBodyB.trim() !== "" ? abBodyB : null,
+      abBodyB: abEnabled && winnerAllowed && abContentSource === "direct" && abBodyB.trim() !== "" ? wrap(abBodyB) : null,
       abEmailId: abEnabled && winnerAllowed && abContentSource === "email" && abEmailId ? Number(abEmailId) : null,
       abTestPercent: abEnabled && winnerAllowed ? abTestPercent : null,
       abEvalMetric: abEnabled && winnerAllowed ? abMetric : null,
@@ -371,9 +530,10 @@ export default function NewCampaign() {
       const endsAt = periodEnabled && endsLocal ? new Date(endsLocal).toISOString() : null;
       const res = await api(draftId ? `/api/campaigns/drafts/${draftId}` : "/api/campaigns/drafts", {
         method: draftId ? "PUT" : "POST",
-        body: JSON.stringify(payloadOf(scheduledAt, endsAt)),
+        body: JSON.stringify(payloadOf(scheduledAt, endsAt, false)),
       });
       if (res.ok) {
+        markSaved(formSnapshot);
         nav("/campaigns?tab=drafts");
       } else {
         const data = await res.json().catch(() => ({}));
@@ -387,6 +547,27 @@ export default function NewCampaign() {
   }
 
   async function submit() {
+    /* 서버 게이트와 같은 판정을 먼저 한다 — 확인 모달까지 통과한 뒤에 거절당하지 않게.
+       판정 자체는 서버가 다시 하므로 여기서 새는 조건이 있어도 안전하다. */
+    if (preflight) {
+      if (!preflight.emailVerified) {
+        setError("가입 이메일 인증 후 발송할 수 있어요. 받은편지함의 인증 메일을 확인해주세요.");
+        return;
+      }
+      if (preflight.suspended) {
+        setError(preflight.suspensionReason ?? "발송이 일시 정지된 상태예요.");
+        return;
+      }
+      if (overMonthly) {
+        setError("이번 달 발송 한도에 도달했어요. 플랜을 올리면 바로 이어서 보낼 수 있어요.");
+        return;
+      }
+      if (overWarmup) {
+        setError(`첫 발송은 한 번에 ${fmt(warmupCap as number)}명까지 보낼 수 있어요.`
+          + ` 지금 대상은 ${fmt(audienceCount)}명이에요 — 나눠 보내거나 대상을 좁혀주세요.`);
+        return;
+      }
+    }
     if (contentSource === "email" && !emailId) {
       setError(abEnabled ? "A안에서 사용할 이메일을 선택하세요." : "사용할 이메일을 선택하세요.");
       return;
@@ -403,6 +584,13 @@ export default function NewCampaign() {
     }
     if (audienceSource === "direct" && emails.length === 0) {
       setError("수신자를 한 명 이상 입력하세요.");
+      return;
+    }
+    // 형태가 깨진 주소는 조용히 빼지 않는다 — 보냈다고 믿게 두는 쪽이 더 나쁘다
+    if (audienceSource === "direct" && parsed.invalid.length > 0) {
+      setError(`보낼 수 없는 주소가 있어요: ${parsed.invalid.slice(0, 3).join(", ")}`
+        + `${parsed.invalid.length > 3 ? ` 외 ${parsed.invalid.length - 3}건` : ""}`
+        + " — 고치거나 목록에서 빼주세요.");
       return;
     }
     if (audienceSource === "list" && !listId) {
@@ -451,17 +639,18 @@ export default function NewCampaign() {
     try {
       const res = await api("/api/campaigns", {
         method: "POST",
-        body: JSON.stringify(payloadOf(scheduledAt, endsAt)),
+        body: JSON.stringify(payloadOf(scheduledAt, endsAt, true)),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        setError(data.error ?? "발송 큐 등록에 실패했습니다.");
+        setError(data.error ?? "발송 등록에 실패했습니다.");
         return;
       }
       // The draft is consumed by the launch — drop it (best-effort).
       if (draftId) {
         api(`/api/campaigns/drafts/${draftId}`, { method: "DELETE" }).catch(() => {});
       }
+      markSaved(formSnapshot);   // 등록됐다 — 더 이상 "저장 안 된 내용"이 아니다
       const created = await res.json().catch(() => null);
       if (created && typeof created.id !== "undefined") {
         nav(`/campaigns/${created.id}`);
@@ -469,7 +658,7 @@ export default function NewCampaign() {
         nav("/");
       }
     } catch {
-      setError("발송 큐 등록에 실패했습니다.");
+      setError("발송 등록에 실패했습니다.");
     } finally {
       setSubmitting(false);
       setConfirmOpen(false);
@@ -477,16 +666,16 @@ export default function NewCampaign() {
   }
 
   /** Content the test mail should carry, honoring the A/B variant choice. */
-  function testPayload() {
-    if (testVariant === "B" && abEnabled) {
-      if (abContentSource === "email" && selectedAbEmail) {
+  function testPayload(variant: "A" | "B") {
+    if (variant === "B" && abEnabled) {
+      if (abContentSource === "email") {
         // 테스트 발송 API 는 제목·본문을 직접 받는다 — 이메일의 현재 내용을 실어 보낸다
-        return { subject: selectedAbEmail.subject, body: selectedAbEmail.htmlBody };
+        return { subject: selectedAbEmail?.subject ?? "", body: selectedAbEmail?.htmlBody ?? "" };
       }
       // A subject-only (or body-only) B test falls back to A's content.
       return {
         subject: abSubjectB.trim() || previewSubject,
-        body: abBodyB.trim() || previewHtml,
+        body: plainTextToHtml(abBodyB.trim()) || previewHtml,
       };
     }
     return { subject: previewSubject, body: previewHtml };
@@ -502,11 +691,11 @@ export default function NewCampaign() {
           recipient: testRecipient.trim(),
           senderName: senderName || null,
           senderEmail: senderEmail || null,
-          ...testPayload(),
+          ...testPayload(testVariant),
         }),
       });
       if (res.ok) {
-        setTestResult(`${testRecipient.trim()} 앞으로 보냈어요 — 받은편지함(개발 환경은 MailHog)을 확인하세요.`);
+        setTestResult(`${testRecipient.trim()} 앞으로 보냈어요 — 받은편지함을 확인해주세요. 도착까지 잠시 걸릴 수 있어요.`);
       } else {
         const data = await res.json().catch(() => ({}));
         setTestResult(`실패: ${data.error ?? "테스트 발송에 실패했습니다."}`);
@@ -571,6 +760,12 @@ export default function NewCampaign() {
                 onChange={(e) => setBod(e.target.value)}
                 placeholder={variantB ? "B안 본문 (선택) — 비우면 본문은 공통" : "안녕하세요 {{name}}님, ..."}
               />
+              {/* 메일은 HTML 로 나간다 — 평문을 어떻게 다루는지 미리 말해준다 */}
+              <span className="op-hint">
+                {looksLikeHtml(bod)
+                  ? "HTML 로 인식했어요 — 입력한 태그 그대로 발송됩니다."
+                  : "평문으로 쓰면 줄바꿈과 문단을 살려 보냅니다. 디자인이 필요하면 이메일 에디터로 만들어 '만들어 둔 이메일 사용'을 선택하세요."}
+              </span>
             </div>
           </>
         ) : (
@@ -583,7 +778,16 @@ export default function NewCampaign() {
                 <option key={t.id} value={t.id}>{t.name}</option>
               ))}
             </select>
-            {emailDrafts.length === 0 && <span className="op-hint">만들어 둔 이메일이 없습니다. 이메일 메뉴에서 템플릿을 불러와 먼저 만들어 주세요.</span>}
+            {emailDrafts.length === 0 && (
+              // 안내만 두면 클릭할 수도, 작성 중 내용을 지키며 다녀올 수도 없었다
+              <span className="op-hint" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                만들어 둔 이메일이 없어요.
+                <button type="button" className="op-btn op-btn-sm op-btn-ghost"
+                        onClick={() => leaveTo("/emails?tab=create")}>
+                  이메일 만들기
+                </button>
+              </span>
+            )}
             {selectedEml && (
               <>
                 <span className="op-hint">제목: {selectedEml.subject}</span>
@@ -608,7 +812,7 @@ export default function NewCampaign() {
 
   return (
     <div className="op-container-mid op-fade">
-      <button className="op-back" onClick={() => nav("/campaigns")}>← 캠페인 목록</button>
+      <button className="op-back" onClick={() => leaveTo("/campaigns")}>← 캠페인 목록</button>
       <div className="op-pagehead" style={{ marginBottom: 26 }}>
         <div>
           <h2 style={{ fontSize: 24 }}>새 캠페인</h2>
@@ -626,7 +830,7 @@ export default function NewCampaign() {
             <h3>캠페인 불러오기</h3>
             <p className="op-modal-sub">
               이전 캠페인의 설정과 발송 당시 내용을 복사해서 시작해요. 예약·기간은 복사되지 않아요.
-              초안을 고르면 이어서 편집합니다.
+              초안을 고르면 이어서 편집합니다. A/B 캠페인은 <b>지금 미리보는 안이 A안으로</b> 들어갑니다.
             </p>
             <div className="op-import2">
               <div className="op-import2-left">
@@ -655,7 +859,9 @@ export default function NewCampaign() {
                         <button
                           key={c.id}
                           className={`op-import-row${importSel?.id === c.id ? " sel" : ""}`}
-                          onClick={() => { setImportSel(c); setImportVariant("A"); }}
+                          // 승자가 정해진 캠페인은 승자 안을 먼저 보여준다 — 미리보기와
+                          // 적용 대상이 같으므로 "본 것과 다른 것이 들어오는" 일이 없다
+                          onClick={() => { setImportSel(c); setImportVariant(c.abWinner === "B" ? "B" : "A"); }}
                         >
                           <span className="nm op-ell">
                             {c.name ?? c.subject}
@@ -721,12 +927,63 @@ export default function NewCampaign() {
                 disabled={!importSel || importing}
                 onClick={() => importSel && importCampaign(importSel)}
               >
-                {importSel?.status === "DRAFT" ? "이어서 편집" : "이 캠페인으로 시작"}
+                {importSel?.status === "DRAFT"
+                  ? "이어서 편집"
+                  : (importSel?.variants?.length ?? 0) > 0
+                    ? `${importVariant}안으로 시작`
+                    : "이 캠페인으로 시작"}
               </button>
             </div>
           </div>
         </div>
         </Portal>
+      )}
+
+      {/* 재발송으로 들어온 경우 — 무엇의 어느 안을 다시 보내는지 분명히 적는다 */}
+      {resentFrom && (
+        <div className="op-card op-card-pad" style={{ marginBottom: 16, display: "flex", gap: 10,
+                     alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
+          <div style={{ fontSize: 13.5, color: "var(--op-ink-2)" }}>
+            <b>{resentFrom.name ?? resentFrom.subject}</b>
+            {(resentFrom.variants?.length ?? 0) > 0 && ` · ${fromVariant}안`}
+            {resentFrom.abWinner === fromVariant && " (승자)"}
+            의 내용으로 새 캠페인을 시작했어요. A/B 는 꺼져 있고, 대상·발송 시점은 새로 정합니다.
+          </div>
+          <button className="op-btn op-btn-sm op-btn-ghost" onClick={() => nav(`/campaigns/${resentFrom.id}`)}>
+            원본 보기
+          </button>
+        </div>
+      )}
+
+      {/* 등록을 막을 조건은 작성 전에 알린다 — 마지막 클릭에서 처음 듣지 않도록 */}
+      {preflight && (preflight.emailVerified === false || preflight.suspended
+        || preflight.warmupActive || overMonthly) && (
+        <div className="op-card op-card-pad" style={{ marginBottom: 16, borderLeft: "3px solid var(--op-amber)" }}>
+          <div style={{ fontSize: 13.5, color: "var(--op-ink-2)", lineHeight: 1.7 }}>
+            {!preflight.emailVerified && (
+              <div><b>가입 이메일 인증이 필요해요</b> — 인증을 마쳐야 발송 등록이 됩니다.
+                받은편지함의 인증 메일을 확인해주세요.</div>
+            )}
+            {preflight.suspended && (
+              <div><b>발송이 일시 정지된 상태예요</b> — {preflight.suspensionReason}</div>
+            )}
+            {preflight.warmupActive && preflight.warmupBatchLimit != null && (
+              <div>
+                <b>첫 발송 워밍업 중</b> — 이번 캠페인은 <b>{fmt(preflight.warmupBatchLimit)}명</b>까지 보낼 수 있어요.
+                누적 {fmt(preflight.warmupSentRemaining ?? 0)}통을 더 보내 정상 발송이 확인되면 제한이 풀립니다
+                (반송 많은 명단으로 발송 평판이 상하는 것을 막기 위한 조치예요).
+              </div>
+            )}
+            {overMonthly && (
+              <div><b>이번 달 발송 한도에 도달했어요</b> — <a href="/pricing">플랜을 올리면</a> 바로 이어서 보낼 수 있어요.</div>
+            )}
+            {!overMonthly && monthlyRemaining != null && (
+              <div style={{ color: "var(--op-faint)", fontSize: 12.5 }}>
+                이번 달 남은 발송량 {fmt(monthlyRemaining)}통 / 한도 {fmt(preflight.monthlySendLimit ?? 0)}통
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       <div className="op-form-card">
@@ -752,8 +1009,37 @@ export default function NewCampaign() {
           </label>
           <label className="op-field" style={{ marginBottom: 0 }}>
             <span className="op-flabel">발신 이메일</span>
-            <input className="op-input" placeholder="예: news@outpacemail.com" value={senderEmail} onChange={(e) => setSenderEmail(e.target.value)} />
-            <span className="op-hint">운영 환경에서는 서비스 발송 도메인의 주소만 쓸 수 있어요.</span>
+            {senderDomain ? (
+              // 허용 도메인이 정해져 있으면 그 부분은 못 틀리게 고정한다 —
+              // "서비스 도메인만 가능"이라고만 알려주고 추측하게 두던 자리다
+              <span style={{ display: "flex", alignItems: "stretch", gap: 0 }}>
+                <input
+                  className="op-input"
+                  style={{ borderTopRightRadius: 0, borderBottomRightRadius: 0, minWidth: 0 }}
+                  placeholder="news"
+                  aria-label="발신 이메일 아이디"
+                  value={senderLocal}
+                  onChange={(e) => {
+                    const local = e.target.value.replace(/[@\s]/g, "");
+                    setSenderEmail(local ? `${local}@${senderDomain}` : "");
+                  }}
+                />
+                <span style={{ display: "flex", alignItems: "center", padding: "0 12px", fontSize: 13.5,
+                               color: "var(--op-muted)", background: "var(--op-surface-2, #f4f4f5)",
+                               border: "1px solid var(--op-border)", borderLeft: "none",
+                               borderTopRightRadius: 10, borderBottomRightRadius: 10, whiteSpace: "nowrap" }}>
+                  @{senderDomain}
+                </span>
+              </span>
+            ) : (
+              <input className="op-input" placeholder="예: news@outpacemail.com" value={senderEmail}
+                     onChange={(e) => setSenderEmail(e.target.value)} />
+            )}
+            <span className="op-hint">
+              {senderDomain
+                ? `발송은 @${senderDomain} 로만 나갑니다. 비워두면 기본 발신 주소를 씁니다 — 답장을 받을 주소는 아래 회신 주소에.`
+                : "운영 환경에서는 서비스 발송 도메인의 주소만 쓸 수 있어요."}
+            </span>
           </label>
         </div>
         <div className="op-grid2" style={{ marginTop: 14 }}>
@@ -790,10 +1076,35 @@ export default function NewCampaign() {
               <span className="op-flabel" style={{ marginBottom: 0 }}>이메일 주소</span>
               <span className="op-pill">{fmt(emails.length)}명</span>
             </div>
-            <div className="op-dropzone" onClick={() => recipientsRef.current?.focus()}>
-              <div className="t">CSV 파일을 끌어다 놓거나 이메일을 붙여넣기</div>
-              <div className="s">이메일, 이름 컬럼 · 줄바꿈 또는 쉼표로 구분</div>
+            <input
+              ref={csvInputRef}
+              type="file"
+              accept=".csv,.txt,.tsv,text/csv,text/plain"
+              style={{ display: "none" }}
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) readRecipientFile(f); e.target.value = ""; }}
+            />
+            <div
+              className="op-dropzone"
+              style={dropActive ? { borderColor: "var(--op-primary)", background: "#f8faff" } : undefined}
+              onClick={() => csvInputRef.current?.click()}
+              onDragOver={(e) => { e.preventDefault(); setDropActive(true); }}
+              onDragLeave={() => setDropActive(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDropActive(false);
+                const file = e.dataTransfer.files?.[0];
+                if (file) { readRecipientFile(file); return; }
+                // 파일이 아니라 선택한 텍스트를 끌어다 놓은 경우
+                const text = e.dataTransfer.getData("text/plain");
+                if (text) appendRecipientText(text, "붙여넣은 내용");
+              }}
+            >
+              <div className="t">CSV 파일을 끌어다 놓거나 클릭해서 선택</div>
+              <div className="s">이름 컬럼·헤더 줄이 섞여 있어도 주소만 골라내요 · 아래 칸에 직접 붙여넣어도 됩니다</div>
             </div>
+            {csvNote && (
+              <span className="op-hint" style={{ marginTop: 8 }}>{csvNote}</span>
+            )}
             <textarea
               ref={recipientsRef}
               className="op-input"
@@ -803,6 +1114,20 @@ export default function NewCampaign() {
               onChange={(e) => setRecipients(e.target.value)}
               placeholder="alice@example.com, bob@example.com"
             />
+            {/* 서버가 등록 시점에 거절하기 전에, 문제 있는 줄을 지금 보여준다 */}
+            {(parsed.invalid.length > 0 || parsed.unparsedLines.length > 0) && (
+              <span className="op-hint" style={{ marginTop: 8, color: "var(--op-amber)" }}>
+                {parsed.invalid.length > 0 && (
+                  <>보낼 수 없는 형태 {fmt(parsed.invalid.length)}건: {parsed.invalid.slice(0, 3).join(", ")}
+                    {parsed.invalid.length > 3 ? " …" : ""}</>
+                )}
+                {parsed.invalid.length > 0 && parsed.unparsedLines.length > 0 && " · "}
+                {parsed.unparsedLines.length > 0 && (
+                  <>주소를 못 찾은 줄 {fmt(parsed.unparsedLines.length)}개(발송에서 제외): {parsed.unparsedLines.slice(0, 2).join(" / ")}
+                    {parsed.unparsedLines.length > 2 ? " …" : ""}</>
+                )}
+              </span>
+            )}
           </div>
         ) : (
           <>
@@ -814,7 +1139,17 @@ export default function NewCampaign() {
                   <option key={l.id} value={l.id}>{l.name} ({fmt(l.memberCount)}명)</option>
                 ))}
               </select>
-              {lists.length === 0 && <span className="op-hint">리스트가 없습니다. 리스트 메뉴에서 먼저 만들어 주세요.</span>}
+              {lists.length === 0 && (
+                <span className="op-hint" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  리스트가 없어요.
+                  <button type="button" className="op-btn op-btn-sm op-btn-ghost" onClick={() => leaveTo("/lists")}>
+                    리스트 만들기
+                  </button>
+                  <button type="button" className="op-btn op-btn-sm op-btn-ghost" onClick={() => leaveTo("/recipients")}>
+                    수신자 올리기
+                  </button>
+                </span>
+              )}
             </label>
             {listId && (
               <div className="op-field" style={{ marginTop: 14, marginBottom: 0 }}>
@@ -1006,10 +1341,10 @@ export default function NewCampaign() {
                 min={minScheduleLocal()}
                 onChange={(e) => setScheduledLocal(e.target.value)}
               />
-              <span className="op-hint">지정한 시각에 발송 큐로 릴리스됩니다.</span>
+              <span className="op-hint">지정한 시각에 자동으로 발송이 시작됩니다.</span>
             </>
           ) : (
-            <span className="op-hint">지금 바로 발송 큐에 등록됩니다.</span>
+            <span className="op-hint">등록하는 즉시 발송이 시작됩니다.</span>
           )}
         </div>
         <div className="op-field" style={{ marginTop: 16, marginBottom: 0 }}>
@@ -1070,7 +1405,7 @@ export default function NewCampaign() {
           미리보기
         </button>
         <button className="op-btn" style={{ height: 48, padding: "0 22px", borderRadius: 11 }} onClick={submit} disabled={submitting}>
-          {submitting ? "발송 큐 등록 중…" : `${fmt(audienceCount)}명에게 발송 큐 등록`}
+          {submitting ? "등록 중…" : `${fmt(audienceCount)}명에게 발송`}
         </button>
       </div>
 
@@ -1079,7 +1414,7 @@ export default function NewCampaign() {
         <div className="op-modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setConfirmOpen(false); }}>
           <div className="op-modal" style={{ maxWidth: 460 }}>
             <h3>발송 전 마지막 확인</h3>
-            <p className="op-modal-sub">아래 내용으로 발송 큐에 등록합니다. 등록 후에는 예약 취소 외에 되돌릴 수 없어요.</p>
+            <p className="op-modal-sub">아래 내용으로 발송합니다. 등록 후에는 예약 취소 외에 되돌릴 수 없어요.</p>
             <div className="op-confirm-rows">
               <div><span className="k">캠페인</span><span className="v">{name || subject || "(제목 없음)"}</span></div>
               <div>
@@ -1117,18 +1452,27 @@ export default function NewCampaign() {
         </Portal>
       )}
 
-      {testOpen && (
+      {testOpen && (() => {
+        // 제목·본문이 비면 서버가 영어 원문으로 거절한다 — 버튼에서 미리 막는다
+        const p = testPayload(testVariant);
+        const testHasContent = p.subject.trim() !== "" && p.body.trim() !== "";
+        return (
         <Portal>
         <div className="op-modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setTestOpen(false); }}>
           <div className="op-modal" style={{ maxWidth: 440 }}>
             <h3>테스트 발송</h3>
             <p className="op-modal-sub">
-              지금 작성 중인 내용을 한 명에게 먼저 보내 봅니다. 제목에 [테스트]가 붙고,
+              지금 작성 중인 내용을 나에게 먼저 보내 봅니다. 제목에 [테스트]가 붙고,
               캠페인·지표에는 아무 기록도 남지 않아요.
+              <b> 등록 후에는 되돌릴 수 없으니, 실물 확인은 지금이 기회예요.</b>
             </p>
             <label className="op-field">
               <span className="op-flabel">받는 사람</span>
-              <input className="op-input" type="email" value={testRecipient} onChange={(e) => setTestRecipient(e.target.value)} placeholder="me@company.com" />
+              {/* 백엔드가 본인 가입 주소만 허용한다 — 열어두면 동료 주소를 넣고 거절당한다 */}
+              <input className="op-input" type="email" value={testRecipient} readOnly disabled />
+              <span className="op-hint">
+                오남용을 막기 위해 테스트 발송은 가입한 본인 주소로만 보낼 수 있어요.
+              </span>
             </label>
             {abEnabled && (
               <label className="op-field">
@@ -1146,14 +1490,20 @@ export default function NewCampaign() {
             )}
             <div className="op-modal-foot">
               <button className="op-btn op-btn-sm op-btn-ghost" onClick={() => setTestOpen(false)}>닫기</button>
-              <button className="op-btn op-btn-sm" disabled={testSending || !testRecipient.includes("@")} onClick={sendTest}>
+              <button
+                className="op-btn op-btn-sm"
+                disabled={testSending || !testRecipient.includes("@") || !testHasContent}
+                title={testHasContent ? undefined : "제목과 본문을 먼저 채워주세요"}
+                onClick={sendTest}
+              >
                 {testSending ? "발송 중…" : "테스트 발송"}
               </button>
             </div>
           </div>
         </div>
         </Portal>
-      )}
+        );
+      })()}
 
       {previewOpen && (
         <Portal>

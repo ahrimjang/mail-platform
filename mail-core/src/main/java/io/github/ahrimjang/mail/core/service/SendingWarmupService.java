@@ -30,6 +30,27 @@ public class SendingWarmupService {
     }
 
     /**
+     * 화면 안내용 워밍업 상태 — 집행은 {@link #assertBatchAllowed} 가 한다.
+     *
+     * @param active        워밍업 제한이 지금 걸려 있는가
+     * @param batchLimit    캠페인 1건당 최대 수신자
+     * @param sentRemaining 졸업까지 남은 누적 발송량
+     */
+    public record Status(boolean active, int batchLimit, long sentRemaining) {
+    }
+
+    /**
+     * 지금 이 워크스페이스의 워밍업 상태. 작성 화면이 "이번 캠페인은 몇 명까지"를
+     * 미리 보여주기 위한 읽기 전용 조회 — 마지막 클릭에서 처음 알게 되지 않도록.
+     */
+    public Status statusOf(Long workspaceId) {
+        long sent = enabled ? totalSent(workspaceId) : WARMUP_THRESHOLD;
+        return sent >= WARMUP_THRESHOLD
+                ? new Status(false, WARMUP_BATCH, 0)
+                : new Status(true, WARMUP_BATCH, WARMUP_THRESHOLD - sent);
+    }
+
+    /**
      * 캠페인 등록 시점 게이트. 리스트 캠페인은 팬아웃 전이라 대상 수를 여기서 받는다
      * (호출자가 계산해 넘긴다).
      */

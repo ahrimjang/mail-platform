@@ -307,6 +307,20 @@ export interface WorkspaceView {
   monthlySent: number; // 이번 달 발송 성공 수 — 발송량 과금의 청구 수치
 }
 
+/** 캠페인 등록이 막힐 조건을 작성 전에 알려주는 상태 (GET /api/campaigns/preflight). */
+export interface SendingPreflightView {
+  emailVerified: boolean;
+  suspended: boolean;
+  suspensionReason: string | null;
+  senderDomain: string | null;      // null = 발신 도메인 제한 없음
+  warmupActive: boolean;
+  warmupBatchLimit: number | null;  // 워밍업 중 캠페인 1건당 최대 수신자
+  warmupSentRemaining: number | null; // 졸업까지 남은 누적 발송량
+  plan: string;
+  monthlySendLimit: number | null;  // null = 무제한
+  monthlySent: number;
+}
+
 export interface PlanView {
   name: string;                    // STARTER | STANDARD | PRO | ENTERPRISE
   monthlyPriceKrw: number | null;  // null = 협의

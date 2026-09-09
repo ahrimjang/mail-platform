@@ -20,6 +20,16 @@ public class SenderPolicy {
         this.senderDomain = senderDomain == null ? "" : senderDomain.trim().toLowerCase(Locale.ROOT);
     }
 
+    /**
+     * 허용된 발신 도메인 — 제한이 없으면 null.
+     *
+     * <p>작성 화면이 "무엇을 넣어야 하는지"를 미리 보여주기 위한 읽기 전용 노출.
+     * 이 값이 없으면 사용자는 추측해서 넣고 등록 시점에 거절당한다.
+     */
+    public String senderDomain() {
+        return senderDomain.isEmpty() ? null : senderDomain;
+    }
+
     /** 발신 주소 검사 — null/빈 값(기본 발신자 사용)은 항상 허용. */
     public void assertSenderAllowed(String senderEmail) {
         if (senderEmail == null || senderEmail.isBlank() || senderDomain.isEmpty()) {

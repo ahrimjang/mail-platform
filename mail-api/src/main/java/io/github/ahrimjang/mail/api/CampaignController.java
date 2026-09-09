@@ -5,8 +5,10 @@ import io.github.ahrimjang.mail.common.LinkClicksView;
 import io.github.ahrimjang.mail.common.CreateCampaignRequest;
 import io.github.ahrimjang.mail.common.MessageView;
 import io.github.ahrimjang.mail.common.SendLogEntry;
+import io.github.ahrimjang.mail.common.SendingPreflightView;
 import io.github.ahrimjang.mail.common.TestSendRequest;
 import io.github.ahrimjang.mail.core.service.CampaignService;
+import io.github.ahrimjang.mail.core.service.SendingPreflightService;
 import io.github.ahrimjang.mail.core.service.TestSendService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -36,9 +38,22 @@ public class CampaignController {
 
     private final TestSendService testSend;
 
-    public CampaignController(CampaignService campaigns, TestSendService testSend) {
+    private final SendingPreflightService preflight;
+
+    public CampaignController(CampaignService campaigns, TestSendService testSend,
+                              SendingPreflightService preflight) {
         this.testSend = testSend;
         this.campaigns = campaigns;
+        this.preflight = preflight;
+    }
+
+    /**
+     * 등록 게이트 상태 — 작성 화면이 발신 도메인·워밍업 상한·남은 발송량을 미리 보여준다.
+     * 안내용 조회이고, 집행은 {@code POST /api/campaigns} 의 게이트가 그대로 한다.
+     */
+    @GetMapping("/preflight")
+    public SendingPreflightView preflight() {
+        return preflight.current();
     }
 
     /** Create a campaign and enqueue one message per recipient (returns immediately). */

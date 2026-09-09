@@ -60,6 +60,21 @@ public class SendingSuspensionService {
         }
     }
 
+    /**
+     * 정지 사유 — 정지 상태가 아니면 빈 값.
+     *
+     * <p>작성 화면이 정지 사실을 미리 알리기 위한 읽기 전용 조회. 집행은
+     * {@link #assertNotSuspended} 가 담당한다.
+     */
+    public java.util.Optional<String> suspensionReasonOf(Long workspaceId) {
+        return workspaces.findById(workspaceId)
+                .filter(Workspace::isSendingSuspended)
+                // 사유가 비어 있어도 "정지 아님"으로 읽히면 안 된다 — 기본 문구로 채운다
+                .map(w -> w.getSuspensionReason() == null || w.getSuspensionReason().isBlank()
+                        ? "반송·신고 비율이 높아 발송이 일시 정지됐어요."
+                        : w.getSuspensionReason());
+    }
+
     /** 발송 경로 게이트 — 정지된 워크스페이스는 409 로 이어지는 IllegalStateException. */
     public void assertNotSuspended(Long workspaceId) {
         workspaces.findById(workspaceId)
