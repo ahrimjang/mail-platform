@@ -1,36 +1,20 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../api";
 import VariableMenu from "../components/VariableMenu";
 import type { TemplateView } from "../types";
 import { parseTextMarker, textToHtmlBody } from "../outpace/blocks";
+import { autoLink, escapeHtml, paragraphize } from "../outpace/plaintext";
+import { useDirtyTracker, useUnsavedGuard } from "../outpace/unsaved";
 
 /* Plain-text template editor: what you type becomes a minimal HTML body
    (escaped, paragraphs from blank lines). Personalization vars pass through
-   untouched — the send pipeline renders them per recipient. */
-
-function escapeHtml(s: string): string {
-  return s
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
-}
-
-/* 본문 속 URL 을 클릭 가능한 링크로 — 링크여야 발송 파이프라인이 클릭을 추적한다.
-   이스케이프된 텍스트를 받으므로 그대로 감싸도 안전하고, 문장부호 꼬리는 링크 밖으로. */
-function autoLink(escaped: string): string {
-  return escaped.replace(/https?:\/\/[^\s<]+/g, (m) => {
-    const trimmed = m.replace(/[.,;)]+$/, "");
-    const rest = m.slice(trimmed.length);
-    return `<a href="${trimmed}" style="color:#2563eb">${trimmed}</a>${rest}`;
-  });
-}
+   untouched — the send pipeline renders them per recipient. 평문 → HTML 규칙은
+   캠페인 작성 화면의 직접 입력과 공유한다(outpace/plaintext). */
 
 function textToHtml(text: string): string {
-  const paragraphs = autoLink(escapeHtml(text.trim()))
-    .split(/\n{2,}/)
-    .map((p) => `<p style="margin:0 0 16px;font-size:15px;line-height:1.9">${p.replaceAll("\n", "<br>")}</p>`)
-    .join("\n");
+  const paragraphs = paragraphize(
+    autoLink(escapeHtml(text.trim())), "margin:0 0 16px;font-size:15px;line-height:1.9");
   return `<table width="680" align="center" cellpadding="0" cellspacing="0" style="font-family:sans-serif"><tr><td style="padding:32px;background:#ffffff">\n${paragraphs}\n</td></tr></table>`;
 }
 
@@ -40,8 +24,15 @@ export default function TextEditor() {
   // ?target=email — 이메일(캠페인용 콘텐츠)을 상대로 열린 경우 API 만 갈아탄다
   const isEmail = new URLSearchParams(window.location.search).get("target") === "email";
   const apiBase = isEmail ? "/api/emails" : "/api/templates";
+  // 저장 후 URL 을 갈아탈 때도 ?target=email 을 잃지 않아야 한다 — 잃으면 다음 저장이
+  // 엉뚱하게 /api/templates 로 가서 이메일이 아닌 다른 행을 건드린다.
+  const editorQuery = isEmail ? "?target=email" : "";
+  // 뒤로 가기는 열린 대상이 있던 화면으로 (이메일 편집 중 템플릿 관리로 빠지지 않게)
+  const backTo = isEmail ? "/emails" : "/templates";
+  const backLabel = isEmail ? "← 이메일" : "← 템플릿";
+  const noun = isEmail ? "이메일" : "템플릿";
   const areaRef = useRef<HTMLTextAreaElement>(null);
-  const [name, setName] = useState("텍스트 템플릿");
+  const [name, setName] = useState(isEmail ? "텍스트 이메일" : "텍스트 템플릿");
   const [subject, setSubject] = useState("");
   const [text, setText] = useState("안녕하세요 {{name}}님,\n\n여기에 내용을 작성하세요. 디자인 없이 담백한 텍스트 메일로 발송됩니다.\n\n감사합니다.");
   const [saving, setSaving] = useState(false);
@@ -50,29 +41,41 @@ export default function TextEditor() {
   const [error, setError] = useState<string | null>(null);
 
   // Edit mode: restore the plain-text source from the saved template's marker.
+  const [loaded, setLoaded] = useState(!id);
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
     (async () => {
       try {
         const res = await api(`${apiBase}/${id}`);
-        if (!res.ok) { if (!cancelled) setError(isEmail ? "이메일을 불러오지 못했습니다." : "템플릿을 불러오지 못했습니다."); return; }
+        if (!res.ok) { if (!cancelled) { setError(`${noun}을 불러오지 못했습니다.`); setLoaded(true); } return; }
         const t: TemplateView = await res.json();
         if (cancelled) return;
         const source = parseTextMarker(t.htmlBody);
         if (source === null) {
-          setError("텍스트 에디터로 만든 템플릿이 아니에요. HTML 에디터에서 열어주세요.");
+          setError(`텍스트 에디터로 만든 ${noun}이 아니에요. HTML 에디터에서 열어주세요.`);
+          setLoaded(true);
           return;
         }
         setName(t.name);
         setSubject(t.subject);
         setText(source);
+        setLoaded(true);
       } catch {
-        if (!cancelled) setError("템플릿을 불러오지 못했습니다.");
+        if (!cancelled) { setError(`${noun}을 불러오지 못했습니다.`); setLoaded(true); }
       }
     })();
     return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  // 저장하지 않은 편집 보호 — 수동 저장이라 이탈 한 번에 작업이 사라진다
+  const snapshot = useMemo(
+    () => JSON.stringify({ name: name.trim(), subject: subject.trim(), text }),
+    [name, subject, text],
+  );
+  const { dirty, markSaved } = useDirtyTracker(snapshot, loaded);
+  const confirmLeave = useUnsavedGuard(dirty);
 
   function insertVariable(token: string) {
     const area = areaRef.current;
@@ -114,7 +117,8 @@ export default function TextEditor() {
       const view: TemplateView = await res.json();
       setSavedId(view.id);
       setSavedAt(new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }));
-      if (!id && !savedId) nav(`/editor/text/${view.id}`, { replace: true });
+      markSaved(JSON.stringify({ name: name.trim(), subject: subject.trim(), text }));
+      if (!id && !savedId) nav(`/editor/text/${view.id}${editorQuery}`, { replace: true });
       return view.id;
     } catch {
       setError("저장에 실패했습니다.");
@@ -128,16 +132,20 @@ export default function TextEditor() {
     <div className="op-editor">
       <div className="op-editor-bar">
         <div className="op-editor-bar-left">
-          <span className="op-back" style={{ margin: 0 }} onClick={() => nav("/templates")}>← 템플릿</span>
+          <span className="op-back" style={{ margin: 0 }}
+                onClick={() => { if (confirmLeave()) nav(backTo); }}>{backLabel}</span>
           <span className="vsep" />
           <input
             className="op-title-input"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="템플릿 이름"
-            aria-label="템플릿 이름"
+            placeholder={`${noun} 이름`}
+            aria-label={`${noun} 이름`}
           />
-          <span className="op-autosave">{savedAt ? `저장됨 ${savedAt}` : "저장 전"}</span>
+          {/* 자동 저장은 없다 — 저장 안 된 변경이 있으면 그렇다고 분명히 말한다 */}
+          <span className="op-autosave" style={dirty ? { color: "var(--op-amber)", fontWeight: 700 } : undefined}>
+            {dirty ? "저장 안 됨 — 저장을 눌러주세요" : savedAt ? `저장됨 ${savedAt}` : savedId ? `저장된 ${noun}` : "저장 전"}
+          </span>
         </div>
         <div className="op-editor-actions">
           {error && <span className="op-editor-error">{error}</span>}

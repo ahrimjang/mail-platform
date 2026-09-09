@@ -4,6 +4,7 @@ import { api } from "../api";
 import VariableMenu from "../components/VariableMenu";
 import type { TemplateView } from "../types";
 import { STARTERS, renderPreview } from "../outpace/starters";
+import { useDirtyTracker, useUnsavedGuard } from "../outpace/unsaved";
 
 /* Real HTML template editor: code pane + live preview, saved via the
    templates API. /editor/html creates, /editor/html/:id edits, and
@@ -15,6 +16,10 @@ export default function HtmlEditor() {
   // ?target=email — 이메일(캠페인용 콘텐츠)을 상대로 열린 경우 API 만 갈아탄다
   const isEmail = params.get("target") === "email";
   const apiBase = isEmail ? "/api/emails" : "/api/templates";
+  // 뒤로 가기는 열린 대상이 있던 화면으로 (이메일 편집 중 템플릿 관리로 빠지지 않게)
+  const backTo = isEmail ? "/emails" : "/templates";
+  const backLabel = isEmail ? "← 이메일" : "← 템플릿";
+  const noun = isEmail ? "이메일" : "템플릿";
 
   const [name, setName] = useState("");
   const [subject, setSubject] = useState("");
@@ -39,10 +44,10 @@ export default function HtmlEditor() {
             setSubject(t.subject);
             setBody(t.htmlBody);
           } else if (!cancelled) {
-            setError("템플릿을 불러오지 못했습니다.");
+            setError(`${noun}을 불러오지 못했습니다.`);
           }
         } catch {
-          if (!cancelled) setError("템플릿을 불러오지 못했습니다.");
+          if (!cancelled) setError(`${noun}을 불러오지 못했습니다.`);
         } finally {
           if (!cancelled) setLoading(false);
         }
@@ -56,6 +61,14 @@ export default function HtmlEditor() {
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  // 저장하지 않은 편집 보호 — 수동 저장이라 이탈 한 번에 작업이 사라진다
+  const snapshot = useMemo(
+    () => JSON.stringify({ name: name.trim(), subject: subject.trim(), body }),
+    [name, subject, body],
+  );
+  const { dirty, markSaved } = useDirtyTracker(snapshot, !loading);
+  const confirmLeave = useUnsavedGuard(dirty);
 
   function insertVariable(token: string) {
     const area = codeRef.current;
@@ -90,6 +103,7 @@ export default function HtmlEditor() {
       }
       const view: TemplateView = await res.json();
       setSavedAt(new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }));
+      markSaved(JSON.stringify({ name: name.trim(), subject: subject.trim(), body }));
       if (!id) nav(`/editor/html/${view.id}${isEmail ? "?target=email" : ""}`, { replace: true }); // keep editing the saved row
       return view.id;
     } catch {
@@ -121,16 +135,20 @@ export default function HtmlEditor() {
     <div className="op-editor">
       <div className="op-editor-bar">
         <div className="op-editor-bar-left">
-          <span className="op-back" style={{ margin: 0 }} onClick={() => nav("/templates")}>← 템플릿</span>
+          <span className="op-back" style={{ margin: 0 }}
+                onClick={() => { if (confirmLeave()) nav(backTo); }}>{backLabel}</span>
           <span className="vsep" />
           <input
             className="op-title-input"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="템플릿 이름"
-            aria-label="템플릿 이름"
+            placeholder={`${noun} 이름`}
+            aria-label={`${noun} 이름`}
           />
-          <span className="op-autosave">{savedAt ? `저장됨 ${savedAt}` : id ? (isEmail ? "저장된 이메일" : "저장된 템플릿") : "저장 전"}</span>
+          {/* 자동 저장은 없다 — 저장 안 된 변경이 있으면 그렇다고 분명히 말한다 */}
+          <span className="op-autosave" style={dirty ? { color: "var(--op-amber)", fontWeight: 700 } : undefined}>
+            {dirty ? "저장 안 됨 — 저장을 눌러주세요" : savedAt ? `저장됨 ${savedAt}` : id ? `저장된 ${noun}` : "저장 전"}
+          </span>
         </div>
         <div className="op-editor-actions">
           {error && <span className="op-editor-error">{error}</span>}

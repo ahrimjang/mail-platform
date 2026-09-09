@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../api";
 import VariableMenu from "../components/VariableMenu";
 import type { TemplateView } from "../types";
 import Portal from "../components/Portal";
 import { renderPreview } from "../outpace/starters";
+import { useDirtyTracker, useUnsavedGuard } from "../outpace/unsaved";
 import {
   BG_SWATCHES,
   BLOCK_NAMES,
@@ -396,6 +397,11 @@ export default function EmailEditor() {
   const isEmail = new URLSearchParams(window.location.search).get("target") === "email";
   const apiBase = isEmail ? "/api/emails" : "/api/templates";
   const editorQuery = isEmail ? "?target=email" : "";
+  // 뒤로 가기는 열린 대상이 있던 화면으로 — 이메일을 편집하다 템플릿 관리로
+  // 떨어지면 사용자는 다른 개념의 목록을 보게 된다
+  const backTo = isEmail ? "/emails" : "/templates";
+  const backLabel = isEmail ? "← 이메일" : "← 템플릿";
+  const noun = isEmail ? "이메일" : "템플릿";
 
   const [name, setName] = useState("새 이메일");
   const [subject, setSubject] = useState("");
@@ -411,29 +417,49 @@ export default function EmailEditor() {
   const [previewOpen, setPreviewOpen] = useState(false);
 
   // Edit mode: restore block structure from the saved template's marker.
+  const [loaded, setLoaded] = useState(!id);
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
     (async () => {
       try {
         const res = await api(`${apiBase}/${id}`);
-        if (!res.ok) { if (!cancelled) setLoadError(isEmail ? "이메일을 불러오지 못했습니다." : "템플릿을 불러오지 못했습니다."); return; }
+        if (!res.ok) { if (!cancelled) setLoadError(`${noun}을 불러오지 못했습니다.`); return; }
         const t: TemplateView = await res.json();
         if (cancelled) return;
         const restored = parseBlocksMarker(t.htmlBody);
         if (!restored) {
-          setLoadError("이 템플릿은 블록 에디터로 만든 템플릿이 아니에요. HTML 에디터에서 열어주세요.");
+          setLoadError(`이 ${noun}은 블록 에디터로 만든 것이 아니에요. HTML 에디터에서 열어주세요.`);
           return;
         }
         setName(t.name);
         setSubject(t.subject);
         setBlocks(restored);
+        setLoaded(true);
       } catch {
-        if (!cancelled) setLoadError("템플릿을 불러오지 못했습니다.");
+        if (!cancelled) setLoadError(`${noun}을 불러오지 못했습니다.`);
       }
     })();
     return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  // 저장하지 않은 편집 보호 — 이 에디터는 수동 저장이라 이탈 한 번에 작업이 사라진다
+  // 저장이 trim 한 값을 쓰므로 기준선도 trim 기준 — 공백 하나로 계속 dirty 로 남지 않게
+  const snapshot = useMemo(
+    () => JSON.stringify({ name: name.trim(), subject: subject.trim(), blocks }),
+    [name, subject, blocks],
+  );
+  const { dirty, markSaved } = useDirtyTracker(snapshot, loaded);
+  const confirmLeave = useUnsavedGuard(dirty);
+  function leaveTo(to: string) {
+    if (confirmLeave()) nav(to);
+  }
+
+  // 저장 직전 인라인 편집을 커밋(blur)하면 그 setBlocks 가 반영된 뒤에 직렬화해야
+  // 한다 — 클로저의 blocks 는 커밋 이전 값이라 마지막 수정이 빠진다.
+  const blocksRef = useRef(blocks);
+  blocksRef.current = blocks;
 
   const selected = blocks.find((b) => b.id === sel) ?? null;
 
@@ -577,14 +603,16 @@ export default function EmailEditor() {
     // commit any in-progress inline edit before serializing
     (document.activeElement as HTMLElement | null)?.blur?.();
     await new Promise((r) => setTimeout(r, 0));
-    if (!name.trim() || !subject.trim() || blocks.length === 0) {
+    // blur 커밋이 반영된 최신 블록으로 — 클로저 값은 커밋 이전이다
+    const current = blocksRef.current;
+    if (!name.trim() || !subject.trim() || current.length === 0) {
       setError("이름, 제목을 입력하고 상자를 1개 이상 두세요.");
       return null;
     }
     setSaving(true);
     setError(null);
     try {
-      const payload = JSON.stringify({ name: name.trim(), subject: subject.trim(), htmlBody: blocksToHtmlBody(blocks) });
+      const payload = JSON.stringify({ name: name.trim(), subject: subject.trim(), htmlBody: blocksToHtmlBody(current) });
       const res = id
         ? await api(`${apiBase}/${id}`, { method: "PUT", body: payload })
         : await api(apiBase, { method: "POST", body: payload });
@@ -597,6 +625,7 @@ export default function EmailEditor() {
       }
       const view: TemplateView = await res.json();
       setSavedAt(new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }));
+      markSaved(JSON.stringify({ name: name.trim(), subject: subject.trim(), blocks: current }));
       if (!id) nav(`/editor/${view.id}${editorQuery}`, { replace: true });
       return view.id;
     } catch {
@@ -612,7 +641,7 @@ export default function EmailEditor() {
       <div className="op-editor">
         <div className="op-editor-bar">
           <div className="op-editor-bar-left">
-            <span className="op-back" style={{ margin: 0 }} onClick={() => nav("/templates")}>← 템플릿</span>
+            <span className="op-back" style={{ margin: 0 }} onClick={() => nav(backTo)}>{backLabel}</span>
           </div>
         </div>
         <div style={{ padding: 40, color: "var(--op-muted)", fontSize: 14 }}>{loadError}</div>
@@ -624,16 +653,19 @@ export default function EmailEditor() {
     <div className="op-editor">
       <div className="op-editor-bar">
         <div className="op-editor-bar-left">
-          <span className="op-back" style={{ margin: 0 }} onClick={() => nav("/templates")}>← 템플릿</span>
+          <span className="op-back" style={{ margin: 0 }} onClick={() => leaveTo(backTo)}>{backLabel}</span>
           <span className="vsep" />
           <input
             className="op-title-input"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder={isEmail ? "이메일 이름" : "템플릿 이름"}
-            aria-label={isEmail ? "이메일 이름" : "템플릿 이름"}
+            placeholder={`${noun} 이름`}
+            aria-label={`${noun} 이름`}
           />
-          <span className="op-autosave">{savedAt ? `저장됨 ${savedAt}` : id ? (isEmail ? "저장된 이메일" : "저장된 템플릿") : "저장 전"}</span>
+          {/* 자동 저장은 없다 — 저장 안 된 변경이 있으면 그렇다고 분명히 말한다 */}
+          <span className="op-autosave" style={dirty ? { color: "var(--op-amber)", fontWeight: 700 } : undefined}>
+            {dirty ? "저장 안 됨 — 저장을 눌러주세요" : savedAt ? `저장됨 ${savedAt}` : id ? `저장된 ${noun}` : "저장 전"}
+          </span>
         </div>
         <div className="op-editor-actions">
           {error && <span className="op-editor-error">{error}</span>}
