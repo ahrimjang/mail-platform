@@ -27,6 +27,8 @@ import org.springframework.stereotype.Service;
 @Service
 public class BounceService {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(BounceService.class);
+
     private final SuppressionRepository suppressions;
     private final MailMessageRepository messages;
     private final CampaignRepository campaigns;
@@ -70,6 +72,14 @@ public class BounceService {
                 suppressions.save(Suppression.of(workspaceId, n.email(), n.type().name().toLowerCase()));
                 // 평판 방어 — 이 워크스페이스의 바운스율이 임계를 넘었으면 자동 정지
                 suspension.checkAfterBounce(workspaceId);
+            } else {
+                // 여기서 조용히 버리면 "바운스가 한 건도 없는 것"과 구분되지 않는다.
+                // 가장 흔한 원인은 SES 알림 설정의 "원본 헤더 포함"이 꺼져 있어
+                // X-Mail-Message-Id 가 통보에 실려오지 않는 것 — 그러면 평판 가드
+                // 전체(억제·자동정지)가 입력을 못 받는데 화면상 아무 징후가 없다.
+                log.warn("바운스 통보를 상관 지을 수 없어 억제를 건너뜁니다 (type={}, email={}, messageId={}) "
+                                + "— SES 알림에 원본 헤더 포함이 켜져 있는지 확인하세요.",
+                        n.type(), n.email(), n.messageId());
             }
         }
         // SOFT_BOUNCE: transient — do nothing (retryable)
