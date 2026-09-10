@@ -10,13 +10,13 @@ Outpace 운영의 일상 절차서. 장애 이력·진단 런북은 [OPS-LOG.md]
 | 서비스 | https://outpacemail.com (Cloudflare → nginx 443) |
 | 서버 SSH | `ssh -i ~/.ssh/LightsailDefaultKey-ap-northeast-2.pem ubuntu@<서버-IP>` |
 | Grafana | SSH 터널 후 http://localhost:3000 (admin / `.env`의 `GRAFANA_ADMIN_PASSWORD`) |
-| MailHog | SSH 터널 후 http://localhost:8025 (SES 전환 전까지의 수신함) |
+| 발송 메일 확인 | SES 실발송 — 본인 주소로 테스트 발송해 받은편지함에서 확인 (MailHog 은 2026-09 SES 전환 후 제거) |
 | DB | 서버에서 `docker compose -f docker-compose.prod.yml exec postgres psql -U maildb maildb` |
 
 SSH 터널(모니터링용 포트 묶음) — PC에서 창을 열어둔 동안만 유효:
 
 ```bash
-ssh -i C:\Users\user\.ssh\LightsailDefaultKey-ap-northeast-2.pem -L 3000:localhost:3000 -L 8025:localhost:8025 ubuntu@<서버-IP>
+ssh -i C:\Users\user\.ssh\LightsailDefaultKey-ap-northeast-2.pem -L 3000:localhost:3000 -L 5432:localhost:5432 ubuntu@<서버-IP>
 ```
 
 시크릿 소재: 서버 `~/mail-platform/.env`(chmod 600) · TLS 인증서 `~/mail-platform/certs/` ·
@@ -94,8 +94,9 @@ Lightsail 콘솔 → 인스턴스 ⋮ → **Reboot**. 컨테이너는 자동 복
 ## 6. 운영 레시피
 
 - **베타 정원 조정**: 서버 `.env`의 `APP_BETA_SIGNUP_CAP` 수정 → `up -d` (0 = 무제한)
-- **SES 전환**(승인 후 1회): `.env`의 SMTP 주석 6줄 해제 + 자격증명 입력 → `up -d` →
-  본인 주소로 테스트 발송 → 받은편지함 도착·헤더의 DKIM/SPF pass 확인 → 이후 mailhog 서비스 제거 가능
+- **SMTP 자격증명 교체**(SES 키 로테이션 등): `.env`의 `SMTP_USERNAME/PASSWORD` 수정 → `up -d api worker` →
+  본인 주소로 테스트 발송 → 받은편지함 도착·헤더의 DKIM/SPF pass 확인.
+  `SMTP_HOST` 가 비면 compose 가 기동을 거부한다(mailhog 폴백 없음 — 2026-09 제거)
 - **Grafana 비밀번호 분실**: `grep GRAFANA ~/mail-platform/.env`
 - **GitHub 배포 토큰 만료**(90일): 재발급 후 서버에서
   `git remote set-url origin https://<새토큰>@github.com/ahrimjang/mail-platform.git`

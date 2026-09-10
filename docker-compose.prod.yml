@@ -6,9 +6,11 @@
 #   초기화: docker compose -f docker-compose.prod.yml down -v
 #
 # 공개 포트: 80(콘솔+API), 3000(Grafana), 8088(Kafka UI) — 3000/8088 은 운영에서 방화벽/IP 제한 권장
-# 시크릿은 .env 로 주입(.env.example 참고). 로컬 검증은 무설정으로 돈다.
+# 시크릿은 .env 로 주입(.env.example 참고).
 #
-# 실서버 SES 전환: SMTP_* 환경변수만 바꾸면 된다(.env) — mailhog 서비스는 지워도 무방.
+# 발송은 SES SMTP(SMTP_* 를 .env 에 필수로). 2026-09 SES 전환을 마치며 mailhog 서비스를
+# 뺐다 — SMTP_HOST 가 비면 죽은 호스트로 조용히 실패하는 대신 기동 자체가 멈춘다.
+# 로컬에서 발송 없이 돌려보려면 MAIL_SENDER_TYPE=logging + SMTP_HOST=unused.
 
 name: mail-platform-prod
 
@@ -99,14 +101,6 @@ services:
       kafka:
         condition: service_healthy
 
-  # SES 전환 전까지의 SMTP — 전환 후엔 SMTP_* 만 바꾸고 이 서비스는 제거해도 된다
-  mailhog:
-    image: mailhog/mailhog
-    restart: unless-stopped
-    mem_limit: 128m
-    ports:
-      - "127.0.0.1:8025:8025"   # 받은편지함 UI — SSH 터널로만 접근
-
   # image 는 CI(GitHub Actions)가 빌드해 ghcr 에 올리는 이름 — 서버는 pull 만 한다.
   # 로컬 검증은 여전히 --build 로 같은 이름을 직접 빌드하면 된다.
   api:
@@ -124,12 +118,13 @@ services:
       RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-guest}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      SMTP_HOST: ${SMTP_HOST:-mailhog}
-      SMTP_PORT: ${SMTP_PORT:-1025}
+      # mailhog 폴백 없음 — 비어 있으면 compose 가 기동을 거부한다(죽은 호스트로 조용히 실패하지 않게)
+      SMTP_HOST: ${SMTP_HOST:?SMTP_HOST 미설정 — .env 에 SES SMTP 엔드포인트를 넣으세요}
+      SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USERNAME: ${SMTP_USERNAME:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-      SMTP_AUTH: ${SMTP_AUTH:-false}
-      SMTP_STARTTLS: ${SMTP_STARTTLS:-false}
+      SMTP_AUTH: ${SMTP_AUTH:-true}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost}
       APP_JWT_SECRET: ${APP_JWT_SECRET:-dev-only-not-a-real-secret-key-0123456789-abcdefghijklmnopqrstuvwxyz}
       APP_WEBHOOK_SECRET: ${APP_WEBHOOK_SECRET:-dev-webhook-secret}
@@ -183,12 +178,13 @@ services:
       RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-guest}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      SMTP_HOST: ${SMTP_HOST:-mailhog}
-      SMTP_PORT: ${SMTP_PORT:-1025}
+      # mailhog 폴백 없음 — 비어 있으면 compose 가 기동을 거부한다(죽은 호스트로 조용히 실패하지 않게)
+      SMTP_HOST: ${SMTP_HOST:?SMTP_HOST 미설정 — .env 에 SES SMTP 엔드포인트를 넣으세요}
+      SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USERNAME: ${SMTP_USERNAME:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-      SMTP_AUTH: ${SMTP_AUTH:-false}
-      SMTP_STARTTLS: ${SMTP_STARTTLS:-false}
+      SMTP_AUTH: ${SMTP_AUTH:-true}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost}
       # 클릭 링크 서명키 — api 와 **같은 값**이어야 한다(워커가 서명, api 가 검증).
       # 값이 어긋나면 발송된 메일의 모든 클릭이 400 으로 죽는다.

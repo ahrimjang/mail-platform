@@ -6,10 +6,10 @@
 ## 운영 환경 요약
 
 - **서버**: Lightsail 4GB/2vCPU (서울, `outpace-prod`, 고정 IP <서버-IP>) — 스왑 2GB
-- **스택**: `docker compose -f docker-compose.prod.yml` — postgres/rabbitmq/kafka/api/worker/front(nginx) + mailhog(SES 전환 전)/kafka-ui/prometheus/grafana
+- **스택**: `docker compose -f docker-compose.prod.yml` — postgres/rabbitmq/kafka/api/worker/front(nginx) + kafka-ui/prometheus/grafana (mailhog 은 2026-09 SES 전환 후 제거)
 - **입구**: Cloudflare(Proxy, SSL Full, Authenticated Origin Pulls/Global) → nginx 443
   (Origin 인증서 + CF 클라이언트 인증서 검증) → api:8080. 오리진 직접 접속은 400 차단
-- **방화벽**: 22/80/443만 개방 — Grafana(3000)·MailHog(8025)는 SSH 터널로만 접근
+- **방화벽**: 22/80/443만 개방 — Grafana(3000)·Postgres(5432)는 SSH 터널로만 접근
 
 ## 진단 런북 (서버에서)
 

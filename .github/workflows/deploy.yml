@@ -110,6 +110,7 @@ jobs:
             git fetch origin
             git reset --hard origin/master
             docker compose -f docker-compose.prod.yml pull api worker front
-            docker compose -f docker-compose.prod.yml up -d --no-build
+            # --remove-orphans: compose 에서 뺀 서비스(예: mailhog)의 컨테이너를 함께 걷는다
+            docker compose -f docker-compose.prod.yml up -d --no-build --remove-orphans
             docker image prune -f
             docker compose -f docker-compose.prod.yml ps
