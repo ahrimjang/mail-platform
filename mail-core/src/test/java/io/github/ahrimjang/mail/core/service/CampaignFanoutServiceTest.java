@@ -85,6 +85,27 @@ class CampaignFanoutServiceTest {
     }
 
     @Test
+    void expand_resumesAfterTheLastMaterialisedContact_whenRecoveredBySweeper() {
+        // 팬아웃 도중 죽었다 되돌려진 캠페인: 이미 만든 메시지(contactId ≤ 1000) 뒤부터 잇는다 —
+        // 0 부터 다시 돌면 같은 수신자에게 두 번 간다
+        when(campaigns.claimForFanout(CAMPAIGN_ID)).thenReturn(true);
+        when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(listCampaign()));
+        when(messages.maxContactIdByCampaign(CAMPAIGN_ID)).thenReturn(1000L);
+        when(contacts.findSubscribedByListIdAfter(eq(LIST_ID), eq(1000L), eq(PAGE)))
+                .thenReturn(contactPage(1001L, 300));
+        stubSaveAllAssigningIds();
+
+        service.expand(CAMPAIGN_ID);
+
+        verify(contacts, never()).findSubscribedByListIdAfter(eq(LIST_ID), eq(0L), eq(PAGE));
+        ArgumentCaptor<List<MailMessage>> saved = ArgumentCaptor.forClass(List.class);
+        verify(messages).saveAll(saved.capture());
+        assertThat(saved.getValue()).hasSize(300);
+        verify(mailQueue, times(300)).enqueue(anyLong());
+        verify(campaigns).markExpanded(CAMPAIGN_ID);
+    }
+
+    @Test
     void expand_happyPath_savesEachBatchAndEnqueuesEverySavedIdThenMarksExpanded() {
         when(campaigns.claimForFanout(CAMPAIGN_ID)).thenReturn(true);
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(listCampaign()));

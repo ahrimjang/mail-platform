@@ -126,6 +126,14 @@ public class CampaignEntity {
     @Column(name = "ab_winner", length = 1)
     private String abWinner;
 
+    /**
+     * 팬아웃 claim 시각(V34). 복구 스위퍼가 EXPANDING 고착을 판정하는 기준 — JPQL 로만
+     * 읽고 쓰므로 도메인 모델에는 올리지 않는다(도메인 save 가 이 값을 null 로 덮어도
+     * 스위퍼는 created_at 으로 대신 판정한다).
+     */
+    @Column(name = "expanding_started_at")
+    private Instant expandingStartedAt;
+
     protected CampaignEntity() {
     }
 
@@ -304,5 +312,9 @@ public class CampaignEntity {
 
     public String getAbWinner() {
         return abWinner;
+    }
+
+    public Instant getExpandingStartedAt() {
+        return expandingStartedAt;
     }
 }

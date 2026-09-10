@@ -73,6 +73,21 @@ public class JpaMailMessageRepository implements MailMessageRepository {
     }
 
     @Override
+    public List<Long> findStaleIds(Instant cutoff, int limit) {
+        return jpa.findStaleIds(cutoff, org.springframework.data.domain.PageRequest.of(0, Math.max(1, limit)));
+    }
+
+    @Override
+    public int touchPending(List<Long> ids, Instant now) {
+        return ids.isEmpty() ? 0 : jpa.touchPending(ids, now);
+    }
+
+    @Override
+    public Long maxContactIdByCampaign(Long campaignId) {
+        return jpa.maxContactIdByCampaignId(campaignId);
+    }
+
+    @Override
     public int cancelPendingByCampaign(Long campaignId) {
         return jpa.cancelPendingByCampaignId(campaignId, Instant.now());
     }

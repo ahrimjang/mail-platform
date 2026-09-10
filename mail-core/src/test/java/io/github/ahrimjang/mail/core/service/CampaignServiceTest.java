@@ -270,7 +270,6 @@ class CampaignServiceTest {
     @Test
     void create_withEmptyList_throwsIllegalArgument() {
         stubOwnedList(5L);
-        stubCampaignSaveAssigningId();
         when(contacts.countByListId(5L)).thenReturn(0L);
 
         assertThatThrownBy(() -> service.create(new CreateCampaignRequest(
@@ -278,6 +277,8 @@ class CampaignServiceTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("5");
 
+        // 검증이 저장보다 앞 — 실패한 등록이 잡 없는 QUEUED 행(고아)을 남기지 않는다(ARCH-5)
+        verify(campaigns, never()).save(any());
         verify(messages, never()).saveAll(anyList());
         verifyNoInteractions(mailQueue);
     }
@@ -748,8 +749,6 @@ class CampaignServiceTest {
 
     @Test
     void create_withEmptyRecipientsAndNoListId_throwsIllegalArgument() {
-        stubCampaignSaveAssigningId();
-
         assertThatThrownBy(() -> service.create(new CreateCampaignRequest(
                 "Subject", "<p>Body</p>", List.of(), null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class);
@@ -758,6 +757,8 @@ class CampaignServiceTest {
                 "Subject", "<p>Body</p>", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class);
 
+        // 검증이 저장보다 앞 — 실패한 등록이 잡 없는 QUEUED 행(고아)을 남기지 않는다(ARCH-5)
+        verify(campaigns, never()).save(any());
         verify(messages, never()).saveAll(anyList());
         verifyNoInteractions(mailQueue);
     }

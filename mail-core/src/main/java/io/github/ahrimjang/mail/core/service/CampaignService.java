@@ -216,6 +216,15 @@ public class CampaignService {
             campaign.setAbEvalMetric(metric);
             campaign.setAbEvalWaitMinutes(wait);
         }
+        // 대상 검증은 저장보다 앞에 — 저장 뒤에 실패하면 잡 없는 QUEUED 행(고아)이 남는다(ARCH-5).
+        // 스위퍼가 걷어내긴 하지만, 애초에 만들지 않는 게 먼저다.
+        if (request.listId() != null) {
+            if (contacts.countByListId(request.listId()) == 0) {
+                throw new IllegalArgumentException("list has no members: " + request.listId());
+            }
+        } else if (request.recipients() == null || request.recipients().isEmpty()) {
+            throw new IllegalArgumentException("recipients must not be empty");
+        }
         Campaign saved = campaigns.save(campaign);
 
         if (request.listId() != null) {
@@ -223,16 +232,10 @@ public class CampaignService {
             // and hand a single fan-out job to the worker, so create() is O(1) in the
             // recipient count. Scheduled campaigns publish the fan-out job at release
             // time (see CampaignScheduleService); immediate ones publish it now.
-            if (contacts.countByListId(request.listId()) == 0) {
-                throw new IllegalArgumentException("list has no members: " + request.listId());
-            }
             if (!deferred) {
                 mailQueue.enqueueFanout(saved.getId());
             }
         } else {
-            if (request.recipients() == null || request.recipients().isEmpty()) {
-                throw new IllegalArgumentException("recipients must not be empty");
-            }
             // 배달 불가가 확실한 주소는 큐에 넣지 않는다 — 바운스는 사후 복구가 안 된다
             var unsendable = request.recipients().stream()
                     .filter(r -> !EmailAddressValidator.isSendable(r))

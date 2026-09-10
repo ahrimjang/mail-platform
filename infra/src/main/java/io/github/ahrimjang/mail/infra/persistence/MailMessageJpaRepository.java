@@ -148,4 +148,37 @@ public interface MailMessageJpaRepository extends JpaRepository<MailMessageEntit
             + "and (m.status = io.github.ahrimjang.mail.common.MessageStatus.PENDING "
             + "or (m.status = io.github.ahrimjang.mail.common.MessageStatus.SENDING and m.updatedAt < :staleBefore))")
     int claimPending(@Param("id") Long id, @Param("now") Instant now, @Param("staleBefore") Instant staleBefore);
+
+    /**
+     * 복구 스위퍼용 — 릴리스된 캠페인에서 오래도록 PENDING/SENDING 인 메시지. 잡이 사라진
+     * 고아(발행 직후 크래시, 팬아웃 중 사망), stale SENDING(발송 중 사망), 승자 확정 뒤
+     * 릴리스에 실패한 홀드아웃이 전부 여기 걸린다. 승자가 아직 없는 홀드아웃(variant null)
+     * 만은 정상 대기이므로 제외한다. 재발행은 dispatch 의 claim 이 멱등하게 받는다.
+     */
+    @Query("select m.id from MailMessageEntity m, CampaignEntity c "
+            + "where c.id = m.campaignId "
+            + "and c.enqueuedAt is not null and c.enqueuedAt < :cutoff "
+            + "and c.status in (io.github.ahrimjang.mail.common.CampaignStatus.QUEUED, "
+            + "                 io.github.ahrimjang.mail.common.CampaignStatus.EXPANDING, "
+            + "                 io.github.ahrimjang.mail.common.CampaignStatus.SENDING) "
+            + "and m.updatedAt < :cutoff "
+            + "and m.status in (io.github.ahrimjang.mail.common.MessageStatus.PENDING, "
+            + "                 io.github.ahrimjang.mail.common.MessageStatus.SENDING) "
+            + "and not (m.variant is null and c.abTestPercent is not null and c.abWinner is null) "
+            + "order by m.id")
+    java.util.List<Long> findStaleIds(@Param("cutoff") Instant cutoff, org.springframework.data.domain.Pageable pageable);
+
+    /**
+     * 재발행한 PENDING 행의 updatedAt 을 지금으로 — 다음 스위프에서 곧바로 또 잡히지 않게.
+     * (SENDING 행은 dispatch 의 claim 이 갱신하므로 건드리지 않는다.)
+     */
+    @Modifying
+    @Transactional
+    @Query("update MailMessageEntity m set m.updatedAt = :now where m.id in :ids "
+            + "and m.status = io.github.ahrimjang.mail.common.MessageStatus.PENDING")
+    int touchPending(@Param("ids") java.util.Collection<Long> ids, @Param("now") Instant now);
+
+    /** 팬아웃 재개 커서 — 이 캠페인에 이미 만들어진 메시지 중 가장 큰 contactId (없으면 null). */
+    @Query("select max(m.contactId) from MailMessageEntity m where m.campaignId = :campaignId")
+    Long maxContactIdByCampaignId(@Param("campaignId") Long campaignId);
 }

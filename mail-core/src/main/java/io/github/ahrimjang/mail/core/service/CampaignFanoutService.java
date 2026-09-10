@@ -77,7 +77,14 @@ public class CampaignFanoutService {
         // campaign filters on rates as of the release. Loaded once per fan-out.
         EngagementFilter segment = EngagementFilter.of(campaign, messages, events);
 
-        long afterId = 0L;
+        // 재개 커서: 팬아웃 도중 죽었다가 스위퍼가 되돌린 캠페인은 이미 만든 메시지 뒤부터
+        // 잇는다. 연락처는 id 오름차순으로 페이지를 넘기므로 "가장 큰 contactId"가 곧
+        // 마지막으로 처리한 위치다. 처음 도는 캠페인은 메시지가 없어 0 에서 시작한다.
+        Long resumeFrom = messages.maxContactIdByCampaign(campaignId);
+        long afterId = resumeFrom == null ? 0L : resumeFrom;
+        if (afterId > 0) {
+            log.warn("fan-out of campaign {} resumes after contactId {}", campaignId, afterId);
+        }
         long total = 0;
         while (true) {
             List<Contact> page = contacts.findSubscribedByListIdAfter(listId, afterId, PAGE);

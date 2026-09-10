@@ -60,6 +60,13 @@ SSH 키와 Origin 인증서 사본은 PC `C:\Users\user\.ssh\`. **어느 것도 
   알림만(상태 복구는 스위퍼 몫). 운영자가 볼 곳: 워커 로그의 `DLQ:` ERROR, 지표
   `mail_dlq_received_total{type=send|fanout|unknown}`(Grafana — 0 보다 크면 조사),
   RabbitMQ UI 의 `mail.send.dlq` 깊이(리스너가 소비하므로 평소 0 이어야 한다).
+- **복구 스위퍼**(2026-09-10부터, 워커 60초 주기) — "claim 에 이긴 뒤 죽은" 고착을 자동으로
+  걷는다: 10분 넘게 EXPANDING 인 캠페인은 QUEUED 로 되돌려 팬아웃 재발행(이미 만든
+  메시지 뒤부터 재개), 릴리스됐는데 잡이 없는 QUEUED 는 팬아웃 재발행 또는(메시지가
+  하나도 없으면) CANCELED, 10분 넘게 PENDING/SENDING 인 메시지는 재발행(한 번에 200건).
+  지표 `mail_recovery_total{kind}` — **0 이 아닌 값이 반복되면 무언가 계속 죽고 있다는
+  뜻**이니 워커 로그의 `복구:` WARN 으로 원인을 본다. 스위퍼 자체는 상태를 새로 만들지
+  않고 재발행만 하므로 오탐이어도 발송 결과는 바뀌지 않는다(중복 잡은 claim 에서 진다).
 
 ## 3. 배포
 

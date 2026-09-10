@@ -63,7 +63,22 @@ public class JpaCampaignRepository implements CampaignRepository {
 
     @Override
     public boolean claimForFanout(Long id) {
-        return jpa.claimForFanout(id) == 1;
+        return jpa.claimForFanout(id, Instant.now()) == 1;
+    }
+
+    @Override
+    public List<Campaign> findStuckExpanding(Instant cutoff) {
+        return jpa.findStuckExpanding(cutoff).stream().map(this::toDomain).toList();
+    }
+
+    @Override
+    public boolean resetExpandingToQueued(Long id, Instant cutoff) {
+        return jpa.resetExpandingToQueued(id, cutoff) == 1;
+    }
+
+    @Override
+    public List<Campaign> findOrphanQueued(Instant cutoff) {
+        return jpa.findOrphanQueued(cutoff).stream().map(this::toDomain).toList();
     }
 
     @Override

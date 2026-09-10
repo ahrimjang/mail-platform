@@ -87,4 +87,18 @@ public interface CampaignRepository {
 
     /** Atomically claims the winner decision (single conditional UPDATE on ab_winner IS NULL). */
     boolean claimAbWinner(Long id, String winner);
+
+    // ── 복구 스위퍼(ARCH-1/5) — "claim 성공 → 후속 작업 중 실패"의 뒷정리 ──────────
+
+    /** 팬아웃 도중 죽어 EXPANDING 에 {@code cutoff} 이전부터 머무는 캠페인. */
+    List<Campaign> findStuckExpanding(Instant cutoff);
+
+    /**
+     * 고착 EXPANDING → QUEUED 조건부 되돌리기(같은 cutoff 조건 재확인). true 면 이 호출이
+     * 되돌린 것 — 팬아웃을 재발행할 권리를 얻었다. 팬아웃은 이미 만든 메시지 뒤부터 재개한다.
+     */
+    boolean resetExpandingToQueued(Long id, Instant cutoff);
+
+    /** 릴리스는 됐는데({@code enqueuedAt} 있음) {@code cutoff} 이전부터 QUEUED 인 캠페인. */
+    List<Campaign> findOrphanQueued(Instant cutoff);
 }

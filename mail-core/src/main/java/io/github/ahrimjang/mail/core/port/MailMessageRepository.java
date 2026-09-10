@@ -58,6 +58,21 @@ public interface MailMessageRepository {
     /** PENDING held ids (no variant) — released with the winner's content once decided. */
     List<Long> findPendingHeldIdsByCampaign(Long campaignId);
 
+    // ── 복구 스위퍼(ARCH-1/2/5) ────────────────────────────────────────────
+
+    /**
+     * 릴리스된 캠페인에서 {@code cutoff} 이전부터 PENDING/SENDING 인 메시지 id(최대 limit).
+     * 잡이 사라진 고아·stale SENDING·릴리스 실패한 홀드아웃이 걸리고, 승자 미정의 홀드아웃은
+     * 정상 대기라 제외된다. 재발행은 dispatch 의 claim 이 멱등하게 받는다.
+     */
+    List<Long> findStaleIds(java.time.Instant cutoff, int limit);
+
+    /** 재발행한 PENDING 행의 updatedAt 갱신 — 다음 스위프에서 또 잡히지 않게. @return 갱신 행 수 */
+    int touchPending(List<Long> ids, java.time.Instant now);
+
+    /** 팬아웃 재개 커서: 이미 만들어진 메시지의 최대 contactId — 없으면 null. */
+    Long maxContactIdByCampaign(Long campaignId);
+
     /**
      * Flips every PENDING message of the campaign to CANCELED (bulk update).
      * Only meaningful after {@link CampaignRepository#claimForCancel} won —
