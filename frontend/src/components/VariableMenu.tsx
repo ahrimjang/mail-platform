@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 
 /* The variables dispatch actually fills: the recipient contact's well-known
-   fields (Contact.toVariables). Ad-hoc sends only get {{email}}. */
+   fields (Contact.toVariables). 직접 입력 수신자는 {{email}} 과, 이메일 아이디로
+   대체되는 {{name}} 만 채워진다. */
 const VARIABLES = [
+  { token: "{{name}}", label: "이름 (성+이름)" },
   { token: "{{firstName}}", label: "이름" },
   { token: "{{lastName}}", label: "성" },
   { token: "{{email}}", label: "이메일 주소" },

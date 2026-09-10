@@ -162,13 +162,14 @@ function ImportModal({ lists, onClose, onImported }: {
   const [error, setError] = useState<string | null>(null);
 
   async function run() {
-    if (!listId) { setError("가져올 리스트를 선택해 주세요."); return; }
+    // 리스트는 선택 — 백엔드는 처음부터 listId 없는 가져오기를 받았는데 화면이 필수로
+    // 막아, 리스트가 아직 없는 첫 사용자가 "리스트부터 만들고 오라"는 벽에 부딪혔다.
     if (!csv.trim()) { setError("CSV 내용을 붙여넣어 주세요."); return; }
     setBusy(true);
     setError(null);
     setResult(null);
     try {
-      const res = await api(`/api/contacts/import?listId=${listId}`, {
+      const res = await api(`/api/contacts/import${listId ? `?listId=${listId}` : ""}`, {
         method: "POST",
         headers: { "Content-Type": "text/plain" },
         body: csv,
@@ -192,11 +193,11 @@ function ImportModal({ lists, onClose, onImported }: {
     <div className="op-modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="op-modal">
         <h3>CSV 가져오기</h3>
-        <p className="op-modal-sub">한 줄에 한 명씩 <b>email,firstName,lastName</b> 형식으로 붙여넣으세요. 중복·잘못된 줄은 건너뜁니다.</p>
+        <p className="op-modal-sub">한 줄에 한 명씩 <b>email,firstName,lastName</b> 형식으로 붙여넣으세요. 첫 줄이 제목 줄이어도 되고, 중복·배달 불가 주소는 건너뜁니다.</p>
         <label className="op-field">
-          <span className="op-flabel">추가할 리스트</span>
+          <span className="op-flabel">추가할 리스트 (선택)</span>
           <select className="op-input" value={listId} onChange={(e) => setListId(e.target.value)}>
-            <option value="">리스트 선택…</option>
+            <option value="">리스트 없이 수신자로만 등록</option>
             {lists.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
           </select>
         </label>

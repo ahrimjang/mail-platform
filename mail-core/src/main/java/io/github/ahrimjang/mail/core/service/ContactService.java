@@ -193,12 +193,21 @@ public class ContactService {
         // 플랜의 연락처 한도를 임포트 예산으로 — 기존 주소 갱신은 예산을 안 쓰고,
         // 신규 생성이 예산을 소진하면 그 지점에서 중단한다(지금까지 추가분은 유지).
         Long capacity = planLimits.remainingContactCapacity(workspaceId);
+        boolean firstLine = true;
         for (String line : csv.split("\\r?\\n")) {
             if (line.isBlank()) {
                 continue;
             }
             String[] parts = line.split(",", 3);
             String email = parts[0].trim();
+            // 첫 줄이 제목 줄(email,firstName,lastName)이면 조용히 건너뛴다 — 안내문이 권하는
+            // 형식 그대로 붙여넣었는데 "1건 거부"가 뜨면 사용자는 뭘 잘못했는지 모른다.
+            if (firstLine) {
+                firstLine = false;
+                if (isHeaderCell(email)) {
+                    continue;
+                }
+            }
             // 배달 불가가 확실한 주소는 발송 전에 거른다 — 바운스는 사후 복구가 안 된다
             EmailAddressValidator.Verdict verdict = EmailAddressValidator.check(email);
             if (verdict != EmailAddressValidator.Verdict.OK) {
@@ -237,6 +246,16 @@ public class ContactService {
             }
         }
         return new ImportResult(imported, skipped, rejected, List.copyOf(samples));
+    }
+
+    /** CSV 첫 칸이 주소가 아니라 열 이름인가 — '@' 없이 흔한 제목어면 제목 줄로 본다. */
+    private static boolean isHeaderCell(String cell) {
+        if (cell.contains("@")) {
+            return false;
+        }
+        String c = cell.replace("\"", "").trim().toLowerCase(java.util.Locale.ROOT);
+        return c.equals("email") || c.equals("e-mail") || c.equals("mail") || c.equals("이메일")
+                || c.equals("email_address") || c.equals("emailaddress") || c.equals("주소");
     }
 
     private static String reasonOf(EmailAddressValidator.Verdict verdict) {

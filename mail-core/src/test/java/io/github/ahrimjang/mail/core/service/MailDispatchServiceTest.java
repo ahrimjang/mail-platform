@@ -265,6 +265,50 @@ class MailDispatchServiceTest {
     }
 
     @Test
+    void dispatchOne_fillsNameVariable_fromContactAsLastPlusFirst() throws Exception {
+        // 에디터 기본 문구·플레이스홀더가 전부 {{name}} 을 권하는데 채워주는 곳이 없어
+        // "안녕하세요 님"으로 나가고 있었다. 성+이름(한국식 순서)으로 채운다.
+        long contactId = 77L;
+        MailMessage message = queuedMessage(contactId);
+        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(true);
+        when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(message));
+        when(campaigns.findById(CAMPAIGN_ID)).thenReturn(
+                Optional.of(campaign("{{name}}님께", "<p>안녕하세요 {{name}}님</p>")));
+        when(suppressions.existsByWorkspaceAndEmail(WS, RECIPIENT)).thenReturn(false);
+        when(contacts.findById(contactId)).thenReturn(
+                Optional.of(Contact.of(RECIPIENT, "길동", "홍", Map.of())));
+        when(messages.hasPendingOrSending(CAMPAIGN_ID)).thenReturn(true);
+
+        service.dispatchOne(MESSAGE_ID);
+
+        ArgumentCaptor<String> subject = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
+        verify(sender).send(eq(RECIPIENT), subject.capture(), body.capture(), anyString(), any(), any(), any());
+        assertThat(subject.getValue()).isEqualTo("홍길동님께");
+        assertThat(body.getValue()).contains("안녕하세요 홍길동님");
+    }
+
+    @Test
+    void dispatchOne_fillsNameVariable_fromEmailLocalPartForRawRecipient() throws Exception {
+        // 직접 입력 수신자는 이름이 없다 — 빈칸 대신 이메일 아이디로 대체한다
+        MailMessage message = queuedMessage(null);
+        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(true);
+        when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(message));
+        when(campaigns.findById(CAMPAIGN_ID)).thenReturn(
+                Optional.of(campaign("Hello", "<p>안녕하세요 {{name}}님</p>")));
+        when(suppressions.existsByWorkspaceAndEmail(WS, RECIPIENT)).thenReturn(false);
+        when(messages.hasPendingOrSending(CAMPAIGN_ID)).thenReturn(true);
+
+        service.dispatchOne(MESSAGE_ID);
+
+        ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
+        verify(sender).send(eq(RECIPIENT), anyString(), body.capture(), anyString(), any(), any(), any());
+        String localPart = RECIPIENT.substring(0, RECIPIENT.indexOf('@'));
+        assertThat(body.getValue()).contains("안녕하세요 " + localPart + "님");
+        assertThat(body.getValue()).doesNotContain("안녕하세요 님");
+    }
+
+    @Test
     void dispatchOne_rendersEmailVariableForRawRecipient() throws Exception {
         MailMessage message = queuedMessage(null);
         when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(true);

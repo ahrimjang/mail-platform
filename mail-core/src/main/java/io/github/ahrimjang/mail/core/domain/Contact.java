@@ -50,7 +50,25 @@ public class Contact {
         if (lastName != null) {
             vars.put("lastName", lastName);
         }
+        // {{name}} — 에디터 기본 문구·플레이스홀더가 전부 이 변수를 권하는데 채워주는 곳이
+        // 없어 "안녕하세요 님"으로 나가고 있었다. 성+이름(한국식 순서), 없으면 한쪽만,
+        // 그것도 없으면 이메일 아이디 — 어떤 경우에도 빈칸으로 보내지 않는다.
+        vars.put("name", displayName(email, firstName, lastName));
         return vars;
+    }
+
+    /** {{name}} 에 쓸 표시 이름 — 직접 입력 수신자(연락처 없음)에도 같은 규칙을 쓴다. */
+    public static String displayName(String email, String firstName, String lastName) {
+        String last = lastName == null ? "" : lastName.trim();
+        String first = firstName == null ? "" : firstName.trim();
+        if (!last.isEmpty() || !first.isEmpty()) {
+            return last + first;
+        }
+        if (email == null) {
+            return "";
+        }
+        int at = email.indexOf('@');
+        return at > 0 ? email.substring(0, at) : email;
     }
 
     public Long getId() {

@@ -142,7 +142,10 @@ public class MailDispatchService {
                 bodySrc = campaign.getAbBodyB();
             }
         }
-        Map<String, String> vars = Map.of("email", message.getRecipient());
+        // 직접 입력 수신자(연락처 없음)도 {{name}} 이 빈칸으로 나가지 않게 — 이메일 아이디로 대체
+        Map<String, String> vars = Map.of(
+                "email", message.getRecipient(),
+                "name", Contact.displayName(message.getRecipient(), null, null));
         if (message.getContactId() != null) {
             vars = contacts.findById(message.getContactId()).map(Contact::toVariables).orElse(vars);
         }

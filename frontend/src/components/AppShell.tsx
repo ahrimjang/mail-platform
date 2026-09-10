@@ -120,6 +120,7 @@ export default function AppShell() {
               <button className="op-navlink" onClick={() => setGuideOpen((o) => !o)}>가이드 ▾</button>
               {guideOpen && (
                 <div className="op-menu" style={{ minWidth: 170 }}>
+                  <button onClick={() => { setGuideOpen(false); nav("/guide"); }}>사용 가이드</button>
                   <button onClick={() => { setGuideOpen(false); nav("/pricing"); }}>요금제 안내</button>
                   <button onClick={() => { setGuideOpen(false); nav("/developers"); }}>구독 API 가이드</button>
                   <button onClick={() => { setGuideOpen(false); nav("/terms"); }}>이용약관</button>
@@ -200,6 +201,7 @@ export default function AppShell() {
             { label: "리스트", to: "/lists", active: isList },
             { label: "분석", to: "/analytics", active: isAnal },
             ...(role === "ADMIN" ? [{ label: "관리", to: "/settings", active: isAdminPage }] : []),
+            { label: "사용 가이드", to: "/guide", active: false },
             { label: "요금제 안내", to: "/pricing", active: false },
             { label: "구독 API 가이드", to: "/developers", active: false },
           ].map((l) => (

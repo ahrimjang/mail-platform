@@ -173,7 +173,8 @@ export default function Landing() {
 
       <footer style={{ borderTop: "1px solid var(--op-border)", padding: "22px 24px", textAlign: "center",
                        fontSize: 12.5, color: "var(--op-faint)" }}>
-        © 2026 Outpace · <Link to="/pricing" className="op-linkbtn" style={{ fontWeight: 600 }}>요금제</Link> ·{" "}
+        © 2026 Outpace · <Link to="/guide" className="op-linkbtn" style={{ fontWeight: 600 }}>사용 가이드</Link> ·{" "}
+        <Link to="/pricing" className="op-linkbtn" style={{ fontWeight: 600 }}>요금제</Link> ·{" "}
         <Link to="/developers" className="op-linkbtn" style={{ fontWeight: 600 }}>구독 API</Link> ·{" "}
         <Link to="/terms" className="op-linkbtn" style={{ fontWeight: 600 }}>이용약관</Link> ·{" "}
         <Link to="/privacy" className="op-linkbtn" style={{ fontWeight: 600 }}>개인정보처리방침</Link> ·{" "}

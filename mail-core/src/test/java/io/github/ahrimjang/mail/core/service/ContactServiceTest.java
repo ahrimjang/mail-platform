@@ -182,6 +182,32 @@ class ContactServiceTest {
     }
 
     @org.junit.jupiter.api.Test
+    void importCsv_skipsAHeaderLineSilently() {
+        // 안내문이 권하는 형식(email,firstName,lastName)을 제목 줄째 붙여넣는 게 보통이다 —
+        // 그 줄이 "거부 1건"으로 잡히면 사용자는 뭘 잘못했는지 모른다
+        stubSaveAssignsIds();
+        when(contacts.findByWorkspaceAndEmail(eq(WS), anyString())).thenReturn(Optional.empty());
+
+        ImportResult result = service.importCsv("Email,firstName,lastName\none@x.com,One,Won\n", null);
+
+        assertThat(result.imported()).isEqualTo(1);
+        assertThat(result.rejected()).isZero();
+        assertThat(result.samples()).isEmpty();
+    }
+
+    @org.junit.jupiter.api.Test
+    void importCsv_headerDetection_onlyAppliesToTheFirstLine() {
+        // 둘째 줄부터의 "email" 같은 값은 진짜 잘못된 주소다 — 제목 줄 처리로 삼키면 안 된다
+        stubSaveAssignsIds();
+        when(contacts.findByWorkspaceAndEmail(eq(WS), anyString())).thenReturn(Optional.empty());
+
+        ImportResult result = service.importCsv("one@x.com,One,Won\nemail,Bad,Line\n", null);
+
+        assertThat(result.imported()).isEqualTo(1);
+        assertThat(result.rejected()).isEqualTo(1);
+    }
+
+    @org.junit.jupiter.api.Test
     void importCsv_rejectsTypoDomainsWithSuggestion() {
         stubSaveAssignsIds();
         when(contacts.findByWorkspaceAndEmail(eq(WS), anyString())).thenReturn(Optional.empty());
