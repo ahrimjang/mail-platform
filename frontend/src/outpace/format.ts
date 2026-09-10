@@ -21,6 +21,30 @@ export function statusLabel(c: Pick<CampaignView, "status" | "scheduledAt">): st
   }
 }
 
+/* 억제 사유의 한국어 라벨·배지 색. 사유 문자열은 서버가 만든다 — 웹훅(hard_bounce ·
+   complaint), 발송 실패(bounce), 수신거부 링크(unsubscribe), 운영자 수동(manual).
+   한 곳에 두어 분석 화면과 억제 목록의 표기가 어긋나지 않게 한다. */
+export function suppressionReasonLabel(reason: string | null | undefined): string {
+  switch (reason) {
+    case "hard_bounce": return "하드 바운스";
+    case "complaint": return "스팸 신고";
+    case "bounce": return "발송 실패";
+    case "unsubscribe": return "수신거부";
+    case "manual": return "수동";
+    default: return reason || "기타";
+  }
+}
+
+export function suppressionReasonBadge(reason: string | null | undefined): string {
+  switch (reason) {
+    case "hard_bounce":
+    case "bounce": return "amber";
+    case "complaint": return "red";
+    case "unsubscribe": return "gray";
+    default: return "blue";
+  }
+}
+
 /* Maps a campaign status to the `op-badge` modifier class. */
 export function badgeClass(status: CampaignStatus): string {
   switch (status) {

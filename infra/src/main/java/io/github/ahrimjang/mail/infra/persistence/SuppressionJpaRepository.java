@@ -25,4 +25,21 @@ public interface SuppressionJpaRepository extends JpaRepository<SuppressionEntit
     @Query("select s.reason, count(s) from SuppressionEntity s where s.workspaceId = ?1 and s.createdAt >= ?2 "
             + "group by s.reason order by count(s) desc")
     java.util.List<Object[]> countByReasonSince(Long workspaceId, java.time.Instant since);
+
+    /** 억제 목록 페이지 — 연락처 검색과 같은 빈 문자열 센티널(q)·null 전체(reason) 규약. */
+    @Query("select s from SuppressionEntity s where s.workspaceId = :ws "
+            + "and (:q = '' or lower(s.email) like concat('%', lower(:q), '%')) "
+            + "and (:reason is null or s.reason = :reason) "
+            + "order by s.createdAt desc, s.id desc")
+    java.util.List<SuppressionEntity> search(@org.springframework.data.repository.query.Param("ws") Long workspaceId,
+                                             @org.springframework.data.repository.query.Param("q") String q,
+                                             @org.springframework.data.repository.query.Param("reason") String reason,
+                                             org.springframework.data.domain.Pageable pageable);
+
+    @Query("select count(s) from SuppressionEntity s where s.workspaceId = :ws "
+            + "and (:q = '' or lower(s.email) like concat('%', lower(:q), '%')) "
+            + "and (:reason is null or s.reason = :reason)")
+    long countSearch(@org.springframework.data.repository.query.Param("ws") Long workspaceId,
+                     @org.springframework.data.repository.query.Param("q") String q,
+                     @org.springframework.data.repository.query.Param("reason") String reason);
 }

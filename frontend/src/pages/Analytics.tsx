@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import ActivityChart from "../components/ActivityChart";
 import { api } from "../api";
 import type { AudienceHealthView, CampaignView, DashboardView, LinkClicksView, OpenHeatmapCell } from "../types";
-import { badgeClass, fmt, pctOf, statusLabel } from "../outpace/format";
+import { badgeClass, fmt, pctOf, statusLabel, suppressionReasonBadge, suppressionReasonLabel } from "../outpace/format";
 
 type Period = 7 | 30 | 90;
 type SortKey = "openRate" | "clickRate" | "sent" | "createdAt";
@@ -232,8 +232,9 @@ export default function Analytics() {
               {health.suppressionReasons.length === 0 && <p className="op-chart-empty">억제된 주소가 없습니다.</p>}
               {health.suppressionReasons.map((r) => (
                 <div key={r.reason} className="row">
-                  <span className={`op-minibadge ${r.reason === "bounce" ? "amber" : r.reason === "unsubscribe" ? "gray" : "blue"}`}>
-                    {r.reason === "bounce" ? "바운스" : r.reason === "unsubscribe" ? "수신거부" : "수동"}
+                  {/* 웹훅이 만드는 hard_bounce·complaint 가 전부 "수동"으로 찍히던 자리 — 공용 라벨로 */}
+                  <span className={`op-minibadge ${suppressionReasonBadge(r.reason)}`}>
+                    {suppressionReasonLabel(r.reason)}
                   </span>
                   <b>{fmt(r.total)}</b>
                   <span className="new">{r.recent > 0 ? `+${fmt(r.recent)} 신규` : ""}</span>

@@ -14,10 +14,12 @@ import type {
   ImportResult,
   MessageStatus,
   SubscriptionView,
+  SuppressionPageView,
   UpdateContactListsRequest,
   UpdateContactRequest,
   UpdateSubscriptionRequest,
 } from "../types";
+import { suppressionReasonBadge, suppressionReasonLabel } from "../outpace/format";
 
 /* Column template shared by the header and body rows. */
 const COLS = "minmax(0, 2.2fr) minmax(0, 1.7fr) 160px 110px 110px";
@@ -545,9 +547,151 @@ function ContactDrawer({ contact, lists, sub, memberIds, optOutIds, onClose, onC
 
 /* ---------------------------------- page ----------------------------------- */
 
+/* ------------------------------ 억제 목록 탭 ------------------------------- */
+
+/* 이 워크스페이스가 더 이상 보내면 안 되는 주소 전체. 위 연락처 표의 "수신거부"
+   필터는 연락처와 조인해 보여주므로, 직접 입력으로 보낸 주소가 바운스되면 어디에서도
+   보이지 않았다 — 억제 테이블을 그대로 보여주는 유일한 화면이다. */
+function SuppressionsTab() {
+  const PAGE_SIZE = 25;
+  const [page, setPage] = useState<SuppressionPageView | null>(null);
+  const [offset, setOffset] = useState(0);
+  const [query, setQuery] = useState("");
+  const [reason, setReason] = useState<string>("all");
+  const [busyEmail, setBusyEmail] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchPage = useCallback(async (nextOffset: number) => {
+    const params = new URLSearchParams({ q: query.trim(), offset: String(nextOffset), limit: String(PAGE_SIZE) });
+    if (reason !== "all") params.set("reason", reason);
+    try {
+      const res = await api(`/api/suppressions?${params}`);
+      if (res.ok) {
+        setPage(await res.json());
+        setOffset(nextOffset);
+      }
+    } catch { /* transient */ }
+  }, [query, reason]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => { fetchPage(0); }, query ? 300 : 0);
+    return () => clearTimeout(timer);
+  }, [fetchPage, query]);
+
+  /* 해제는 되돌릴 수 없는 결정이 아니라(다시 억제 가능) 확인은 한 번만 — 다만
+     바운스로 잡힌 주소를 풀면 다음 발송에서 또 반송돼 평판을 깎는다는 점은 말해준다. */
+  async function unsuppress(email: string, r: string) {
+    const bounced = r === "hard_bounce" || r === "bounce" || r === "complaint";
+    const msg = bounced
+      ? `${email} 의 억제를 해제할까요?\n\n이 주소는 ${suppressionReasonLabel(r)}로 차단됐어요. 해제하면 다음 발송에서 다시 반송·신고될 수 있고, 그 비율은 발송 평판에 반영됩니다. 주소가 고쳐졌거나 오탐이 확실할 때만 해제하세요.`
+      : `${email} 의 억제를 해제할까요? 다음 캠페인부터 다시 발송됩니다.`;
+    if (!window.confirm(msg)) return;
+    setBusyEmail(email);
+    setError(null);
+    try {
+      const res = await api(`/api/suppressions?email=${encodeURIComponent(email)}`, { method: "DELETE" });
+      if (res.ok) fetchPage(offset);
+      else setError((await res.json().catch(() => ({}))).error ?? "해제에 실패했습니다.");
+    } catch {
+      setError("해제에 실패했습니다.");
+    } finally {
+      setBusyEmail(null);
+    }
+  }
+
+  const items = page?.items ?? [];
+  const total = page?.total ?? 0;
+  const pageEnd = Math.min(offset + items.length, total);
+  const filtering = query.trim() !== "" || reason !== "all";
+  const SUP_COLS = "minmax(0, 2.4fr) 130px 160px 90px";
+
+  return (
+    <>
+      {/* 사유별 요약 — 명단 건강도를 한눈에. 클릭하면 그 사유로 거른다 */}
+      {page && page.byReason.length > 0 && (
+        <div className="op-toolbar" style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          {page.byReason.map((r) => (
+            <button key={r.reason} className="op-linkbtn" style={{ padding: 0 }}
+                    onClick={() => setReason(reason === r.reason ? "all" : r.reason)}>
+              <span className={`op-minibadge ${suppressionReasonBadge(r.reason)}`}
+                    style={reason === r.reason ? { outline: "2px solid var(--op-primary)" } : undefined}>
+                {suppressionReasonLabel(r.reason)} {r.count.toLocaleString()}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="op-toolbar" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <input className="op-input" style={{ maxWidth: 260 }} placeholder="이메일 검색"
+               value={query} onChange={(e) => setQuery(e.target.value)} />
+        <select className="op-input" style={{ maxWidth: 170 }} value={reason} onChange={(e) => setReason(e.target.value)}>
+          <option value="all">모든 사유</option>
+          <option value="hard_bounce">하드 바운스</option>
+          <option value="complaint">스팸 신고</option>
+          <option value="bounce">발송 실패</option>
+          <option value="unsubscribe">수신거부</option>
+          <option value="manual">수동</option>
+        </select>
+        {filtering && (
+          <span className="faint" style={{ fontSize: 13 }}>
+            {total.toLocaleString()}건 매치 · <button className="op-linkbtn" style={{ fontSize: 13 }}
+              onClick={() => { setQuery(""); setReason("all"); }}>필터 초기화</button>
+          </span>
+        )}
+      </div>
+      {error && <p className="error" style={{ fontSize: 13 }}>{error}</p>}
+
+      <div className="op-card">
+        <div className="op-thead" style={{ gridTemplateColumns: SUP_COLS }}>
+          <span>이메일</span>
+          <span>사유</span>
+          <span>등록일</span>
+          <span />
+        </div>
+        {items.map((s) => (
+          <div key={s.email} className="op-trow" style={{ gridTemplateColumns: SUP_COLS }}>
+            <span className="strong" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.email}</span>
+            <span><span className={`op-minibadge ${suppressionReasonBadge(s.reason)}`}>{suppressionReasonLabel(s.reason)}</span></span>
+            <span className="faint">{new Date(s.createdAt).toLocaleString("ko-KR", { dateStyle: "short", timeStyle: "short" })}</span>
+            <span>
+              <button className="op-btn op-btn-sm op-btn-ghost" style={{ height: 30, padding: "0 10px", fontSize: 12.5 }}
+                      disabled={busyEmail === s.email} onClick={() => unsuppress(s.email, s.reason)}>
+                {busyEmail === s.email ? "해제 중…" : "해제"}
+              </button>
+            </span>
+          </div>
+        ))}
+        {page && total === 0 && (
+          <div className="op-list-row">
+            <span className="meta">
+              {filtering ? "조건에 맞는 억제 주소가 없습니다." : "억제된 주소가 없어요. 바운스·스팸 신고·수신거부가 생기면 여기에 쌓입니다."}
+            </span>
+          </div>
+        )}
+        {total > 0 && (
+          <div className="op-list-row" style={{ justifyContent: "space-between" }}>
+            <span className="meta">{(offset + 1).toLocaleString()}–{pageEnd.toLocaleString()} / {total.toLocaleString()}건</span>
+            <span style={{ display: "flex", gap: 8 }}>
+              <button className="op-btn op-btn-sm op-btn-ghost" style={{ height: 34, padding: "0 14px", fontSize: 13 }}
+                disabled={offset === 0} onClick={() => fetchPage(Math.max(0, offset - PAGE_SIZE))}>이전</button>
+              <button className="op-btn op-btn-sm op-btn-ghost" style={{ height: 34, padding: "0 14px", fontSize: 13 }}
+                disabled={pageEnd >= total} onClick={() => fetchPage(offset + PAGE_SIZE)}>다음</button>
+            </span>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+/* ---------------------------------- page ----------------------------------- */
+
 export default function Recipients() {
   const nav = useNavigate();
   const PAGE_SIZE = 25;
+  // 탭: 연락처(기본) / 억제 목록 — ?tab=suppressions 로 직접 진입 가능
+  const [tab, setTab] = useState<"contacts" | "suppressions">(
+    () => new URLSearchParams(window.location.search).get("tab") === "suppressions" ? "suppressions" : "contacts");
   const [rows, setRows] = useState<ContactRowView[]>([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
@@ -621,14 +765,24 @@ export default function Recipients() {
           <h2>수신자</h2>
           <p>{loaded ? `총 ${total.toLocaleString()}명의 수신자를 관리하고 있어요.` : "수신자를 불러오는 중이에요."}</p>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button className="op-btn op-btn-sm op-btn-ghost" onClick={() => setImporting(true)}>CSV 가져오기</button>
-          <button className="op-btn op-btn-sm" onClick={() => setAdding(true)}>
-            <span className="op-btn-plus">+</span>수신자 추가
-          </button>
-        </div>
+        {tab === "contacts" && (
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="op-btn op-btn-sm op-btn-ghost" onClick={() => setImporting(true)}>CSV 가져오기</button>
+            <button className="op-btn op-btn-sm" onClick={() => setAdding(true)}>
+              <span className="op-btn-plus">+</span>수신자 추가
+            </button>
+          </div>
+        )}
       </div>
 
+      <div className="op-tabs">
+        <button className={`op-tab${tab === "contacts" ? " active" : ""}`} onClick={() => setTab("contacts")}>수신자</button>
+        <button className={`op-tab${tab === "suppressions" ? " active" : ""}`} onClick={() => setTab("suppressions")}>억제 목록</button>
+      </div>
+
+      {tab === "suppressions" && <SuppressionsTab />}
+
+      {tab === "contacts" && (<>
       <div className="op-toolbar" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
         <input
           className="op-input"
@@ -725,6 +879,7 @@ export default function Recipients() {
           </div>
         )}
       </div>
+      </>)}
 
       {adding && <AddContactModal onClose={() => setAdding(false)} onSaved={refresh} />}
       {importing && <ImportModal lists={lists} onClose={() => setImporting(false)} onImported={refresh} />}

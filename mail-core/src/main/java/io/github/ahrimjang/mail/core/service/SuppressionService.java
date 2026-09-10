@@ -153,6 +153,37 @@ public class SuppressionService {
         return suppressions.existsByWorkspaceAndEmail(workspaceId, email);
     }
 
+    /**
+     * 억제 목록 한 페이지(콘솔). 연락처 여부와 무관하게 억제 테이블을 그대로 보여준다 —
+     * 직접 입력으로 보낸 주소가 바운스되면 연락처 화면에는 나타나지 않기 때문이다.
+     * 사유별 집계는 필터와 무관하게 전체를 준다(명단 건강도 요약용).
+     */
+    public io.github.ahrimjang.mail.common.SuppressionPageView page(String q, String reason, int offset, int limit) {
+        Long ws = ctx.currentWorkspaceId();
+        int size = Math.min(Math.max(limit, 1), 200);
+        var items = suppressions.page(ws, q, reason, Math.max(offset, 0), size).stream()
+                .map(s -> new io.github.ahrimjang.mail.common.SuppressionPageView.Item(
+                        s.getEmail(), s.getReason(), s.getCreatedAt()))
+                .toList();
+        var byReason = suppressions.countByReason(ws).stream()
+                .map(r -> new io.github.ahrimjang.mail.common.SuppressionPageView.ReasonCount(r.reason(), r.count()))
+                .toList();
+        return new io.github.ahrimjang.mail.common.SuppressionPageView(
+                items, suppressions.countSearch(ws, q, reason), byReason);
+    }
+
+    /**
+     * 억제 해제(콘솔). 잘못 억제된 주소를 되살리는 운영 조치 — 연락처가 아닌 주소도
+     * 대상이다. 없는 주소는 조용히 무시한다(멱등). 바운스로 억제된 주소를 풀면 다음
+     * 발송에서 다시 바운스할 수 있음을 화면이 경고한다.
+     */
+    public void unsuppress(String email) {
+        if (email == null || !email.contains("@")) {
+            throw new IllegalArgumentException("이메일 주소 형식이 아닙니다: " + email);
+        }
+        suppressions.deleteByWorkspaceAndEmail(ctx.currentWorkspaceId(), email.trim());
+    }
+
     /** Subscription state of the given contact, derived from the suppression list. */
     public SubscriptionView subscriptionOf(Long contactId) {
         Contact contact = requireContact(contactId);

@@ -33,4 +33,14 @@ public interface SuppressionRepository {
     /** One reason's suppression count. */
     record ReasonCount(String reason, long count) {
     }
+
+    /**
+     * 억제 목록 한 페이지 — 최근 등록순. {@code q} 는 이메일 부분 일치(빈 문자열 = 전체),
+     * {@code reason} 은 정확 일치(null = 전체). 콘솔이 "무엇이, 왜, 언제" 억제됐는지
+     * 보는 유일한 창구다.
+     */
+    java.util.List<Suppression> page(Long workspaceId, String q, String reason, int offset, int limit);
+
+    /** {@link #page} 와 같은 조건의 전체 건수. */
+    long countSearch(Long workspaceId, String q, String reason);
 }

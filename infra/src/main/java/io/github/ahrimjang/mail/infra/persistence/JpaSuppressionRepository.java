@@ -74,6 +74,25 @@ public class JpaSuppressionRepository implements SuppressionRepository {
     }
 
     @Override
+    public java.util.List<Suppression> page(Long workspaceId, String q, String reason, int offset, int limit) {
+        // 오프셋 페이징 — 억제 목록은 연락처보다 훨씬 작아(수천 건 규모) 키셋이 필요 없다
+        var pageable = org.springframework.data.domain.PageRequest.of(
+                Math.max(0, offset / Math.max(1, limit)), Math.max(1, limit));
+        return jpa.search(workspaceId, q == null ? "" : q, blankToNull(reason), pageable).stream()
+                .map(this::toDomain)
+                .toList();
+    }
+
+    @Override
+    public long countSearch(Long workspaceId, String q, String reason) {
+        return jpa.countSearch(workspaceId, q == null ? "" : q, blankToNull(reason));
+    }
+
+    private static String blankToNull(String s) {
+        return s == null || s.isBlank() ? null : s;
+    }
+
+    @Override
     public java.util.List<String> findSuppressedEmails(Long workspaceId, java.util.List<String> emails) {
         if (emails.isEmpty()) {
             return java.util.List.of();

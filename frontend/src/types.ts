@@ -213,6 +213,13 @@ export interface SubscriptionView {
   since: string | null;
 }
 
+/** 억제 목록 한 페이지 (GET /api/suppressions) — 연락처 여부와 무관한 전체 차단 주소. */
+export interface SuppressionPageView {
+  items: { email: string; reason: string; createdAt: string }[];
+  total: number;
+  byReason: { reason: string; count: number }[]; // 필터 무관 전체 집계
+}
+
 export interface UpdateContactListsRequest {
   listIds: number[];
 }
