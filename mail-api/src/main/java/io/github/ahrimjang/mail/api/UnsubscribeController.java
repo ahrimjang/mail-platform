@@ -53,6 +53,29 @@ public class UnsubscribeController {
         return page("수신거부", body.toString());
     }
 
+    /**
+     * 원클릭 수신거부(RFC 8058). 메일 앱의 "수신거부" 버튼이 이 주소로 POST 한다 —
+     * {@code List-Unsubscribe} 헤더가 가리키는 곳이고, 사람이 여는 GET 선택 화면과
+     * 같은 URL 이다(메서드로 갈린다).
+     *
+     * <p>여기서는 <b>전체 수신거부</b>로 처리한다. 리스트 단위 해지도 가능하지만,
+     * 원클릭은 "이 발신자 메일을 그만 받겠다"는 의사표시이고 되물을 화면이 없다.
+     * 리스트 하나만 끊고 다른 메일이 계속 가면 다음번엔 스팸 신고를 누른다 —
+     * 헤더를 붙인 목적(컴플레인율 억제) 자체를 깨뜨린다. 세분화된 선택은 본문
+     * 링크(GET)가 계속 제공한다.
+     *
+     * <p>메일 앱은 응답 본문을 사람에게 보여주지 않는다. 200 만 돌려주면 된다.
+     */
+    @PostMapping("/api/unsubscribe/{token}")
+    public org.springframework.http.ResponseEntity<Void> oneClick(@PathVariable String token) {
+        if (!TOKEN.matcher(token).matches()) {
+            return org.springframework.http.ResponseEntity.badRequest().build();
+        }
+        // 이미 처리된 토큰이어도 200 — 재시도에 실패로 답하면 앱이 계속 두드린다(멱등)
+        suppressions.suppressByUnsubToken(token);
+        return org.springframework.http.ResponseEntity.ok().build();
+    }
+
     /** Leave only the campaign's list; the global suppression list is untouched. */
     @PostMapping(value = "/api/unsubscribe/{token}/list", produces = MediaType.TEXT_HTML_VALUE)
     public String unsubscribeList(@PathVariable String token) {

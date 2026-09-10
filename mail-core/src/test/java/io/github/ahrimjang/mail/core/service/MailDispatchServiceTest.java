@@ -106,7 +106,7 @@ class MailDispatchServiceTest {
         service.dispatchOne(MESSAGE_ID);
 
         verify(messages, never()).save(any());
-        verify(sender, never()).send(anyString(), anyString(), anyString(), anyString(), any(), any());
+        verify(sender, never()).send(anyString(), anyString(), anyString(), anyString(), any(), any(), any());
     }
 
     @Test
@@ -152,7 +152,7 @@ class MailDispatchServiceTest {
         ArgumentCaptor<MailMessage> saved = ArgumentCaptor.forClass(MailMessage.class);
         verify(messages).save(saved.capture());
         assertThat(saved.getValue().getStatus()).isEqualTo(MessageStatus.FAILED);
-        verify(sender, never()).send(anyString(), anyString(), anyString(), anyString(), any(), any());
+        verify(sender, never()).send(anyString(), anyString(), anyString(), anyString(), any(), any(), any());
     }
 
     @Test
@@ -169,7 +169,7 @@ class MailDispatchServiceTest {
         ArgumentCaptor<MailMessage> saved = ArgumentCaptor.forClass(MailMessage.class);
         verify(messages).save(saved.capture());
         assertThat(saved.getValue().getStatus()).isEqualTo(MessageStatus.SUPPRESSED);
-        verify(sender, never()).send(anyString(), anyString(), anyString(), anyString(), any(), any());
+        verify(sender, never()).send(anyString(), anyString(), anyString(), anyString(), any(), any(), any());
     }
 
     @Test
@@ -187,7 +187,7 @@ class MailDispatchServiceTest {
         ArgumentCaptor<String> subject = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<String> messageId = ArgumentCaptor.forClass(String.class);
-        verify(sender).send(recipient.capture(), subject.capture(), body.capture(), messageId.capture(), any(), any());
+        verify(sender).send(recipient.capture(), subject.capture(), body.capture(), messageId.capture(), any(), any(), any());
         assertThat(recipient.getValue()).isEqualTo(RECIPIENT);
         assertThat(subject.getValue()).isEqualTo("Hello");
         assertThat(body.getValue()).contains("<p>Body</p>");
@@ -213,7 +213,33 @@ class MailDispatchServiceTest {
         service.dispatchOne(MESSAGE_ID);
 
         verify(sender).send(eq(RECIPIENT), anyString(), anyString(), anyString(),
-                eq("Acme 팀"), eq("hello@acme.io"));
+                eq("Acme 팀"), eq("hello@acme.io"), any());
+    }
+
+    @Test
+    void dispatchOne_passesOneClickUnsubscribeUrlAndReplyTo() throws Exception {
+        // List-Unsubscribe 헤더가 없으면 수신자는 "수신거부" 대신 "스팸 신고"를 누르고,
+        // 그 비율은 SES 계정 전체의 평판에 꽂힌다. 헤더가 실제로 실려 나가는지 고정한다.
+        MailMessage message = queuedMessage(null);
+        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(true);
+        when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(message));
+        Campaign withReplyTo = campaign("Hello", "<p>Body</p>");
+        withReplyTo.setReplyTo("team@acme.io");
+        when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(withReplyTo));
+        when(suppressions.existsByWorkspaceAndEmail(WS, RECIPIENT)).thenReturn(false);
+        when(messages.hasPendingOrSending(CAMPAIGN_ID)).thenReturn(true);
+
+        service.dispatchOne(MESSAGE_ID);
+
+        ArgumentCaptor<MailSender.Options> options = ArgumentCaptor.forClass(MailSender.Options.class);
+        ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
+        verify(sender).send(eq(RECIPIENT), anyString(), body.capture(), anyString(),
+                any(), any(), options.capture());
+        assertThat(options.getValue().replyTo()).isEqualTo("team@acme.io");
+        // 헤더와 본문 링크가 같은 곳을 가리켜야 한다 — 다르면 한쪽만 동작한다
+        assertThat(options.getValue().listUnsubscribeUrl())
+                .endsWith("/api/unsubscribe/" + message.getUnsubToken());
+        assertThat(body.getValue()).contains(options.getValue().listUnsubscribeUrl());
     }
 
     @Test
@@ -233,7 +259,7 @@ class MailDispatchServiceTest {
 
         ArgumentCaptor<String> subject = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
-        verify(sender).send(eq(RECIPIENT), subject.capture(), body.capture(), anyString(), any(), any());
+        verify(sender).send(eq(RECIPIENT), subject.capture(), body.capture(), anyString(), any(), any(), any());
         assertThat(subject.getValue()).isEqualTo("Hi Ahrim");
         assertThat(body.getValue()).contains("<p>Dear Ahrim</p>");
     }
@@ -251,7 +277,7 @@ class MailDispatchServiceTest {
         service.dispatchOne(MESSAGE_ID);
 
         ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
-        verify(sender).send(eq(RECIPIENT), eq("Welcome"), body.capture(), anyString(), any(), any());
+        verify(sender).send(eq(RECIPIENT), eq("Welcome"), body.capture(), anyString(), any(), any(), any());
         assertThat(body.getValue()).contains("<p>Sent to " + RECIPIENT + "</p>");
         // Raw recipients have no contact link, so the contact port must not be hit.
         verify(contacts, never()).findById(anyLong());
@@ -270,7 +296,7 @@ class MailDispatchServiceTest {
         service.dispatchOne(MESSAGE_ID);
 
         ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
-        verify(sender).send(eq(RECIPIENT), anyString(), body.capture(), anyString(), any(), any());
+        verify(sender).send(eq(RECIPIENT), anyString(), body.capture(), anyString(), any(), any(), any());
         String html = body.getValue();
         // Original link is rewritten through the click-tracking redirect.
         assertThat(html).doesNotContain("href=\"https://example.com/deal\"");
@@ -297,7 +323,7 @@ class MailDispatchServiceTest {
 
         ArgumentCaptor<String> subject = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
-        verify(sender).send(eq(RECIPIENT), subject.capture(), body.capture(), anyString(), any(), any());
+        verify(sender).send(eq(RECIPIENT), subject.capture(), body.capture(), anyString(), any(), any(), any());
         assertThat(subject.getValue()).isEqualTo("Hello B");
         assertThat(body.getValue()).contains("<p>Body B</p>");
         assertThat(body.getValue()).doesNotContain("<p>Body A</p>");
@@ -320,7 +346,7 @@ class MailDispatchServiceTest {
 
         ArgumentCaptor<String> subject = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
-        verify(sender).send(eq(RECIPIENT), subject.capture(), body.capture(), anyString(), any(), any());
+        verify(sender).send(eq(RECIPIENT), subject.capture(), body.capture(), anyString(), any(), any(), any());
         assertThat(subject.getValue()).isEqualTo("Hello B");
         assertThat(body.getValue()).contains("<p>Shared body</p>");
     }
@@ -343,7 +369,7 @@ class MailDispatchServiceTest {
 
         ArgumentCaptor<String> subject = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
-        verify(sender).send(eq(RECIPIENT), subject.capture(), body.capture(), anyString(), any(), any());
+        verify(sender).send(eq(RECIPIENT), subject.capture(), body.capture(), anyString(), any(), any(), any());
         assertThat(subject.getValue()).isEqualTo("Hello A");
         assertThat(body.getValue()).contains("<p>Body A</p>");
         assertThat(body.getValue()).doesNotContain("<p>Body B</p>");
@@ -370,7 +396,7 @@ class MailDispatchServiceTest {
 
         ArgumentCaptor<String> subject = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
-        verify(sender).send(eq(RECIPIENT), subject.capture(), body.capture(), anyString(), any(), any());
+        verify(sender).send(eq(RECIPIENT), subject.capture(), body.capture(), anyString(), any(), any(), any());
         assertThat(subject.getValue()).isEqualTo("Hello B");
         assertThat(body.getValue()).contains("<p>Body B</p>");
         assertThat(body.getValue()).doesNotContain("<p>Body A</p>");
@@ -393,7 +419,7 @@ class MailDispatchServiceTest {
 
         ArgumentCaptor<String> subject = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
-        verify(sender).send(eq(RECIPIENT), subject.capture(), body.capture(), anyString(), any(), any());
+        verify(sender).send(eq(RECIPIENT), subject.capture(), body.capture(), anyString(), any(), any(), any());
         assertThat(subject.getValue()).isEqualTo("Hello A");
         assertThat(body.getValue()).contains("<p>Body A</p>");
         assertThat(body.getValue()).doesNotContain("<p>Body B</p>");
@@ -408,7 +434,7 @@ class MailDispatchServiceTest {
         when(suppressions.existsByWorkspaceAndEmail(WS, RECIPIENT)).thenReturn(false);
         when(messages.hasPendingOrSending(CAMPAIGN_ID)).thenReturn(true);
         doThrow(new MailSender.MailSendException("mailbox unavailable"))
-                .when(sender).send(anyString(), anyString(), anyString(), anyString(), any(), any());
+                .when(sender).send(anyString(), anyString(), anyString(), anyString(), any(), any(), any());
 
         service.dispatchOne(MESSAGE_ID);
 

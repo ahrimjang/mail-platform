@@ -151,14 +151,12 @@ public class MailDispatchService {
         String trackedBody = trackingRewriter.rewriteLinks(bodySrc, message.getTrackingToken(), baseUrl);
         String html = trackedBody + unsubscribeFooter(message.getUnsubToken())
                 + trackingRewriter.openPixel(message.getTrackingToken(), baseUrl);
+        // 본문 링크와 같은 주소를 헤더로도 내보낸다 — 메일 앱의 수신거부 버튼이 이걸 쓴다
+        var options = new MailSender.Options(
+                campaign.getReplyTo(), unsubscribeUrl(message.getUnsubToken()));
         try {
-            if (campaign.getReplyTo() != null) {
-                sender.send(message.getRecipient(), subject, html, String.valueOf(message.getId()),
-                        campaign.getSenderName(), campaign.getSenderEmail(), campaign.getReplyTo());
-            } else {
-                sender.send(message.getRecipient(), subject, html, String.valueOf(message.getId()),
-                        campaign.getSenderName(), campaign.getSenderEmail());
-            }
+            sender.send(message.getRecipient(), subject, html, String.valueOf(message.getId()),
+                    campaign.getSenderName(), campaign.getSenderEmail(), options);
             message.markSent();
         } catch (Exception e) {
             // ERROR + throwable so the failure is observable: the stack trace ships to
@@ -172,9 +170,14 @@ public class MailDispatchService {
         completeIfDrained(campaign.getId());
     }
 
+    /** 수신거부 진입 주소 — 본문 링크와 List-Unsubscribe 헤더가 같은 곳을 가리킨다. */
+    private String unsubscribeUrl(String token) {
+        return baseUrl + "/api/unsubscribe/" + token;
+    }
+
     private String unsubscribeFooter(String token) {
         return "<hr><p style=\"font-size:12px;color:#888\">더 이상 받지 않으려면 "
-                + "<a href=\"" + baseUrl + "/api/unsubscribe/" + token + "\">수신거부</a></p>";
+                + "<a href=\"" + unsubscribeUrl(token) + "\">수신거부</a></p>";
     }
 
     private void markSending(Campaign campaign) {
