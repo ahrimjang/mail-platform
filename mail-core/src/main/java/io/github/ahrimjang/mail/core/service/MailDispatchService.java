@@ -189,7 +189,12 @@ public class MailDispatchService {
         campaigns.markSendingIfQueued(campaign.getId());
     }
 
-    private void completeIfDrained(Long campaignId) {
+    /**
+     * 캠페인에 남은 PENDING/SENDING 이 없으면 완료로 전이한다. 발송 경로뿐 아니라 DLQ 처리
+     * (재시도 소진 → FAILED 확정)도 이걸 불러야 한다 — 마지막 메시지가 DLQ 로 빠진
+     * 캠페인은 여기서 마무리해 주지 않으면 영원히 "발송 중"에 머문다.
+     */
+    public void completeIfDrained(Long campaignId) {
         // Cheap EXISTS instead of a full per-status count on every send: a campaign
         // with any PENDING/SENDING left is still draining. completeIfSending only
         // fires from SENDING, so a campaign mid-EXPANDING is never completed early.

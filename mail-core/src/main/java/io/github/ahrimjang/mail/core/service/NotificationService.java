@@ -25,6 +25,8 @@ public class NotificationService {
 
     private static final Logger log = LoggerFactory.getLogger(NotificationService.class);
     static final String TYPE_CAMPAIGN_COMPLETED = "CAMPAIGN_COMPLETED";
+    static final String TYPE_CAMPAIGN_SEND_FAILED = "CAMPAIGN_SEND_FAILED";
+    static final String TYPE_CAMPAIGN_FANOUT_FAILED = "CAMPAIGN_FANOUT_FAILED";
 
     private final NotificationRepository notifications;
     private final WorkspaceContext ctx;
@@ -46,6 +48,37 @@ public class NotificationService {
         } catch (Exception e) {
             log.error("발송 완료 알림 발행 실패: campaign={}", campaign.getId(), e);
         }
+    }
+
+    /**
+     * 워커 경로: 발송 잡이 재시도를 소진해 DLQ 로 빠졌다(메시지는 FAILED 로 확정됨).
+     * 중복 억제는 호출자(DeadLetterService)가 캠페인 단위로 한다 — 포이즌 메시지
+     * 1,000건이 알림 1,000건이 되면 안 된다.
+     */
+    public void campaignSendFailed(Campaign campaign) {
+        publish(campaign, TYPE_CAMPAIGN_SEND_FAILED,
+                "'" + nameOf(campaign) + "' 캠페인에서 처리 실패로 중단된 메일이 있어요. 상세 화면에서 실패 수신자를 확인하세요.");
+    }
+
+    /** 워커 경로: 리스트 캠페인의 수신자 확장(팬아웃)이 반복 실패했다 — 발송이 시작되지 못했다. */
+    public void campaignFanoutFailed(Campaign campaign) {
+        publish(campaign, TYPE_CAMPAIGN_FANOUT_FAILED,
+                "'" + nameOf(campaign) + "' 캠페인의 수신자 확장이 반복 실패해 발송이 시작되지 않았어요. 지원에 문의해주세요.");
+    }
+
+    private void publish(Campaign campaign, String type, String title) {
+        if (campaign.getWorkspaceId() == null) {
+            return;
+        }
+        try {
+            notifications.save(Notification.of(campaign.getWorkspaceId(), type, title, campaign.getId()));
+        } catch (Exception e) {
+            log.error("알림 발행 실패: type={} campaign={}", type, campaign.getId(), e);
+        }
+    }
+
+    private static String nameOf(Campaign campaign) {
+        return campaign.getName() != null ? campaign.getName() : campaign.getSubject();
     }
 
     /** 콘솔: 벨 아이콘 피드 — 안 읽은 수 + 최근 20건. */
