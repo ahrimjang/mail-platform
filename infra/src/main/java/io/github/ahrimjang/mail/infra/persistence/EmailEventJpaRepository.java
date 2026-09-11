@@ -76,11 +76,14 @@ public interface EmailEventJpaRepository extends JpaRepository<EmailEventEntity,
      * message rows (events carry the message, not the contact).
      * Columns: contactId(long), type(EventType), cnt(long).
      */
-    @Query("select m.contactId, e.type, count(distinct e.messageId) from EmailEventEntity e, MailMessageEntity m "
-            + "where e.messageId = m.id and m.contactId is not null "
+    @Query("select m.contactId, e.type, count(distinct e.messageId) "
+            + "from EmailEventEntity e, MailMessageEntity m, CampaignEntity c "
+            + "where e.messageId = m.id and c.id = m.campaignId and c.workspaceId = :ws "
+            + "and m.contactId is not null and e.occurredAt >= :since "
             + "and e.type in (io.github.ahrimjang.mail.common.EventType.OPEN, io.github.ahrimjang.mail.common.EventType.CLICK) "
             + "group by m.contactId, e.type")
-    java.util.List<Object[]> countEngagementByContact();
+    java.util.List<Object[]> countEngagementByContact(@org.springframework.data.repository.query.Param("ws") Long workspaceId,
+                                                      @org.springframework.data.repository.query.Param("since") java.time.Instant since);
 
     /** One campaign's link ranking: raw clicks + distinct clicking messages. */
     @Query("select e.url, count(e), count(distinct e.messageId) from EmailEventEntity e "

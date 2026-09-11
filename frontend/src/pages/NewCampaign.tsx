@@ -1209,7 +1209,7 @@ export default function NewCampaign() {
                       {segPreview !== null && selectedList
                         ? `현재 기준 예상 대상자 ${fmt(segPreview)}명 / 전체 ${fmt(selectedList.memberCount)}명 — `
                         : ""}
-                      조건은 발송 시점의 참여도로 평가되고, 발송 이력이 없는 구독자는 제외돼요.
+                      조건은 발송 시점에 <b>최근 180일</b> 발송·오픈·클릭으로 평가되고, 그 기간에 발송 이력이 없는 구독자는 제외돼요.
                     </span>
                   </>
                 )}

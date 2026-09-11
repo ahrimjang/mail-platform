@@ -60,9 +60,10 @@ public interface EmailEventRepository {
 
     /**
      * Distinct opened/clicked message counts per contact (via the messages the
-     * events point at); contacts without any engagement are absent.
+     * events point at) of one workspace since {@code since}; contacts without any
+     * engagement are absent. 범위 조건이 없던 때는 전 테넌트 전량 집계였다(ARCH-11).
      */
-    java.util.List<ContactEngagement> countEngagementByContact();
+    java.util.List<ContactEngagement> countEngagementByContact(Long workspaceId, java.time.Instant since);
 
     /** One contact's engagement counters (distinct messages per type). */
     record ContactEngagement(Long contactId, long opened, long clicked) {

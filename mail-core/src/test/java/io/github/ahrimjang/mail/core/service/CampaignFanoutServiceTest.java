@@ -259,10 +259,10 @@ class CampaignFanoutServiceTest {
         // Contact 1: 2/2 opens (100%), contact 2: 0 opens, contact 3: never delivered.
         when(contacts.findSubscribedByListIdAfter(eq(LIST_ID), eq(0L), eq(PAGE)))
                 .thenReturn(contactPage(1L, 3));
-        when(messages.countSentByContact()).thenReturn(List.of(
+        when(messages.countSentByContact(any(), any())).thenReturn(List.of(
                 new MailMessageRepository.ContactSentCount(1L, 2),
                 new MailMessageRepository.ContactSentCount(2L, 2)));
-        when(events.countEngagementByContact()).thenReturn(List.of(
+        when(events.countEngagementByContact(any(), any())).thenReturn(List.of(
                 new EmailEventRepository.ContactEngagement(1L, 2, 0)));
         stubSaveAllAssigningIds();
         when(messages.hasPendingOrSending(CAMPAIGN_ID)).thenReturn(true);
@@ -287,6 +287,6 @@ class CampaignFanoutServiceTest {
         service.expand(CAMPAIGN_ID);
 
         verifyNoInteractions(events);
-        verify(messages, never()).countSentByContact();
+        verify(messages, never()).countSentByContact(any(), any());
     }
 }

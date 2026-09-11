@@ -23,6 +23,18 @@ import java.util.stream.Collectors;
 @Service
 public class ContactEngagementService {
 
+    /**
+     * 참여도를 보는 기간. 3년 전 오픈이 "현재 참여도"가 되면 세그먼트가 뜻을 잃고,
+     * 기간 없는 집계는 전량을 힙에 올린다(ARCH-11). 6개월이면 계절 캠페인 한 바퀴를
+     * 덮으면서도 "요즘 반응하는 사람"이라는 뜻을 유지한다.
+     */
+    public static final java.time.Duration WINDOW = java.time.Duration.ofDays(180);
+
+    /** 지금 기준 집계 시작 시각 — 팬아웃의 세그먼트 평가도 같은 창을 쓴다. */
+    public static java.time.Instant windowStart() {
+        return java.time.Instant.now().minus(WINDOW);
+    }
+
     private final ContactRepository contacts;
     private final MailMessageRepository messages;
     private final EmailEventRepository events;
@@ -59,18 +71,20 @@ public class ContactEngagementService {
         int openFloor = clampPercent(minOpenPercent);
         int clickFloor = clampPercent(minClickPercent);
 
-        Map<Long, Long> sentByContact = messages.countSentByContact().stream()
+        // Scoped to the acting tenant: the by-list branch filters on the contact's
+        // own workspace, so a foreign listId simply previews as empty.
+        Long workspaceId = ctx.currentWorkspaceId();
+        java.time.Instant since = windowStart();
+        Map<Long, Long> sentByContact = messages.countSentByContact(workspaceId, since).stream()
                 .collect(Collectors.toMap(
                         MailMessageRepository.ContactSentCount::contactId,
                         MailMessageRepository.ContactSentCount::sent));
-        Map<Long, EmailEventRepository.ContactEngagement> engagedByContact = events.countEngagementByContact().stream()
+        Map<Long, EmailEventRepository.ContactEngagement> engagedByContact =
+                events.countEngagementByContact(workspaceId, since).stream()
                 .collect(Collectors.toMap(
                         EmailEventRepository.ContactEngagement::contactId,
                         Function.identity()));
 
-        // Scoped to the acting tenant: the by-list branch filters on the contact's
-        // own workspace, so a foreign listId simply previews as empty.
-        Long workspaceId = ctx.currentWorkspaceId();
         return (listId == null ? contacts.findByWorkspace(workspaceId) : contacts.findByListId(listId)).stream()
                 .filter(c -> workspaceId.equals(c.getWorkspaceId()))
                 .map(c -> {

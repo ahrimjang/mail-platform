@@ -169,14 +169,17 @@ public class CampaignFanoutService {
             if (!campaign.hasEngagementSegment()) {
                 return new EngagementFilter(null, null, Map.of(), Map.of());
             }
+            // 이 워크스페이스·최근 창(ContactEngagementService.WINDOW)으로 한정 — 콘솔의
+            // 세그먼트 미리보기와 같은 창을 써야 "예상 N명"과 실제 대상이 어긋나지 않는다
+            java.time.Instant since = ContactEngagementService.windowStart();
             return new EngagementFilter(
                     campaign.getSegMinOpenPercent(),
                     campaign.getSegMinClickPercent(),
-                    messages.countSentByContact().stream()
+                    messages.countSentByContact(campaign.getWorkspaceId(), since).stream()
                             .collect(Collectors.toMap(
                                     MailMessageRepository.ContactSentCount::contactId,
                                     MailMessageRepository.ContactSentCount::sent)),
-                    events.countEngagementByContact().stream()
+                    events.countEngagementByContact(campaign.getWorkspaceId(), since).stream()
                             .collect(Collectors.toMap(
                                     EmailEventRepository.ContactEngagement::contactId,
                                     Function.identity())));

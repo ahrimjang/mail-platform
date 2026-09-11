@@ -142,8 +142,8 @@ public class JpaMailMessageRepository implements MailMessageRepository {
     }
 
     @Override
-    public List<ContactSentCount> countSentByContact() {
-        return jpa.countSentByContact().stream()
+    public List<ContactSentCount> countSentByContact(Long workspaceId, Instant since) {
+        return jpa.countSentByContact(workspaceId, since).stream()
                 .map(row -> new ContactSentCount((Long) row[0], ((Number) row[1]).longValue()))
                 .toList();
     }

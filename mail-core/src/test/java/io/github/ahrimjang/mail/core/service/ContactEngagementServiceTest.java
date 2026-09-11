@@ -16,6 +16,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -55,10 +57,10 @@ class ContactEngagementServiceTest {
                 contact(1L, "clicker@x.com"),
                 contact(2L, "opener@x.com"),
                 contact(3L, "silent@x.com")));
-        when(messages.countSentByContact()).thenReturn(List.of(
+        when(messages.countSentByContact(eq(WS), any())).thenReturn(List.of(
                 new MailMessageRepository.ContactSentCount(1L, 4),
                 new MailMessageRepository.ContactSentCount(2L, 4)));
-        when(events.countEngagementByContact()).thenReturn(List.of(
+        when(events.countEngagementByContact(eq(WS), any())).thenReturn(List.of(
                 new EmailEventRepository.ContactEngagement(1L, 4, 2),
                 new EmailEventRepository.ContactEngagement(2L, 2, 0)));
     }

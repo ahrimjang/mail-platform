@@ -92,11 +92,16 @@ public interface MailMessageJpaRepository extends JpaRepository<MailMessageEntit
             + "and m.updatedAt >= :since")
     long countSentByWorkspaceSince(@Param("ws") Long workspaceId, @Param("since") Instant since);
 
-    /** Delivered-mail count per contact (only list-campaign sends carry a contactId). */
-    @Query("select m.contactId, count(m) from MailMessageEntity m "
-            + "where m.contactId is not null and m.status = io.github.ahrimjang.mail.common.MessageStatus.SENT "
+    /**
+     * Delivered-mail count per contact (only list-campaign sends carry a contactId),
+     * 한 워크스페이스·최근 기간으로 한정. 캠페인을 경유해 테넌트를 거른다.
+     */
+    @Query("select m.contactId, count(m) from MailMessageEntity m, CampaignEntity c "
+            + "where c.id = m.campaignId and c.workspaceId = :ws "
+            + "and m.contactId is not null and m.status = io.github.ahrimjang.mail.common.MessageStatus.SENT "
+            + "and m.updatedAt >= :since "
             + "group by m.contactId")
-    java.util.List<Object[]> countSentByContact();
+    java.util.List<Object[]> countSentByContact(@Param("ws") Long workspaceId, @Param("since") Instant since);
 
     /**
      * Grouped send log: collapse state changes into fixed time buckets per status,

@@ -121,8 +121,12 @@ public interface MailMessageRepository {
     /** Delivered (SENT) mail this workspace produced since {@code since} — the usage meter. */
     long countSentByWorkspaceSince(Long workspaceId, java.time.Instant since);
 
-    /** Delivered (SENT) mail count per contact; contacts with none are absent. */
-    List<ContactSentCount> countSentByContact();
+    /**
+     * Delivered (SENT) mail count per contact of one workspace since {@code since};
+     * contacts with none are absent. 워크스페이스·기간 범위가 없던 때는 전 테넌트 전량을
+     * 힙에 올렸고 3년 전 오픈이 "현재 참여도"였다(ARCH-11).
+     */
+    List<ContactSentCount> countSentByContact(Long workspaceId, java.time.Instant since);
 
     /** One contact's delivered-mail count. */
     record ContactSentCount(Long contactId, long sent) {
