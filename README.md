@@ -73,8 +73,8 @@ infra         어댑터: JPA 저장소(Flyway 스키마), RabbitMQ 토폴로지/
 mail-api      REST API (8080) — 캠페인/템플릿/수신자/리스트/업로드/추적/웹훅 + JWT 인증
 mail-worker   백그라운드 워커 — @RabbitListener 발송/팬아웃 소비, Kafka 이벤트 프로젝션,
               예약 캠페인 릴리서(10초 주기), A/B 승자 스케줄러(30초 주기)
-mail-admin    어드민 콘솔 (8081) — 부팅 셸 (확장 예정)
 frontend      React 18 + Vite + react-router (5173) — 대시보드/캠페인/분석/템플릿 에디터/수신자/리스트/관리 콘솔
+              + 플랫폼 운영자 콘솔(/ops — 전 테넌트 정지·플랜·중단·감사 로그, users.platform_role 계정만)
 ```
 
 ### 발송 파이프라인

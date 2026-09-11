@@ -16,4 +16,10 @@ public interface WorkspaceRepository {
 
     /** 베타 가입 정원 판정용 — 전체 워크스페이스 수. */
     long count();
+
+    /** 플랫폼 운영자 화면 — 전체 워크스페이스, 최근 가입순. 테넌트 격리의 의도적 예외. */
+    java.util.List<Workspace> findAll();
+
+    /** 플랫폼 운영자 신호 — {@code since} 이후 가입한 워크스페이스 수. */
+    long countCreatedSince(java.time.Instant since);
 }

@@ -12,6 +12,7 @@ Outpace 운영의 일상 절차서. 장애 이력·진단 런북은 [OPS-LOG.md]
 | Grafana | SSH 터널 후 http://localhost:3000 (admin / `.env`의 `GRAFANA_ADMIN_PASSWORD`) |
 | 발송 메일 확인 | SES 실발송 — 본인 주소로 테스트 발송해 받은편지함에서 확인 (MailHog 은 2026-09 SES 전환 후 제거) |
 | DB | 서버에서 `docker compose -f docker-compose.prod.yml exec postgres psql -U maildb maildb` |
+| **운영 콘솔** | https://outpacemail.com/ops — `APP_PLATFORM_OPERATORS` 에 등록된 계정으로 로그인하면 상단 네비에 "운영" 이 뜬다. 워크스페이스 정지/해제·플랜 조정·API 키 폐기·전 테넌트 캠페인 검색/중단·운영 신호·감사 로그 (2026-09-11부터, psql 대체) |
 
 SSH 터널(모니터링용 포트 묶음) — PC에서 창을 열어둔 동안만 유효:
 
@@ -107,6 +108,9 @@ Lightsail 콘솔 → 인스턴스 ⋮ → **Reboot**. 컨테이너는 자동 복
 멈추고 디스패치는 취소된 잡을 건너뛴다. 이미 SMTP 로 넘어간 몇 통(워커 동시성 ≤16)은
 회수되지 않는다. 사용자가 직접 누를 수 있는 기능이라 운영자 개입 없이도 된다.
 
+**남의 테넌트 캠페인**(어뷰즈 신고 등)은 운영 콘솔 **/ops → 캠페인** 탭에서 검색해 "중단".
+같은 조건부 UPDATE 를 타고, 사유가 감사 로그에 남는다.
+
 ### 발송을 당장 전부 멈춰야 할 때 (어뷰즈·평판 사고)
 1. **워커만 정지** — 큐는 쌓이고 발송만 멈춘다(가장 부드러움):
    `docker compose -f docker-compose.prod.yml stop worker`
@@ -115,16 +119,29 @@ Lightsail 콘솔 → 인스턴스 ⋮ → **Reboot**. 컨테이너는 자동 복
    `aws ses update-account-sending-enabled --no-enabled --region ap-northeast-2`
 
 ### 특정 워크스페이스만 발송 정지/해제
-자동 정지(바운스율 10%↑)는 `workspaces.sending_suspended_at` 스탬프로 동작. 수동 개입:
+자동 정지(7일 바운스율 10%↑, 표본 50통↑)는 `workspaces.sending_suspended_at` 스탬프로 동작.
+수동 개입은 **운영 콘솔 /ops → 워크스페이스 → 상세 → 발송 정지 / 정지 해제** — 사유 필수,
+테넌트에 인앱 알림이 가고 감사 로그에 남는다. 해제 전에 상세 화면의 30일 바운스율과 최근
+캠페인의 실패·반송 수를 보고 원인(명단 출처)을 확인한다.
+
+"왜 발송이 정지됐나요" 문의 → /ops 목록에서 소유자 이메일로 검색 → 정지 사유 확인 → 답변.
+
+콘솔이 죽었을 때의 최후 수단만 psql:
 
 ```sql
--- 정지:   UPDATE workspaces SET sending_suspended_at = now() WHERE id = <id>;
--- 해제:   UPDATE workspaces SET sending_suspended_at = NULL  WHERE id = <id>;
+-- 해제:   UPDATE workspaces SET sending_suspended_at = NULL, suspension_reason = NULL WHERE id = <id>;
 ```
 
 ## 6. 운영 레시피
 
 - **베타 정원 조정**: 서버 `.env`의 `APP_BETA_SIGNUP_CAP` 수정 → `up -d` (0 = 무제한)
+- **플랫폼 운영자 추가**: `.env`의 `APP_PLATFORM_OPERATORS` 에 이메일 추가(쉼표 구분) → `up -d api`.
+  그 계정이 **이미 가입돼 있어야** 부여된다(없으면 api 로그에 경고, 가입 후 재기동). 회수는
+  `UPDATE users SET platform_role = NULL WHERE email = '<email>'` — 환경변수에서 빼도 회수되지 않는다.
+- **플랜 수동 조정**(보상·체험·엔터프라이즈 계약): /ops → 워크스페이스 상세 → 플랜 변경. 결제 없이
+  적용되고 발송 속도 설정이 새 상한으로 클램프된다. 월 마감 청구(`usage_snapshots`)는 그 시점 플랜
+  기준이므로 무상 제공이면 청구 전에 되돌릴 것.
+- **구독 API 키 유출 신고**: /ops → 워크스페이스 상세 → API 키 폐기. 테넌트는 관리 화면에서 재발급.
 - **SMTP 자격증명 교체**(SES 키 로테이션 등): `.env`의 `SMTP_USERNAME/PASSWORD` 수정 → `up -d api worker` →
   본인 주소로 테스트 발송 → 받은편지함 도착·헤더의 DKIM/SPF pass 확인.
   `SMTP_HOST` 가 비면 compose 가 기동을 거부한다(mailhog 폴백 없음 — 2026-09 제거)
@@ -137,7 +154,7 @@ Lightsail 콘솔 → 인스턴스 ⋮ → **Reboot**. 컨테이너는 자동 복
 
 | 주기 | 항목 |
 |---|---|
-| 매일 | Grafana 대시보드 1분 훑기 |
+| 매일 | Grafana 대시보드 1분 훑기 · /ops **운영 신호** 탭(정지·진행 중·24시간 실패) |
 | 매주 | SES 평판 · Budgets · CPU burst · 서버 자원 |
 | 매월 | 스냅샷 복구 가능 여부 눈확인 · `docker image prune` · 의존성 보안 업데이트(`apt upgrade`) |
 | 90일 | GitHub 배포 토큰 재발급 |

@@ -27,6 +27,19 @@ public interface MailMessageJpaRepository extends JpaRepository<MailMessageEntit
 
     long countByCampaignIdAndStatus(Long campaignId, MessageStatus status);
 
+    /**
+     * 플랫폼 운영자 화면 — {@code since} 이후 (워크스페이스, 상태)별 건수와 최근 갱신 시각을
+     * 그룹 쿼리 한 번으로. 캠페인을 경유해 테넌트를 해석한다(메시지 행엔 workspace_id 가 없다).
+     */
+    @org.springframework.data.jpa.repository.Query(
+            "select c.workspaceId, m.status, count(m), max(m.updatedAt) "
+            + "from MailMessageEntity m, CampaignEntity c "
+            + "where c.id = m.campaignId and m.updatedAt >= :since "
+            + "group by c.workspaceId, m.status")
+    java.util.List<Object[]> aggregateByWorkspaceSince(@Param("since") Instant since);
+
+    long countByStatusAndUpdatedAtGreaterThanEqual(MessageStatus status, Instant since);
+
     boolean existsByCampaignIdAndStatusIn(Long campaignId, java.util.Collection<MessageStatus> statuses);
 
     /** Per-variant delivery counts of an A/B campaign. Columns: variant(text), total(long), sent(long). */

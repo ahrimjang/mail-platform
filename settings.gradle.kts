@@ -6,5 +6,4 @@ include(
     "infra",
     "mail-api",
     "mail-worker",
-    "mail-admin",
 )

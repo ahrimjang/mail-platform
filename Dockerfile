@@ -15,7 +15,6 @@ COPY mail-core/ mail-core/
 COPY infra/ infra/
 COPY mail-api/ mail-api/
 COPY mail-worker/ mail-worker/
-COPY mail-admin/ mail-admin/
 RUN sh gradlew --no-daemon :mail-api:bootJar :mail-worker:bootJar
 
 # ── api 런타임 ──────────────────────────────────────────────────────

@@ -314,6 +314,75 @@ export interface WorkspaceView {
   monthlySent: number; // 이번 달 발송 성공 수 — 발송량 과금의 청구 수치
 }
 
+// ---- 플랫폼 운영자 콘솔 (/ops — 테넌트를 넘나드는 조회·조치, mail-common Ops* 미러) ----
+
+export interface OpsWorkspaceRow {
+  id: number;
+  name: string;
+  plan: string;
+  createdAt: string;
+  memberCount: number;
+  ownerEmail: string | null;      // 첫 ADMIN — 문의 대응 연락처
+  ownerVerified: boolean;
+  monthlySent: number;
+  monthlySendLimit: number | null; // null = 무제한
+  attempted30d: number;            // 최근 30일 SENT+BOUNCED
+  bounced30d: number;
+  lastActivityAt: string | null;
+  suspendedAt: string | null;      // null = 정상
+  suspensionReason: string | null;
+  billingRegistered: boolean;
+  apiKeyIssued: boolean;
+}
+
+export interface OpsCampaignRow {
+  id: number;
+  workspaceId: number;
+  workspaceName: string | null;
+  name: string | null;
+  subject: string;
+  status: CampaignStatus;
+  total: number;
+  sent: number;
+  failed: number;
+  bounced: number;
+  createdAt: string;
+  enqueuedAt: string | null;
+  completedAt: string | null;
+  createdBy: string | null;
+}
+
+export interface OpsWorkspaceDetail {
+  summary: OpsWorkspaceRow;
+  sendRatePerSec: number | null;
+  sendRateCap: number | null;
+  members: WorkspaceUserView[];
+  recentCampaigns: OpsCampaignRow[];
+}
+
+export interface OpsSignalsView {
+  workspaces: number;
+  signups7d: number;
+  suspended: number;
+  inFlight: number;
+  failed24h: number;
+  bounced24h: number;
+  sent24h: number;
+  aborted24h: number;
+  inFlightCampaigns: OpsCampaignRow[];
+  suspendedWorkspaces: OpsWorkspaceRow[];
+}
+
+export interface OpsAuditEntry {
+  id: number;
+  actorEmail: string;
+  action: string; // SUSPEND | UNSUSPEND | CHANGE_PLAN | REVOKE_API_KEY | ABORT_CAMPAIGN
+  workspaceId: number | null;
+  campaignId: number | null;
+  detail: string | null;
+  createdAt: string;
+}
+
 /** 캠페인 등록이 막힐 조건을 작성 전에 알려주는 상태 (GET /api/campaigns/preflight). */
 export interface SendingPreflightView {
   emailVerified: boolean;

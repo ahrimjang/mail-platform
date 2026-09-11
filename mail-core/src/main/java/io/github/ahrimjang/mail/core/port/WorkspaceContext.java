@@ -16,4 +16,10 @@ public interface WorkspaceContext {
 
     /** Email of the authenticated user. */
     String currentUserEmail();
+
+    /**
+     * 플랫폼 운영자인가(users.platform_role, V35) — 테넌트 격리를 넘어 모든 워크스페이스를
+     * 다루는 /ops 화면의 게이트. 워크스페이스 ADMIN 과는 무관하다.
+     */
+    boolean isPlatformOperator();
 }

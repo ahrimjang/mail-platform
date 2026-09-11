@@ -149,12 +149,8 @@ public class BillingService {
     }
 
     private void applyPlan(Workspace workspace, Plan target) {
-        workspace.setPlan(target);
-        // 발송 속도 설정이 새 플랜 상한을 넘거나 미설정이면 상한으로 맞춘다
-        Integer cap = target.sendRateCap();
-        if (cap != null && (workspace.getSendRatePerSec() == null || workspace.getSendRatePerSec() > cap)) {
-            workspace.setSendRatePerSec(cap);
-        }
+        // 속도 상한 클램프는 도메인 규칙(운영자 수동 변경과 공유)
+        workspace.changePlan(target);
         workspaces.save(workspace);
     }
 

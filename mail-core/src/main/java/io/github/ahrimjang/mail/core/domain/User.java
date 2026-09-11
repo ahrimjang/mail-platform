@@ -17,6 +17,10 @@ public class User {
     private Instant emailVerifiedAt;   // 가입 이메일 소유 검증 완료 시각 (null = 미인증)
     private String authProvider = "LOCAL";   // 가입 경로: LOCAL(이메일+비밀번호) | GOOGLE
     private String providerSubject;          // IdP 발급 고유 식별자 (구글 sub) — 소셜 연결 시에만
+    /** 플랫폼 운영자 권한(V35) — 테넌트 역할과 별개. OPERATOR 또는 null(일반 사용자). */
+    private String platformRole;
+
+    public static final String PLATFORM_OPERATOR = "OPERATOR";
 
     public User() {
     }
@@ -127,5 +131,18 @@ public class User {
 
     public void setProviderSubject(String providerSubject) {
         this.providerSubject = providerSubject;
+    }
+
+    public String getPlatformRole() {
+        return platformRole;
+    }
+
+    public void setPlatformRole(String platformRole) {
+        this.platformRole = platformRole;
+    }
+
+    /** 테넌트를 넘나드는 운영 화면(/ops)에 들어갈 수 있는가. */
+    public boolean isPlatformOperator() {
+        return PLATFORM_OPERATOR.equals(platformRole);
     }
 }

@@ -26,4 +26,9 @@ public class WorkerWorkspaceContext implements WorkspaceContext {
     public String currentUserEmail() {
         throw new IllegalStateException("worker has no request workspace context");
     }
+
+    @Override
+    public boolean isPlatformOperator() {
+        throw new IllegalStateException("worker has no request workspace context");
+    }
 }

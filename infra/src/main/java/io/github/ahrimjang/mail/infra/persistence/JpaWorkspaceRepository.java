@@ -42,6 +42,16 @@ public class JpaWorkspaceRepository implements WorkspaceRepository {
         return jpa.count();
     }
 
+    @Override
+    public java.util.List<Workspace> findAll() {
+        return jpa.findAllByOrderByCreatedAtDesc().stream().map(this::toDomain).toList();
+    }
+
+    @Override
+    public long countCreatedSince(java.time.Instant since) {
+        return jpa.countByCreatedAtGreaterThanEqual(since);
+    }
+
     private Workspace toDomain(WorkspaceEntity e) {
         Workspace w = new Workspace();
         w.setId(e.getId());

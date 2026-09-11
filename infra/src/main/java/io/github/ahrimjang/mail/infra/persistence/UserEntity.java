@@ -49,6 +49,10 @@ public class UserEntity {
     @Column(name = "provider_subject")
     private String providerSubject;
 
+    /** 플랫폼 운영자 권한 (V35) — OPERATOR 또는 null */
+    @Column(name = "platform_role", length = 16)
+    private String platformRole;
+
     protected UserEntity() {
     }
 
@@ -119,5 +123,13 @@ public class UserEntity {
 
     public void setProviderSubject(String providerSubject) {
         this.providerSubject = providerSubject;
+    }
+
+    public String getPlatformRole() {
+        return platformRole;
+    }
+
+    public void setPlatformRole(String platformRole) {
+        this.platformRole = platformRole;
     }
 }

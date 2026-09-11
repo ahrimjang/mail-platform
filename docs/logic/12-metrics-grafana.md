@@ -106,7 +106,7 @@ io.micrometer.core.instrument.Metrics.counter("mail.enqueue", "type", type).incr
 
 - **전역 레지스트리(`Metrics.globalRegistry`)에 기록**합니다. actuator가 있는 앱
   (api/worker)은 Spring Boot가 실제 레지스트리를 전역에 연결해 주고, 없는 앱
-  (mail-admin)에서는 조용히 no-op — 생성자 주입 없이 세 앱 모두에서 안전합니다.
+  에서는 조용히 no-op — 생성자 주입 없이 api·worker 어디서든 안전합니다.
 - **라벨 카디널리티 주의**: 라벨 값의 종류 수만큼 시계열이 늘어납니다. `outcome`(2종),
   `type`(3종)은 안전하지만, workspaceId·이메일 같은 무한 증가 값은 라벨로 쓰면
   안 됩니다. 테넌트별 스로틀 분해가 필요해지면 상위 N개만 라벨링하는 식으로.

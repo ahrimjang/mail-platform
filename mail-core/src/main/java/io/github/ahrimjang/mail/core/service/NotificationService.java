@@ -66,6 +66,35 @@ public class NotificationService {
                 "'" + nameOf(campaign) + "' 캠페인의 수신자 확장이 반복 실패해 발송이 시작되지 않았어요. 지원에 문의해주세요.");
     }
 
+    // ── 플랫폼 운영자 조치 → 테넌트 통지 (캠페인 없음, 워크스페이스 id 직접) ─────────
+
+    static final String TYPE_SENDING_SUSPENDED = "SENDING_SUSPENDED";
+    static final String TYPE_SENDING_RESUMED = "SENDING_RESUMED";
+    static final String TYPE_PLAN_CHANGED = "PLAN_CHANGED";
+
+    /** 운영자가 발송을 정지했다 — 사유를 그대로 싣는다(문의 전에 스스로 알 수 있게). */
+    public void sendingSuspended(Long workspaceId, String reason) {
+        publish(workspaceId, TYPE_SENDING_SUSPENDED, "발송이 일시 정지됐어요 — " + reason);
+    }
+
+    /** 운영자가 발송 정지를 해제했다. */
+    public void sendingResumed(Long workspaceId) {
+        publish(workspaceId, TYPE_SENDING_RESUMED, "발송 정지가 해제됐어요. 다시 캠페인을 등록할 수 있습니다.");
+    }
+
+    /** 운영자가 플랜을 조정했다(무결제 — 보상·체험·다운그레이드). */
+    public void planChanged(Long workspaceId, String plan) {
+        publish(workspaceId, TYPE_PLAN_CHANGED, "플랜이 " + plan + " 으로 변경됐어요.");
+    }
+
+    private void publish(Long workspaceId, String type, String title) {
+        try {
+            notifications.save(Notification.of(workspaceId, type, title, null));
+        } catch (Exception e) {
+            log.error("알림 발행 실패: type={} workspace={}", type, workspaceId, e);
+        }
+    }
+
     private void publish(Campaign campaign, String type, String title) {
         if (campaign.getWorkspaceId() == null) {
             return;

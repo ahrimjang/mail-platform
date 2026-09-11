@@ -141,6 +141,8 @@ services:
       APP_SENDER_DOMAIN: ${APP_SENDER_DOMAIN:-}
       APP_BETA_SIGNUP_CAP: ${APP_BETA_SIGNUP_CAP:-0}
       APP_MAIL_WARMUP_ENABLED: ${APP_MAIL_WARMUP_ENABLED:-true}
+      # 플랫폼 운영자(/ops) 부트스트랩 — 쉼표 구분 이메일, 기동 시 부여(멱등)
+      APP_PLATFORM_OPERATORS: ${APP_PLATFORM_OPERATORS:-}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       # 기본값은 토스 문서의 공용 테스트 키(실결제 없음) — application.yml 과 동일
       TOSS_CLIENT_KEY: ${TOSS_CLIENT_KEY:-test_ck_docs_Ovk5rk1EwkEbP0W43n07xlzm}

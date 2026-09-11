@@ -42,6 +42,18 @@ public class Workspace {
         return plan;
     }
 
+    /**
+     * 플랜 적용 — 발송 속도 설정이 새 플랜 상한을 넘거나 미설정이면 상한으로 맞춘다.
+     * 셀프서비스 결제 경로와 운영자 수동 변경이 같은 규칙을 쓰도록 도메인에 둔다.
+     */
+    public void changePlan(Plan target) {
+        this.plan = target;
+        Integer cap = target.sendRateCap();
+        if (cap != null && (sendRatePerSec == null || sendRatePerSec > cap)) {
+            sendRatePerSec = cap;
+        }
+    }
+
     public void setPlan(Plan plan) {
         this.plan = plan;
     }

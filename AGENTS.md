@@ -22,7 +22,6 @@ JDK 21 필요(`JAVA_HOME` 없으면 예: `JAVA_HOME=/c/Users/user/.jdks/corretto
 docker compose up -d              # Postgres(5432) + RabbitMQ(5672/UI 15672) + Kafka(9092) + MailHog(1025/UI 8025) + Prometheus(9090) + Grafana(3000)
 ./gradlew :mail-api:bootRun       # REST API :8080
 ./gradlew :mail-worker:bootRun    # 큐 소비자 + 이벤트 프로젝션 + 예약 릴리서 (HTTP는 :8082 /actuator 메트릭뿐)
-./gradlew :mail-admin:bootRun     # 어드민 스켈레톤 :8081
 cd frontend && npm run dev        # Vite :5175, /api -> :8080 프록시
 
 ./gradlew :mail-core:test         # 단위 테스트 (순수 JUnit+Mockito — Spring 컨텍스트 없음)
@@ -43,7 +42,7 @@ mail-core     domain + port + service (유스케이스 전부 여기)
 infra         어댑터: JPA(persistence/), RabbitMQ·Kafka(messaging/), SMTP(mail/), JWT/BCrypt(security/), 파일(storage/)
 mail-api      REST 컨트롤러 :8080 (+ SecurityConfig/JwtAuthFilter, BuiltinTemplateSeeder)
 mail-worker   MailSendListener·CampaignFanoutListener(@RabbitListener) · EmailEventProjectionListener(@KafkaListener) · ScheduledCampaignReleaser(10초) · AbWinnerScheduler(30초)
-frontend      React18+Vite+TS, 의존성 없는 콘솔(op- 클래스, src/outpace.css) — 랜딩/요금제/가이드(/developers)+대시보드/캠페인/이메일 허브/분석/수신자/리스트/알림/관리(ADMIN) + 전체화면 에디터 3종, 720px 이하는 햄버거 네비
+frontend      React18+Vite+TS, 의존성 없는 콘솔(op- 클래스, src/outpace.css) — 랜딩/요금제/가이드(/developers)+대시보드/캠페인/이메일 허브/분석/수신자/리스트/알림/관리(ADMIN)/운영(/ops, 플랫폼 운영자만) + 전체화면 에디터 3종, 720px 이하는 햄버거 네비
 ```
 
 상태: 캠페인 `QUEUED → EXPANDING → SENDING → COMPLETED`(`EXPANDING`은 리스트 캠페인을 워커가 팬아웃하는 동안만 — 애드혹 `recipients[]`는 건너뜀; 릴리스 전 예약만 `CANCELED` 가능); 메시지 `PENDING → SENDING → SENT|FAILED|BOUNCED|SUPPRESSED|CANCELED`. 참여(오픈/클릭)는 이벤트 파생이지 상태가 아니다. Postgres는 상태 저장소, 큐는 RabbitMQ(발송 큐 + 팬아웃 큐). 리스트 캠페인 생성은 팬아웃 잡 1건만 발행하고 즉시 반환(O(1)).
@@ -56,6 +55,7 @@ frontend      React18+Vite+TS, 의존성 없는 콘솔(op- 클래스, src/outpac
 - **공개 경로는 `SecurityConfig` permitAll에 명시**: `/api/auth/**`, `/api/health`, `/api/unsubscribe/**`, `/api/track/**`, `/api/webhooks/**`, `/api/public/**`(X-Api-Key), `/api/plans`, `/uploads/**`. 나머지는 Bearer 필수, 실패는 401(403이면 프론트 재로그인이 안 뜸). nginx 가 `/api/auth/**`에 IP당 속도 제한을 별도로 건다(CF-Connecting-IP 기준).
 - **수신자의 구독 결정은 별도 기록으로 보존** — 전역은 `suppressions`, 리스트 단위는 `list_unsubscribes`. 멤버십은 운영자의 분류일 뿐이므로 **해지를 멤버십 삭제로 구현하지 말 것**(CSV 재가져오기가 뒤집는다).
 - **테넌트 격리 원칙(V16)**: 루트 엔티티만 `workspace_id`(자식은 부모 경유), by-id 접근은 소유 검증 후 **404**(403 금지). 공개 경로는 토큰→캠페인→워크스페이스 역해석. 콘솔 서비스는 `WorkspaceContext` 포트로 테넌트를 해석하고 **워커에서는 절대 호출 금지**(캠페인 행에서 역해석). 억제·연락처 유니크는 `(workspace_id, email)`.
+- **유일한 격리 예외 = 플랫폼 운영자 콘솔(V35)**: `users.platform_role`(워크스페이스 ADMIN 과 무관, `APP_PLATFORM_OPERATORS` 로 부트스트랩) → `PlatformOpsService` → `/api/ops/**` → 프론트 `/ops`. 이 서비스만 테넌트를 넘나들며, 모든 진입점이 `ctx.isPlatformOperator()`(403)를 보고 워크스페이스를 명시 인자로 받고 변경을 `platform_audit_log` 에 남긴다. **다른 컨트롤러·서비스에서 이 서비스를 호출하지 말 것** — 예외가 번지지 않게 하는 경계다.
 - **공유 DTO는 `mail-common`에 정의하고 `frontend/src/types.ts`에 미러링** — 한쪽만 고치면 안 된다.
 - **설정은 전부 `${ENV_VAR:개발기본값}`** — 로컬은 무설정 동작. 실제 `.env` 커밋 금지. 카탈로그: [.env.example](.env.example).
 - **에디터 상태는 htmlBody 안의 `<!--opblocks/optext:...-->` 마커**로 영속화 — 모델·직렬화기는 `frontend/src/outpace/blocks.ts`. 빌트인 원본은 `mail-core`의 `BuiltinTemplates`. 빌트인은 삭제 불가(숨기기만), `POST /api/templates/{id}/reset`으로 복원.

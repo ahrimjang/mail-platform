@@ -168,6 +168,22 @@ public interface MailMessageRepository {
     /** 평판 방어용 — 워크스페이스의 최근 발송 시도(SENT+BOUNCED) 대비 바운스 집계. */
     WorkspaceBounceStats workspaceBounceStats(Long workspaceId, java.time.Instant since);
 
+    // ── 플랫폼 운영자 화면 — 테넌트를 넘나드는 집계(의도적 격리 예외) ─────────────
+
+    /**
+     * {@code since} 이후 종료 상태별 건수를 워크스페이스마다 한 번의 그룹 쿼리로. 목록 화면이
+     * 워크스페이스 수만큼 쿼리를 날리지 않게 한다. 활동이 없는 워크스페이스는 빠진다.
+     */
+    List<WorkspaceStatusCount> aggregateByWorkspaceSince(java.time.Instant since);
+
+    /** (워크스페이스, 상태) 한 칸 — {@code lastAt} 은 그 상태의 최근 갱신 시각. */
+    record WorkspaceStatusCount(Long workspaceId, io.github.ahrimjang.mail.common.MessageStatus status,
+                                long count, java.time.Instant lastAt) {
+    }
+
+    /** 플랫폼 전체 — {@code since} 이후 해당 상태로 갱신된 메시지 수. */
+    long countByStatusSince(io.github.ahrimjang.mail.common.MessageStatus status, java.time.Instant since);
+
     record WorkspaceBounceStats(long attempted, long bounced) {
         public double bounceRate() {
             return attempted == 0 ? 0 : (double) bounced / attempted;

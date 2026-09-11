@@ -9,9 +9,20 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.util.List;
 
-public interface CampaignJpaRepository extends JpaRepository<CampaignEntity, Long> {
+public interface CampaignJpaRepository extends JpaRepository<CampaignEntity, Long>,
+        org.springframework.data.jpa.repository.JpaSpecificationExecutor<CampaignEntity> {
 
     java.util.List<CampaignEntity> findByWorkspaceId(Long workspaceId);
+
+    /** 플랫폼 운영자 신호 — 진행 중 캠페인, 릴리스(없으면 등록)가 오래된 순. */
+    @Query("select c from CampaignEntity c where c.status in (io.github.ahrimjang.mail.common.CampaignStatus.EXPANDING, "
+            + "io.github.ahrimjang.mail.common.CampaignStatus.SENDING) "
+            + "order by coalesce(c.enqueuedAt, c.createdAt) asc")
+    List<CampaignEntity> findInFlight();
+
+    /** 발송 중 중단(abort)만 completedAt 을 찍고 CANCELED 가 된다 — 예약 취소는 안 찍힌다. */
+    long countByStatusAndCompletedAtGreaterThanEqual(io.github.ahrimjang.mail.common.CampaignStatus status,
+                                                     Instant since);
 
 
     /** Scheduled campaigns that are due but not yet released to the queue (canceled ones excluded). */

@@ -225,4 +225,20 @@ public class JpaMailMessageRepository implements MailMessageRepository {
         Object[] row = jpa.workspaceBounceStats(workspaceId, since).get(0);
         return new WorkspaceBounceStats(((Number) row[0]).longValue(), ((Number) row[1]).longValue());
     }
+
+    @Override
+    public List<WorkspaceStatusCount> aggregateByWorkspaceSince(java.time.Instant since) {
+        return jpa.aggregateByWorkspaceSince(since).stream()
+                .map(row -> new WorkspaceStatusCount(
+                        ((Number) row[0]).longValue(),
+                        (MessageStatus) row[1],
+                        ((Number) row[2]).longValue(),
+                        (Instant) row[3]))
+                .toList();
+    }
+
+    @Override
+    public long countByStatusSince(MessageStatus status, java.time.Instant since) {
+        return jpa.countByStatusAndUpdatedAtGreaterThanEqual(status, since);
+    }
 }

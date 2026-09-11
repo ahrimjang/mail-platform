@@ -37,6 +37,12 @@ public class SecurityWorkspaceContext implements WorkspaceContext {
         return authenticatedEmail();
     }
 
+    @Override
+    public boolean isPlatformOperator() {
+        // 역할과 마찬가지로 매 호출 DB 에서 — 권한 회수가 토큰 만료를 기다리지 않는다
+        return currentUser().isPlatformOperator();
+    }
+
     private User currentUser() {
         return users.findByEmail(authenticatedEmail())
                 .orElseThrow(() -> new IllegalStateException("authenticated user no longer exists"));

@@ -108,4 +108,18 @@ public interface CampaignRepository {
 
     /** 릴리스는 됐는데({@code enqueuedAt} 있음) {@code cutoff} 이전부터 QUEUED 인 캠페인. */
     List<Campaign> findOrphanQueued(Instant cutoff);
+
+    // ── 플랫폼 운영자 화면 — 테넌트를 넘나드는 조회(의도적 격리 예외) ─────────────
+
+    /**
+     * 전 테넌트 캠페인 검색, 최신순 최대 {@code limit}. 조건은 전부 선택(null = 무시):
+     * {@code q} 는 이름·제목·등록자 이메일 부분 일치. 어뷰즈 신고 대응·운영자 중단의 진입점.
+     */
+    List<Campaign> search(CampaignStatus status, Long workspaceId, String q, int limit);
+
+    /** 지금 EXPANDING/SENDING 인 캠페인 전부 — 릴리스가 오래된 순(고착 의심이 위로). */
+    List<Campaign> findInFlight();
+
+    /** {@code since} 이후 발송 중 중단(abort)된 캠페인 수 — CANCELED 이면서 completedAt 이 찍힌 것. */
+    long countAbortedSince(Instant since);
 }

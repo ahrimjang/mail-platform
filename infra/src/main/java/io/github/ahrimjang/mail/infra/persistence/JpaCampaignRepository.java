@@ -121,6 +121,42 @@ public class JpaCampaignRepository implements CampaignRepository {
         jpa.deleteById(id);
     }
 
+    @Override
+    public List<Campaign> search(CampaignStatus status, Long workspaceId, String q, int limit) {
+        // 조건이 전부 선택이라 JPQL 의 ":x is null or" 대신 Specification 으로 조립한다 —
+        // enum/nullable 파라미터의 타입 추론 문제를 피하고 인덱스도 조건이 있을 때만 탄다.
+        org.springframework.data.jpa.domain.Specification<CampaignEntity> spec = (root, query, cb) -> {
+            java.util.List<jakarta.persistence.criteria.Predicate> where = new java.util.ArrayList<>();
+            if (status != null) {
+                where.add(cb.equal(root.get("status"), status));
+            }
+            if (workspaceId != null) {
+                where.add(cb.equal(root.get("workspaceId"), workspaceId));
+            }
+            if (q != null && !q.isBlank()) {
+                String needle = "%" + q.trim().toLowerCase() + "%";
+                where.add(cb.or(
+                        cb.like(cb.lower(root.get("name")), needle),
+                        cb.like(cb.lower(root.get("subject")), needle),
+                        cb.like(cb.lower(root.get("createdBy")), needle)));
+            }
+            return cb.and(where.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
+        var page = org.springframework.data.domain.PageRequest.of(0, Math.max(1, limit),
+                org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "createdAt"));
+        return jpa.findAll(spec, page).getContent().stream().map(this::toDomain).toList();
+    }
+
+    @Override
+    public List<Campaign> findInFlight() {
+        return jpa.findInFlight().stream().map(this::toDomain).toList();
+    }
+
+    @Override
+    public long countAbortedSince(Instant since) {
+        return jpa.countByStatusAndCompletedAtGreaterThanEqual(CampaignStatus.CANCELED, since);
+    }
+
     private CampaignEntity toEntity(Campaign c) {
         CampaignEntity entity = new CampaignEntity(c.getId(), c.getName(), c.getDescription(),
                 c.getSubject(), c.getBody(), c.getStatus(), c.getCreatedAt(),

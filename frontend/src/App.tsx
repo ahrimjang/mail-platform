@@ -26,6 +26,8 @@ import Terms from "./pages/Terms";
 import VerifyEmail from "./pages/VerifyEmail";
 import Developers from "./pages/Developers";
 import Guide from "./pages/Guide";
+import Ops from "./pages/Ops";
+import OpsWorkspace from "./pages/OpsWorkspace";
 
 /* Gate: send unauthenticated users to /login; render children otherwise. */
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -80,6 +82,9 @@ function AppRoutes() {
         <Route path="analytics" element={<Analytics />} />
         <Route path="settings" element={<WorkspaceSettings />} />
         <Route path="notifications" element={<Notifications />} />
+        {/* 플랫폼 운영자 콘솔 — 메뉴는 권한 있는 계정에만 보이고, 실제 게이트는 서버 403 */}
+        <Route path="ops" element={<Ops />} />
+        <Route path="ops/workspaces/:id" element={<OpsWorkspace />} />
       </Route>
 
       {/* Full-screen editors live outside the shell. */}

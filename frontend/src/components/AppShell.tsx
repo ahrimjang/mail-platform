@@ -26,6 +26,17 @@ export default function AppShell() {
   const [resent, setResent] = useState(false);
   // 모바일 햄버거 — 720px 이하에서 op-navlinks 가 숨고 이 드로어가 대신한다
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  // 플랫폼 운영자 — "운영" 메뉴 노출 여부. 세션당 한 번 조회(권한은 서버가 매 호출 검사)
+  const [platformOperator, setPlatformOperator] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    api("/api/me/access")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (alive && d) setPlatformOperator(!!d.platformOperator); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
@@ -91,6 +102,7 @@ export default function AppShell() {
   const isList = pathname.startsWith("/lists");
   const isAnal = pathname.startsWith("/analytics");
   const isAdminPage = pathname.startsWith("/settings");
+  const isOps = pathname.startsWith("/ops");
   const avatar = (email?.trim()?.[0] ?? "U").toUpperCase();
 
   return (
@@ -115,6 +127,9 @@ export default function AppShell() {
             <button className={`op-navlink${isAnal ? " active" : ""}`} onClick={() => nav("/analytics")}>분석</button>
             {role === "ADMIN" && (
               <button className={`op-navlink${isAdminPage ? " active" : ""}`} onClick={() => nav("/settings")}>관리</button>
+            )}
+            {platformOperator && (
+              <button className={`op-navlink${isOps ? " active" : ""}`} onClick={() => nav("/ops")} title="플랫폼 운영자 콘솔">운영</button>
             )}
             <div className="op-avatar-menu" ref={guideRef} style={{ display: "inline-block" }}>
               <button className="op-navlink" onClick={() => setGuideOpen((o) => !o)}>가이드 ▾</button>
@@ -201,6 +216,7 @@ export default function AppShell() {
             { label: "리스트", to: "/lists", active: isList },
             { label: "분석", to: "/analytics", active: isAnal },
             ...(role === "ADMIN" ? [{ label: "관리", to: "/settings", active: isAdminPage }] : []),
+            ...(platformOperator ? [{ label: "운영", to: "/ops", active: isOps }] : []),
             { label: "사용 가이드", to: "/guide", active: false },
             { label: "요금제 안내", to: "/pricing", active: false },
             { label: "구독 API 가이드", to: "/developers", active: false },

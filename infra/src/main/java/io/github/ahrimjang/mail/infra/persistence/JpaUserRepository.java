@@ -50,6 +50,11 @@ public class JpaUserRepository implements UserRepository {
         return jpa.countByWorkspaceId(workspaceId);
     }
 
+    @Override
+    public java.util.List<User> findByRole(String role) {
+        return jpa.findByRoleOrderByCreatedAtAsc(role).stream().map(this::toDomain).toList();
+    }
+
     private UserEntity toEntity(User u) {
         UserEntity entity = new UserEntity(u.getId(), u.getEmail(), u.getPasswordHash(), u.getDisplayName(), u.getCreatedAt());
         entity.setWorkspaceId(u.getWorkspaceId());
@@ -57,6 +62,7 @@ public class JpaUserRepository implements UserRepository {
         entity.setEmailVerifiedAt(u.getEmailVerifiedAt());
         entity.setAuthProvider(u.getAuthProvider());
         entity.setProviderSubject(u.getProviderSubject());
+        entity.setPlatformRole(u.getPlatformRole());
         return entity;
     }
 
@@ -72,6 +78,7 @@ public class JpaUserRepository implements UserRepository {
         u.setEmailVerifiedAt(e.getEmailVerifiedAt());
         u.setAuthProvider(e.getAuthProvider());
         u.setProviderSubject(e.getProviderSubject());
+        u.setPlatformRole(e.getPlatformRole());
         return u;
     }
 }
