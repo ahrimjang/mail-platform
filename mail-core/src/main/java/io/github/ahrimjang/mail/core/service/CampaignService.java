@@ -217,6 +217,17 @@ public class CampaignService {
             if (wait < 1) {
                 throw new IllegalArgumentException("abEvalWaitMinutes must be at least 1");
             }
+            // 테스트군이 안별 최소 표본에 못 미치면 승자 플로우를 받지 않는다(ARCH-7).
+            // 판정 쪽(AbWinnerService)이 같은 하한으로 유예하므로, 여기서 안 막으면 그 캠페인은
+            // 24시간 유예 끝에 약한 근거로 확정되는 길밖에 없다 — 등록 때 말해주는 게 낫다.
+            long testGroup = targetCount * testPercent / 100;
+            long perVariant = testGroup / 2;
+            if (perVariant < AbWinnerService.MIN_SENT_PER_VARIANT) {
+                throw new IllegalArgumentException(String.format(
+                        "승자 자동 발송은 테스트 그룹이 안별로 최소 %d명은 돼야 해요. 지금 대상 %,d명의 %d%%는 %,d명(안별 %,d명)이에요 — "
+                                + "테스트 비율을 올리거나 대상을 늘리거나, 승자 자동 발송 없이 제목 A/B(반반)로 보내주세요.",
+                        AbWinnerService.MIN_SENT_PER_VARIANT, targetCount, testPercent, testGroup, perVariant));
+            }
             campaign.setAbEvalMetric(metric);
             campaign.setAbEvalWaitMinutes(wait);
         }

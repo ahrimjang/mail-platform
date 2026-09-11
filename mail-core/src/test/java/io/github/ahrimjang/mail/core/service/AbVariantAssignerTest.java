@@ -87,4 +87,25 @@ class AbVariantAssignerTest {
         }
         assertThat(seen).containsExactlyInAnyOrder("A", "B");
     }
+
+    @Test
+    void assignWithHoldout_smallSimilarCohort_stillSpreadsAcrossBothVariants() {
+        // 같은 도메인·연번 아이디 40명, 테스트 20% — 예전 hashCode 버킷은 이런 구조에서 뭉쳐
+        // 테스트군이 한쪽 0명이 되곤 했다(ARCH-7). SHA-256 버킷은 작은 표본에서도 갈라진다.
+        Set<String> seen = new HashSet<>();
+        int tested = 0;
+        for (int i = 0; i < 40; i++) {
+            String v = AbVariantAssigner.assignWithHoldout("member" + i + "@same-company.co.kr", 50, 50);
+            if (v != null) { tested++; seen.add(v); }
+        }
+        assertThat(tested).isBetween(10, 30);
+        assertThat(seen).containsExactlyInAnyOrder("A", "B");
+    }
+
+    @Test
+    void bucket_isStableAcrossCaseAndSurroundingWhitespace() {
+        assertThat(AbVariantAssigner.bucket("User@Example.com"))
+                .isEqualTo(AbVariantAssigner.bucket("  user@example.com "));
+        assertThat(AbVariantAssigner.bucket("a@b.com")).isBetween(0, 9_999);
+    }
 }

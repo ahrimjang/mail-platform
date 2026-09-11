@@ -24,6 +24,9 @@ const AB_WAIT_OPTIONS = [
   { minutes: 1440, label: "24시간" },
 ];
 
+/** 승자 자동 발송의 안별 최소 테스트 표본 — 서버(AbWinnerService.MIN_SENT_PER_VARIANT)와 같은 값. */
+const WINNER_MIN_PER_VARIANT = 10;
+
 /** now+1min as a datetime-local value (local time, not UTC — the input is local). */
 function minScheduleLocal(): string {
   const d = new Date(Date.now() + 60_000);
@@ -578,6 +581,12 @@ export default function NewCampaign() {
     if (abEnabled) {
       if (abContentSource === "email" && !abEmailId) {
         setError("B안에서 사용할 이메일을 선택하세요.");
+        return;
+      }
+      // 승자 자동 발송의 테스트군이 안별 최소 표본 미만이면 서버가 거절한다 — 여기서 먼저 알린다
+      if (winnerAllowed && Math.floor(Math.floor(audienceCount * abTestPercent / 100) / 2) < WINNER_MIN_PER_VARIANT) {
+        setError(`승자 자동 발송은 테스트 그룹이 안별로 최소 ${WINNER_MIN_PER_VARIANT}명은 돼야 해요. `
+          + `지금 대상 ${fmt(audienceCount)}명의 ${abTestPercent}%로는 부족해요 — 비율을 올리거나 대상을 늘리거나, 제목 A/B(반반)로 보내주세요.`);
         return;
       }
       if (abContentSource === "direct" && abSubjectB.trim() === "" && abBodyB.trim() === "") {
@@ -1261,6 +1270,20 @@ export default function NewCampaign() {
                 전체 수신자의 {abTestPercent}%에게 A/B 테스트를 보내고, {abWaitLabel} 후
                 성과가 좋은 안을 나머지 {100 - abTestPercent}%에게 자동 발송합니다.
               </span>
+              {/* 테스트군 크기를 미리 계산해 보여준다 — 안별 10명 미만이면 서버가 등록을 거절한다(ARCH-7) */}
+              {audienceCount > 0 && (() => {
+                const testGroup = Math.floor(audienceCount * abTestPercent / 100);
+                const perVariant = Math.floor(testGroup / 2);
+                const tooSmall = perVariant < WINNER_MIN_PER_VARIANT;
+                return (
+                  <span className="op-hint" style={{ marginTop: 6, color: tooSmall ? "var(--op-amber)" : undefined }}>
+                    지금 대상 {fmt(audienceCount)}명 기준 테스트 그룹 {fmt(testGroup)}명(안별 {fmt(perVariant)}명).
+                    {tooSmall
+                      ? ` 안별 최소 ${WINNER_MIN_PER_VARIANT}명은 돼야 판정할 수 있어요 — 비율을 올리거나 대상을 늘리거나, 승자 자동 발송 대신 제목 A/B(반반)로 보내세요.`
+                      : " 판정에 충분해요."}
+                  </span>
+                );
+              })()}
               <div style={{ marginTop: 14 }}>
                 <label className="op-check">
                   <input

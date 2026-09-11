@@ -674,16 +674,16 @@ class CampaignServiceTest {
     void create_winnerFlow_enqueuesOnlyTheTestBatchAndSchedulesEvaluation() {
         stubCampaignSaveAssigningId();
         stubMessageSaveAllAssigningIds();
-        stubViewCounts(2, 2);
+        stubViewCounts(100, 100);
 
-        // One recipient in the test group and one in the holdout, hash-proof
-        // via the assigner itself — held rows must be saved but never enqueued.
-        String tested = firstEmailWithHoldout(false, 20, 50);
-        String held = firstEmailWithHoldout(true, 20, 50);
+        // 100명 × 20% = 테스트군 20명(안별 10명) — 등록 시 최소 표본 하한(ARCH-7)을 딱 넘긴다.
+        // 홀드아웃 행은 저장되되 발행되지 않아야 한다.
+        List<String> recipients = java.util.stream.IntStream.range(0, 100)
+                .mapToObj(i -> "user" + i + "@example.com").toList();
         Instant before = Instant.now();
 
         service.create(new CreateCampaignRequest(
-                "Hello", "<p>A body</p>", List.of(tested, held), null, null, null, null, null,
+                "Hello", "<p>A body</p>", recipients, null, null, null, null, null,
                 "Hello B", "<p>B body</p>", null, null, 20, "OPEN", 30, null, null, null, null, null));
 
         ArgumentCaptor<Campaign> campaignCaptor = ArgumentCaptor.forClass(Campaign.class);
@@ -695,12 +695,14 @@ class CampaignServiceTest {
         assertThat(saved.getAbEvalWaitMinutes()).isEqualTo(30);
 
         List<MailMessage> queued = capturedSavedMessages();
-        assertThat(queued).hasSize(2);
-        assertThat(queued.get(0).getVariant()).isNotNull();
-        assertThat(queued.get(1).getVariant()).isNull();
-        // Only the test row (id 100) is published; the held row (id 101) waits.
-        verify(mailQueue).enqueue(100L);
-        verify(mailQueue, never()).enqueue(101L);
+        assertThat(queued).hasSize(100);
+        List<MailMessage> tested = queued.stream().filter(m -> m.getVariant() != null).toList();
+        List<MailMessage> held = queued.stream().filter(m -> m.getVariant() == null).toList();
+        assertThat(tested).isNotEmpty();
+        assertThat(held).isNotEmpty();
+        // 테스트군만 발행되고 홀드아웃은 승자가 정해질 때까지 기다린다
+        for (MailMessage m : tested) verify(mailQueue).enqueue(m.getId());
+        for (MailMessage m : held) verify(mailQueue, never()).enqueue(m.getId());
 
         ArgumentCaptor<Instant> evaluateAt = ArgumentCaptor.forClass(Instant.class);
         verify(campaigns).scheduleAbEvaluation(eq(CAMPAIGN_ID), evaluateAt.capture());
@@ -711,16 +713,35 @@ class CampaignServiceTest {
     void create_winnerFlow_defaultsMetricToOpenAndWaitToSixtyMinutes() {
         stubCampaignSaveAssigningId();
         stubMessageSaveAllAssigningIds();
-        stubViewCounts(1, 1);
+        stubViewCounts(100, 100);
 
         service.create(new CreateCampaignRequest(
-                "Hello", "<p>A body</p>", List.of("a@example.com"), null, null, null, null, null,
+                "Hello", "<p>A body</p>",
+                java.util.stream.IntStream.range(0, 100).mapToObj(i -> "user" + i + "@example.com").toList(),
+                null, null, null, null, null,
                 "Hello B", null, null, null, 20, null, null, null, null, null, null, null));
 
         ArgumentCaptor<Campaign> captor = ArgumentCaptor.forClass(Campaign.class);
         verify(campaigns).save(captor.capture());
         assertThat(captor.getValue().getAbEvalMetric()).isEqualTo("OPEN");
         assertThat(captor.getValue().getAbEvalWaitMinutes()).isEqualTo(60);
+    }
+
+    @Test
+    void create_winnerFlow_rejectsWhenTheTestGroupIsTooSmallToJudge() {
+        // 30명 × 20% = 6명(안별 3명) — 이대로 두면 판정은 24시간 유예 끝에 약한 근거로 확정된다.
+        // 등록 때 막고 대안(비율↑·대상↑·제목 A/B)을 말해주는 편이 낫다(ARCH-7)
+        assertThatThrownBy(() -> service.create(new CreateCampaignRequest(
+                "Hello", "<p>A</p>",
+                java.util.stream.IntStream.range(0, 30).mapToObj(i -> "user" + i + "@example.com").toList(),
+                null, null, null, null, null,
+                "Hello B", null, null, null, 20, null, null, null, null, null, null, null)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("안별로 최소 10명")
+                .hasMessageContaining("30명");
+
+        verify(campaigns, never()).save(any());
+        verifyNoInteractions(mailQueue);
     }
 
     @Test
