@@ -97,10 +97,12 @@ public class CampaignService {
         senderPolicy.assertSenderAllowed(request.senderEmail());
         senderPolicy.assertReplyToValid(request.replyTo());
         // 신규 워크스페이스 워밍업 — 첫 발송부터 대량으로 나가면 바운스율 정지가 늦는다
-        warmup.assertBatchAllowed(ctx.currentWorkspaceId(), targetCountOf(request));
+        long targetCount = targetCountOf(request);
+        warmup.assertBatchAllowed(ctx.currentWorkspaceId(), targetCount);
         // 플랜의 월 발송량 한도 — 등록 시점에만 검사한다(발송 중 컷오프 금지,
-        // 진행 중 캠페인은 끝까지). 정책: docs/BILLING-policy.md 4절.
-        planLimits.assertCampaignRegistrationAllowed(ctx.currentWorkspaceId());
+        // 진행 중 캠페인은 끝까지). 그래서 "지금까지"가 아니라 "지금까지 + 이번 대상"으로
+        // 예산을 본다. 정책: docs/BILLING-policy.md 4절.
+        planLimits.assertCampaignRegistrationAllowed(ctx.currentWorkspaceId(), targetCount);
         // 플랜 기능 게이팅 — A/B·세그먼트는 요청 필드로 판정 (임시저장은 자유,
         // 발송 등록이 관문)
         planLimits.assertCampaignFeaturesAllowed(ctx.currentWorkspaceId(), request);

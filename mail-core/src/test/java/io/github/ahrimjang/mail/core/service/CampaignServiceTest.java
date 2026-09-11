@@ -115,7 +115,7 @@ class CampaignServiceTest {
     @org.junit.jupiter.api.Test
     void create_isBlockedWhenTheMonthlySendLimitIsReached() {
         org.mockito.Mockito.doThrow(new PlanLimitExceededException("이번 달 발송 한도(1,000통)에 도달했습니다."))
-                .when(planLimits).assertCampaignRegistrationAllowed(WS);
+                .when(planLimits).assertCampaignRegistrationAllowed(org.mockito.ArgumentMatchers.eq(WS), org.mockito.ArgumentMatchers.anyLong());
 
         org.assertj.core.api.Assertions.assertThatThrownBy(() ->
                         service.create(new CreateCampaignRequest(

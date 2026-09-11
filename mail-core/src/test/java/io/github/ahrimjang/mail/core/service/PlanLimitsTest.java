@@ -52,18 +52,31 @@ class PlanLimitsTest {
     @Test
     void campaignRegistration_allowsBelowAndBlocksAtTheMonthlyLimit() {
         when(messages.countSentByWorkspaceSince(eq(WS), any())).thenReturn(999L);
-        assertThatCode(() -> limits.assertCampaignRegistrationAllowed(WS)).doesNotThrowAnyException();
+        assertThatCode(() -> limits.assertCampaignRegistrationAllowed(WS, 1)).doesNotThrowAnyException();
 
         when(messages.countSentByWorkspaceSince(eq(WS), any())).thenReturn(1_000L);
-        assertThatThrownBy(() -> limits.assertCampaignRegistrationAllowed(WS))
+        assertThatThrownBy(() -> limits.assertCampaignRegistrationAllowed(WS, 1))
                 .isInstanceOf(PlanLimitExceededException.class)
                 .hasMessageContaining("1,000");
     }
 
     @Test
+    void campaignRegistration_countsThisCampaignAgainstTheRemainingBudget() {
+        // 9,999/10,000 에서 100만 명을 등록해도 전량 나가던 구멍(ARCH-9) — 등록이 유일한
+        // 집행 지점이므로 "지금까지 + 이번 대상"으로 본다
+        when(messages.countSentByWorkspaceSince(eq(WS), any())).thenReturn(990L);
+
+        assertThatCode(() -> limits.assertCampaignRegistrationAllowed(WS, 10)).doesNotThrowAnyException();   // 딱 맞게
+        assertThatThrownBy(() -> limits.assertCampaignRegistrationAllowed(WS, 11))
+                .isInstanceOf(PlanLimitExceededException.class)
+                .hasMessageContaining("남은 발송량은 10통")
+                .hasMessageContaining("11명");
+    }
+
+    @Test
     void campaignRegistration_isUnlimitedOnEnterprise() {
         starter.setPlan(Plan.ENTERPRISE);
-        assertThatCode(() -> limits.assertCampaignRegistrationAllowed(WS)).doesNotThrowAnyException();
+        assertThatCode(() -> limits.assertCampaignRegistrationAllowed(WS, 1_000_000)).doesNotThrowAnyException();
         // 무제한 플랜은 사용량 조회 자체가 없다
         org.mockito.Mockito.verify(messages, org.mockito.Mockito.never())
                 .countSentByWorkspaceSince(any(), any());

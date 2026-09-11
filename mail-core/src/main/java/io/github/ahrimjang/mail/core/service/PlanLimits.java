@@ -43,17 +43,32 @@ public class PlanLimits {
         return messages.countSentByWorkspaceSince(workspaceId, monthStart);
     }
 
-    /** 캠페인 등록 가능 여부 — 월 발송량 한도 도달 시 차단. */
-    public void assertCampaignRegistrationAllowed(Long workspaceId) {
+    /**
+     * 캠페인 등록 가능 여부 — 이번 달 발송량에 <b>이번 캠페인의 대상 수를 더해</b> 한도와
+     * 비교한다. "지금까지 한도 미만이면 통과"만 보던 때는 9,999/10,000 에서 100만 명을
+     * 등록해도 전량 나갔다(ARCH-9). 발송 중 컷오프 금지 원칙 때문에 등록 시점이 유일한
+     * 집행 지점이라, 여기서 예산을 봐야 한다.
+     *
+     * @param targetCount 이번 캠페인이 보낼 수신자 수(리스트면 멤버 수 — 세그먼트·억제로
+     *                    실제는 이보다 적을 수 있다. 예산은 보수적으로 잡는다)
+     */
+    public void assertCampaignRegistrationAllowed(Long workspaceId, long targetCount) {
         Plan plan = planOf(workspaceId);
         if (plan.monthlySendLimit() == null) {
             return;
         }
+        long limit = plan.monthlySendLimit();
         long sent = monthlySent(workspaceId);
-        if (sent >= plan.monthlySendLimit()) {
+        if (sent >= limit) {
             throw new PlanLimitExceededException(String.format(
                     "이번 달 발송 한도(%,d통)에 도달했습니다. 플랜을 올리면 바로 이어서 보낼 수 있어요.",
-                    plan.monthlySendLimit()));
+                    limit));
+        }
+        if (sent + targetCount > limit) {
+            throw new PlanLimitExceededException(String.format(
+                    "이번 달 남은 발송량은 %,d통인데 이번 캠페인 대상은 %,d명이에요. 대상을 줄이거나 플랜을 올려주세요. "
+                            + "(한도 %,d통 중 %,d통 사용)",
+                    limit - sent, targetCount, limit, sent));
         }
     }
 

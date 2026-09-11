@@ -363,7 +363,8 @@ export default function NewCampaign() {
   const monthlyRemaining = preflight == null || preflight.monthlySendLimit == null
     ? null
     : Math.max(0, preflight.monthlySendLimit - preflight.monthlySent);
-  const overMonthly = monthlyRemaining === 0;
+  // 한도 도달뿐 아니라 "이번 대상이 남은 양을 넘는가"도 본다 — 서버가 등록 시점에 같은 예산 검사를 한다
+  const overMonthly = monthlyRemaining !== null && (monthlyRemaining === 0 || audienceCount > monthlyRemaining);
 
   // What the recipient will get: direct input or the selected email's snapshot.
   // 직접 입력 본문은 발송 시 HTML 로 감싸지므로 미리보기·테스트도 같은 변환을 거친다 —
@@ -559,7 +560,9 @@ export default function NewCampaign() {
         return;
       }
       if (overMonthly) {
-        setError("이번 달 발송 한도에 도달했어요. 플랜을 올리면 바로 이어서 보낼 수 있어요.");
+        setError(monthlyRemaining === 0
+          ? "이번 달 발송 한도에 도달했어요. 플랜을 올리면 바로 이어서 보낼 수 있어요."
+          : `이번 달 남은 발송량은 ${fmt(monthlyRemaining as number)}통인데 이번 대상은 ${fmt(audienceCount)}명이에요. 대상을 줄이거나 플랜을 올려주세요.`);
         return;
       }
       if (overWarmup) {
@@ -975,7 +978,10 @@ export default function NewCampaign() {
               </div>
             )}
             {overMonthly && (
-              <div><b>이번 달 발송 한도에 도달했어요</b> — <a href="/pricing">플랜을 올리면</a> 바로 이어서 보낼 수 있어요.</div>
+              <div>
+                <b>{monthlyRemaining === 0 ? "이번 달 발송 한도에 도달했어요" : `이번 대상이 이번 달 남은 발송량(${fmt(monthlyRemaining as number)}통)을 넘어요`}</b>
+                {" — "}대상을 줄이거나 <a href="/pricing">플랜을 올리면</a> 바로 이어서 보낼 수 있어요.
+              </div>
             )}
             {!overMonthly && monthlyRemaining != null && (
               <div style={{ color: "var(--op-faint)", fontSize: 12.5 }}>
