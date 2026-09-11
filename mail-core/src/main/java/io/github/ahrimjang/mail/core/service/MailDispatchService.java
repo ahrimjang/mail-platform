@@ -102,6 +102,20 @@ public class MailDispatchService {
             return;
         }
         Campaign campaign = campaigns.findById(message.getCampaignId()).orElse(null);
+        // 억제 확인은 토큰 소비보다 앞에(ARCH-10). 억제된 주소는 어차피 안 나가는데 발송
+        // 토큰을 먼저 쓰면 억제 30% 명단에서 발송 예산 30% 가 허비된다. 종료 기록은 여전히
+        // claim 을 거쳐 조건부로 쓴다.
+        if (campaign != null && suppressions.existsByWorkspaceAndEmail(campaign.getWorkspaceId(), message.getRecipient())) {
+            java.util.Optional<java.time.Instant> claimed = messages.claim(messageId, STALE_CLAIM_AFTER);
+            if (claimed.isEmpty()) {
+                return;
+            }
+            markSending(campaign);
+            message.markSuppressed();
+            finish(message, claimed.get());
+            completeIfDrained(campaign.getId());
+            return;
+        }
         // Tenant throttle, checked BEFORE the claim: a throttled message must stay
         // PENDING so its delayed redelivery claims it normally — claiming first
         // would strand it in SENDING until the stale-claim window expires.
@@ -122,12 +136,6 @@ public class MailDispatchService {
             return;
         }
         markSending(campaign);
-        if (suppressions.existsByWorkspaceAndEmail(campaign.getWorkspaceId(), message.getRecipient())) {
-            message.markSuppressed();
-            finish(message, claimedAt);
-            completeIfDrained(campaign.getId());
-            return;
-        }
         String subject = campaign.getSubject();
         String bodySrc = campaign.getBody();
         // A/B: a held (variant-null) message of a decided campaign renders the winner.

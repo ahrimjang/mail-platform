@@ -47,15 +47,18 @@ public class CampaignFanoutService {
     private final EmailEventRepository events;
     private final MailQueue mailQueue;
     private final NotificationService notifications;
+    private final io.github.ahrimjang.mail.core.port.SuppressionRepository suppressions;
 
     public CampaignFanoutService(CampaignRepository campaigns, MailMessageRepository messages,
                                  ContactRepository contacts, EmailEventRepository events, MailQueue mailQueue,
-                                 NotificationService notifications) {
+                                 NotificationService notifications,
+                                 io.github.ahrimjang.mail.core.port.SuppressionRepository suppressions) {
         this.campaigns = campaigns;
         this.messages = messages;
         this.contacts = contacts;
         this.events = events;
         this.mailQueue = mailQueue;
+        this.suppressions = suppressions;
         this.notifications = notifications;
     }
 
@@ -91,10 +94,19 @@ public class CampaignFanoutService {
             if (page.isEmpty()) {
                 break;
             }
-            List<MailMessage> batch = page.stream()
-                    .filter(segment::test)
+            List<Contact> targets = page.stream().filter(segment::test).toList();
+            // 억제 주소는 여기서 걸러 SUPPRESSED 로 바로 기록한다(ARCH-10). 큐에 넣었다가
+            // dispatch 에서 빼면 잡 1건·토큰 1개·DB 왕복이 전부 낭비다 — 억제 30% 명단이면
+            // 발송 예산 30% 가 허비된다. 행은 남겨서 "발송 제외 N명" 통계는 그대로 보이게 한다.
+            java.util.Set<String> suppressed = new java.util.HashSet<>(suppressions.findSuppressedEmails(
+                    campaign.getWorkspaceId(), targets.stream().map(Contact::getEmail).toList()));
+            List<MailMessage> batch = targets.stream()
                     .map(c -> {
                         MailMessage m = MailMessage.queued(campaignId, c.getEmail(), c.getId());
+                        if (suppressed.contains(c.getEmail())) {
+                            m.markSuppressed();
+                            return m;
+                        }
                         if (campaign.isAbTest()) {
                             m.setVariant(campaign.hasWinnerFlow()
                                     ? AbVariantAssigner.assignWithHoldout(c.getEmail(),
@@ -106,8 +118,9 @@ public class CampaignFanoutService {
                     .toList();
             List<MailMessage> saved = batch.isEmpty() ? List.of() : messages.saveAll(batch);
             // Winner flow only enqueues the test batch: held rows (variant null)
-            // stay PENDING until the winner is decided.
+            // stay PENDING until the winner is decided. 억제로 이미 종료된 행은 큐에 안 넣는다.
             saved.stream()
+                    .filter(m -> m.getStatus() == io.github.ahrimjang.mail.common.MessageStatus.PENDING)
                     .filter(m -> !campaign.hasWinnerFlow() || m.getVariant() != null)
                     .forEach(m -> mailQueue.enqueue(m.getId()));
             total += saved.size();

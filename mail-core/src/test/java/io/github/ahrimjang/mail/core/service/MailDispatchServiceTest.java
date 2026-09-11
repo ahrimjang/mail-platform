@@ -169,6 +169,8 @@ class MailDispatchServiceTest {
 
         verify(messages).finish(eq(MESSAGE_ID), eq(CLAIMED), eq(MessageStatus.SUPPRESSED), org.mockito.ArgumentMatchers.isNull(), any());
         verify(sender, never()).send(anyString(), anyString(), anyString(), anyString(), any(), any(), any());
+        // 어차피 안 나가는 주소에 발송 토큰을 쓰지 않는다(ARCH-10)
+        verify(rateLimiter, never()).tryAcquire(anyLong());
     }
 
     @Test

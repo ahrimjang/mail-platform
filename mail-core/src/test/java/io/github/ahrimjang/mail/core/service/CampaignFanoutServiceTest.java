@@ -50,6 +50,8 @@ class CampaignFanoutServiceTest {
 
     @Mock
     private NotificationService notifications;   // mock 기본 no-op
+    @Mock
+    private io.github.ahrimjang.mail.core.port.SuppressionRepository suppressions;   // 기본: 빈 목록 = 억제 없음
 
     @InjectMocks
     private CampaignFanoutService service;
@@ -82,6 +84,32 @@ class CampaignFanoutServiceTest {
             }
             return batch;
         });
+    }
+
+    @Test
+    void expand_recordsSuppressedRecipientsAsSuppressed_withoutEnqueuingThem() {
+        // 억제 주소를 큐에 넣었다가 dispatch 에서 빼면 잡·토큰·DB 왕복이 낭비다(ARCH-10).
+        // 행은 남겨 "발송 제외" 통계는 유지하되 큐에는 넣지 않는다.
+        Campaign campaign = listCampaign();
+        campaign.setWorkspaceId(7L);
+        when(campaigns.claimForFanout(CAMPAIGN_ID)).thenReturn(true);
+        when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(campaign));
+        List<Contact> page = contactPage(1L, 5);
+        when(contacts.findSubscribedByListIdAfter(eq(LIST_ID), eq(0L), eq(PAGE))).thenReturn(page);
+        when(suppressions.findSuppressedEmails(eq(7L), anyList()))
+                .thenReturn(List.of("c2@example.com", "c4@example.com"));
+        stubSaveAllAssigningIds();
+
+        service.expand(CAMPAIGN_ID);
+
+        ArgumentCaptor<List<MailMessage>> saved = ArgumentCaptor.forClass(List.class);
+        verify(messages).saveAll(saved.capture());
+        assertThat(saved.getValue()).hasSize(5);
+        assertThat(saved.getValue().stream()
+                .filter(m -> m.getStatus() == io.github.ahrimjang.mail.common.MessageStatus.SUPPRESSED)
+                .map(MailMessage::getRecipient))
+                .containsExactlyInAnyOrder("c2@example.com", "c4@example.com");
+        verify(mailQueue, times(3)).enqueue(anyLong());   // 억제 2건은 큐에 안 들어간다
     }
 
     @Test
