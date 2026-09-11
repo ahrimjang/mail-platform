@@ -497,6 +497,43 @@ class CampaignServiceTest {
     }
 
     @Test
+    void abort_winningTransition_cancelsPendingMessages() {
+        // 오발송을 알아챈 순간 남은 발송을 멈추는 유일한 수단(ARCH-8)
+        Campaign sending = Campaign.draft("Hello", "<p>Hi</p>");
+        sending.setWorkspaceId(WS);
+        sending.setId(CAMPAIGN_ID);
+        sending.setStatus(CampaignStatus.SENDING);
+        when(campaigns.findById(CAMPAIGN_ID)).thenAnswer(inv -> {
+            sending.setStatus(CampaignStatus.CANCELED);   // 전이 후 재조회는 취소된 행을 본다
+            return Optional.of(sending);
+        });
+        when(campaigns.abort(CAMPAIGN_ID)).thenReturn(true);
+        when(messages.cancelPendingByCampaign(CAMPAIGN_ID)).thenReturn(4_200);
+        stubViewCounts(10_000, 4_200);
+
+        CampaignView view = service.abort(CAMPAIGN_ID);
+
+        verify(campaigns).abort(CAMPAIGN_ID);
+        verify(messages).cancelPendingByCampaign(CAMPAIGN_ID);
+        assertThat(view.status()).isEqualTo(CampaignStatus.CANCELED);
+    }
+
+    @Test
+    void abort_alreadyFinished_throwsIllegalStateWithoutTouchingMessages() {
+        Campaign done = Campaign.draft("Hello", "<p>Hi</p>");
+        done.setWorkspaceId(WS);
+        done.setId(CAMPAIGN_ID);
+        done.setStatus(CampaignStatus.COMPLETED);
+        when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(done));
+        when(campaigns.abort(CAMPAIGN_ID)).thenReturn(false);   // 조건부 UPDATE 0행
+
+        assertThatThrownBy(() -> service.abort(CAMPAIGN_ID))
+                .isInstanceOf(IllegalStateException.class);
+
+        verify(messages, never()).cancelPendingByCampaign(anyLong());
+    }
+
+    @Test
     void cancelSchedule_unknownCampaign_throwsNoSuchElement() {
         when(campaigns.findById(999L)).thenReturn(Optional.empty());
 

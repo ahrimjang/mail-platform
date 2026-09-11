@@ -1420,7 +1420,7 @@ export default function NewCampaign() {
         <div className="op-modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setConfirmOpen(false); }}>
           <div className="op-modal" style={{ maxWidth: 460 }}>
             <h3>발송 전 마지막 확인</h3>
-            <p className="op-modal-sub">아래 내용으로 발송합니다. 등록 후에는 예약 취소 외에 되돌릴 수 없어요.</p>
+            <p className="op-modal-sub">아래 내용으로 발송합니다. 등록 후 남은 발송은 상세 화면에서 중단할 수 있지만, 이미 나간 메일은 되돌릴 수 없어요.</p>
             <div className="op-confirm-rows">
               <div><span className="k">캠페인</span><span className="v">{name || subject || "(제목 없음)"}</span></div>
               <div>
@@ -1470,7 +1470,7 @@ export default function NewCampaign() {
             <p className="op-modal-sub">
               지금 작성 중인 내용을 나에게 먼저 보내 봅니다. 제목에 [테스트]가 붙고,
               캠페인·지표에는 아무 기록도 남지 않아요.
-              <b> 등록 후에는 되돌릴 수 없으니, 실물 확인은 지금이 기회예요.</b>
+              <b> 한번 나간 메일은 되돌릴 수 없으니, 실물 확인은 지금이 기회예요.</b>
             </p>
             <label className="op-field">
               <span className="op-flabel">받는 사람</span>

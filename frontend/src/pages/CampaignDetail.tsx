@@ -46,6 +46,30 @@ export default function CampaignDetail() {
   const [cancelOpen, setCancelOpen] = useState(false);
   const [canceling, setCanceling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  // 발송 중 중단 — 예약 취소와 달리 이미 릴리스된 캠페인의 "남은 발송"을 멈춘다
+  const [abortOpen, setAbortOpen] = useState(false);
+  const [aborting, setAborting] = useState(false);
+  const [abortError, setAbortError] = useState<string | null>(null);
+
+  async function abortCampaign() {
+    setAborting(true);
+    setAbortError(null);
+    try {
+      const res = await api(`/api/campaigns/${id}/abort`, { method: "POST" });
+      if (res.ok) {
+        setCampaign(await res.json());
+        setAbortOpen(false);
+      } else if (res.status === 409) {
+        setAbortError("이미 끝났거나 취소된 캠페인이라 중단할 수 없어요.");
+      } else {
+        setAbortError("중단 요청에 실패했습니다.");
+      }
+    } catch {
+      setAbortError("요청 중 오류가 발생했습니다.");
+    } finally {
+      setAborting(false);
+    }
+  }
   // A/B variant preview popup ("A" | "B" | null = closed).
   const [previewVariant, setPreviewVariant] = useState<"A" | "B" | null>(null);
 
@@ -236,6 +260,14 @@ export default function CampaignDetail() {
               예약 취소
             </button>
           )}
+          {/* 발송 중 중단 — 릴리스된 뒤(EXPANDING/SENDING, 또는 즉시 발송 대기 중)에만.
+              오발송을 알아챈 순간 남은 발송을 멈추는 유일한 수단이다. */}
+          {(campaign.status === "EXPANDING" || campaign.status === "SENDING"
+            || (campaign.status === "QUEUED" && !(campaign.scheduledAt && new Date(campaign.scheduledAt).getTime() > Date.now()))) && (
+            <button className="op-btn op-btn-sm op-btn-ghost danger" onClick={() => setAbortOpen(true)}>
+              발송 중단
+            </button>
+          )}
         </div>
       </div>
 
@@ -306,6 +338,28 @@ export default function CampaignDetail() {
               <button className="op-btn op-btn-sm op-btn-ghost" onClick={() => setCancelOpen(false)}>닫기</button>
               <button className="op-btn op-btn-sm" style={{ background: "var(--op-red)" }} disabled={canceling} onClick={cancelSchedule}>
                 {canceling ? "취소 중…" : "예약 취소"}
+              </button>
+            </div>
+          </div>
+        </div>
+        </Portal>
+      )}
+
+      {abortOpen && (
+        <Portal>
+        <div className="op-modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setAbortOpen(false); }}>
+          <div className="op-modal">
+            <h3>발송 중단</h3>
+            <p className="op-modal-sub">
+              <b>{campaign.name ?? campaign.subject}</b> 의 남은 발송을 지금 멈출까요?
+              아직 나가지 않은 <b>{fmt(campaign.pending)}건</b>은 취소되고 다시 보낼 수 없습니다.
+              이미 발송된 {fmt(campaign.sent)}건과 지금 이 순간 전송 중인 몇 통은 회수되지 않아요.
+            </p>
+            {abortError && <div className="op-modal-error">{abortError}</div>}
+            <div className="op-modal-foot">
+              <button className="op-btn op-btn-sm op-btn-ghost" onClick={() => setAbortOpen(false)}>닫기</button>
+              <button className="op-btn op-btn-sm" style={{ background: "var(--op-red)" }} disabled={aborting} onClick={abortCampaign}>
+                {aborting ? "중단 중…" : "남은 발송 중단"}
               </button>
             </div>
           </div>

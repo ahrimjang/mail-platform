@@ -101,6 +101,12 @@ docker compose -f docker-compose.prod.yml exec postgres pg_dump -U maildb maildb
 Lightsail 콘솔 → 인스턴스 ⋮ → **Reboot**. 컨테이너는 자동 복구된다.
 복구 후 [OPS-LOG.md](OPS-LOG.md) 런북으로 원인 조사 → 항목 기록.
 
+### 특정 캠페인만 멈춰야 할 때 (오발송·잘못된 명단)
+콘솔 캠페인 상세의 **발송 중단**(= `POST /api/campaigns/{id}/abort`, 2026-09-11부터).
+캠페인을 CANCELED 로 전이하고 남은 PENDING 을 일괄 취소한다 — 팬아웃은 다음 페이지에서
+멈추고 디스패치는 취소된 잡을 건너뛴다. 이미 SMTP 로 넘어간 몇 통(워커 동시성 ≤16)은
+회수되지 않는다. 사용자가 직접 누를 수 있는 기능이라 운영자 개입 없이도 된다.
+
 ### 발송을 당장 전부 멈춰야 할 때 (어뷰즈·평판 사고)
 1. **워커만 정지** — 큐는 쌓이고 발송만 멈춘다(가장 부드러움):
    `docker compose -f docker-compose.prod.yml stop worker`

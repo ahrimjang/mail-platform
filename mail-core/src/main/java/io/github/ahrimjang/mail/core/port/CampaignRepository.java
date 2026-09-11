@@ -88,6 +88,13 @@ public interface CampaignRepository {
     /** Atomically claims the winner decision (single conditional UPDATE on ab_winner IS NULL). */
     boolean claimAbWinner(Long id, String winner);
 
+    /**
+     * 발송 중 중단(ARCH-8): QUEUED/EXPANDING/SENDING → CANCELED 조건부 UPDATE. 이미 끝났거나
+     * 취소된 캠페인은 0행. 이긴 호출자가 PENDING 메시지를 일괄 취소하고, 팬아웃 루프와
+     * 디스패치는 상태를 보고 스스로 멈춘다 — 이미 SMTP 로 넘어간 메시지는 회수할 수 없다.
+     */
+    boolean abort(Long id);
+
     // ── 복구 스위퍼(ARCH-1/5) — "claim 성공 → 후속 작업 중 실패"의 뒷정리 ──────────
 
     /** 팬아웃 도중 죽어 EXPANDING 에 {@code cutoff} 이전부터 머무는 캠페인. */

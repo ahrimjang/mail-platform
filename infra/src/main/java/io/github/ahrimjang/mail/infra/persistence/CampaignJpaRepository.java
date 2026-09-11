@@ -44,6 +44,16 @@ public interface CampaignJpaRepository extends JpaRepository<CampaignEntity, Lon
             + "and c.status = io.github.ahrimjang.mail.common.CampaignStatus.QUEUED")
     int claimForCancel(@Param("id") Long id);
 
+    /** 발송 중 중단 — 아직 끝나지 않은 캠페인만 CANCELED 로(ARCH-8). */
+    @Modifying
+    @Transactional
+    @Query("update CampaignEntity c set c.status = io.github.ahrimjang.mail.common.CampaignStatus.CANCELED, "
+            + "c.completedAt = :now "
+            + "where c.id = :id and c.status in (io.github.ahrimjang.mail.common.CampaignStatus.QUEUED, "
+            + "                                  io.github.ahrimjang.mail.common.CampaignStatus.EXPANDING, "
+            + "                                  io.github.ahrimjang.mail.common.CampaignStatus.SENDING)")
+    int abort(@Param("id") Long id, @Param("now") Instant now);
+
     /** QUEUED→EXPANDING claim. 시작 시각도 찍는다 — 복구 스위퍼의 고착 판정 기준(V34). */
     @Modifying
     @Transactional

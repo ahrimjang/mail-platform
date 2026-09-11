@@ -87,6 +87,26 @@ class CampaignFanoutServiceTest {
     }
 
     @Test
+    void expand_stopsBetweenPages_whenTheCampaignWasAborted() {
+        // 100만 명을 펼치는 도중 중단이 들어오면 다음 페이지로 넘어가지 않는다(ARCH-8)
+        Campaign live = listCampaign();
+        Campaign aborted = listCampaign();
+        aborted.setStatus(io.github.ahrimjang.mail.common.CampaignStatus.CANCELED);
+        when(campaigns.claimForFanout(CAMPAIGN_ID)).thenReturn(true);
+        // 초기 로드 → 1페이지 전 확인 → 2페이지 전 확인(취소됨)
+        when(campaigns.findById(CAMPAIGN_ID))
+                .thenReturn(Optional.of(live), Optional.of(live), Optional.of(aborted));
+        when(contacts.findSubscribedByListIdAfter(eq(LIST_ID), eq(0L), eq(PAGE))).thenReturn(contactPage(1L, PAGE));
+        stubSaveAllAssigningIds();
+
+        service.expand(CAMPAIGN_ID);
+
+        verify(messages, times(1)).saveAll(anyList());                                   // 1페이지만
+        verify(contacts, never()).findSubscribedByListIdAfter(eq(LIST_ID), eq((long) PAGE), eq(PAGE));
+        verify(campaigns, never()).markExpanded(CAMPAIGN_ID);                             // SENDING 으로 안 넘어감
+    }
+
+    @Test
     void expand_recordsSuppressedRecipientsAsSuppressed_withoutEnqueuingThem() {
         // 억제 주소를 큐에 넣었다가 dispatch 에서 빼면 잡·토큰·DB 왕복이 낭비다(ARCH-10).
         // 행은 남겨 "발송 제외" 통계는 유지하되 큐에는 넣지 않는다.

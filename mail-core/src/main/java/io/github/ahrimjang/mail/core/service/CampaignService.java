@@ -40,6 +40,8 @@ import java.util.NoSuchElementException;
 @Service
 public class CampaignService {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(CampaignService.class);
+
     private final CampaignRepository campaigns;
     private final MailMessageRepository messages;
     private final EmailEventRepository events;
@@ -423,6 +425,27 @@ public class CampaignService {
         }
         // Safe after winning the claim: these rows were never published.
         messages.cancelPendingByCampaign(id);
+        return get(id);
+    }
+
+    /**
+     * 발송 중 중단(ARCH-8). 오발송을 알아챈 순간 남은 발송을 멈추는 유일한 수단이다 —
+     * 예전엔 예약 취소만 있어 즉시 캠페인은 100만 통이 다 나갈 때까지 멈출 코드가 없었다.
+     *
+     * <p>순서가 중요하다: 먼저 캠페인을 CANCELED 로 조건부 전이(이겨야 진행) → PENDING
+     * 메시지 일괄 취소. 그 뒤 팬아웃 루프는 페이지마다 상태를 보고 멈추고, 디스패치는 취소된
+     * 메시지 잡을 종료 상태라 건너뛴다. 이미 claim 돼 SMTP 로 넘어간 몇 통(워커 동시성만큼)은
+     * 회수할 수 없다 — 그건 화면에도 그렇게 말한다.
+     */
+    public CampaignView abort(Long id) {
+        campaigns.findById(id)
+                .filter(this::owned)
+                .orElseThrow(() -> new NoSuchElementException("campaign not found: " + id));
+        if (!campaigns.abort(id)) {
+            throw new IllegalStateException("이미 끝났거나 취소된 캠페인이라 중단할 수 없어요: " + id);
+        }
+        int canceled = messages.cancelPendingByCampaign(id);
+        log.warn("캠페인 {} 발송 중단 — 남은 {}건 취소 (요청자 {})", id, canceled, ctx.currentUserEmail());
         return get(id);
     }
 

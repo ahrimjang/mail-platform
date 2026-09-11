@@ -67,6 +67,11 @@ public class JpaCampaignRepository implements CampaignRepository {
     }
 
     @Override
+    public boolean abort(Long id) {
+        return jpa.abort(id, Instant.now()) == 1;
+    }
+
+    @Override
     public List<Campaign> findStuckExpanding(Instant cutoff) {
         return jpa.findStuckExpanding(cutoff).stream().map(this::toDomain).toList();
     }

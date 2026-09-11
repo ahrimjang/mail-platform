@@ -90,6 +90,14 @@ public class CampaignFanoutService {
         }
         long total = 0;
         while (true) {
+            // 발송 중 중단(ARCH-8): 페이지마다 상태를 본다. 100만 명 리스트를 펼치는 도중에
+            // 중단이 들어오면 여기서 멈춰야 나머지 수신자 행이 만들어지지 않는다.
+            if (campaigns.findById(campaignId).map(Campaign::getStatus)
+                    .filter(s -> s == io.github.ahrimjang.mail.common.CampaignStatus.CANCELED).isPresent()) {
+                log.warn("fan-out of campaign {} stopped: campaign was aborted ({} messages created so far)",
+                        campaignId, total);
+                return;
+            }
             List<Contact> page = contacts.findSubscribedByListIdAfter(listId, afterId, PAGE);
             if (page.isEmpty()) {
                 break;

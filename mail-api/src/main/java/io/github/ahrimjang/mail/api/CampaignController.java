@@ -114,6 +114,15 @@ public class CampaignController {
         return campaigns.cancelSchedule(id);
     }
 
+    /**
+     * 발송 중 중단(ARCH-8) — 남은 발송을 멈춘다. 이미 나간 메일은 회수되지 않는다.
+     * 끝났거나 이미 취소된 캠페인은 409.
+     */
+    @PostMapping("/{id}/abort")
+    public CampaignView abort(@PathVariable Long id) {
+        return campaigns.abort(id);
+    }
+
     /** The mail this campaign sends: subject + HTML body snapshot (heavy — not part of the polled view). */
     /** This campaign's clicked links, best first. */
     @GetMapping("/{id}/links")
