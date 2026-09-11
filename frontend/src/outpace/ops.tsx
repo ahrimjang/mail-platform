@@ -117,7 +117,7 @@ export async function opsAction(path: string, body: Record<string, unknown>, met
   }
 }
 
-const CAMPAIGN_COLS = "minmax(180px, 2fr) minmax(120px, 1.2fr) 110px 90px 90px 90px 120px";
+const CAMPAIGN_COLS = "minmax(180px, 2fr) minmax(120px, 1.2fr) 110px 80px 80px 90px 160px";
 
 /** 전 테넌트 캠페인 표 — 검색·상세·신호 패널이 공유. 행 클릭은 워크스페이스 상세로. */
 export function CampaignTable({
@@ -159,7 +159,7 @@ export function CampaignTable({
             <span style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
               <span className="faint">{fmtDateTime(c.createdAt)}</span>
               {onAbort && abortable && (
-                <button className="op-linkbtn" style={{ fontSize: 12.5, color: "var(--op-red)" }} onClick={() => onAbort(c)}>중단</button>
+                <button className="op-linkbtn" style={{ fontSize: 12.5, color: "var(--op-red)", whiteSpace: "nowrap" }} onClick={() => onAbort(c)}>중단</button>
               )}
             </span>
           </div>
