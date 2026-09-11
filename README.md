@@ -169,6 +169,7 @@ curl -H "Authorization: Bearer $TOKEN" "localhost:8080/api/campaigns/1/log"
 | 계정 수명주기(초대·비밀번호 재설정·비활성화) | 표준 플로우 — 보안 실위험(로그인 시도 제한)부터 구현, 나머지는 운영 개시 전 순차 | [REVIEW-product.md](docs/REVIEW-product.md) 1절 |
 | SES 실연동의 AWS 콘솔 절차 | 코드(서명검증·구독확인·파서)는 완료 — 도메인·샌드박스는 계정 준비 사항 | [TODO-ses-sns.md](docs/TODO-ses-sns.md) |
 | AI 이메일 작성 | 설계만 — **베타 오픈 이후 착수**(평판 파이프라인이 먼저). 범용 생성기가 아니라 제목 후보→발송 전 진단→본문 순 | [ai-compose-design.md](docs/ai-compose-design.md) |
+| MCP 연동(사내 에이전트가 캠페인 운영) | 설계만 — 공개 REST 확장(키 스코프·멱등 키) → `/mcp` 읽기·초안 도구 → 확정 토큰 기반 발송 순 | [mcp-integration-design.md](docs/mcp-integration-design.md) |
 | suppression 블룸필터, IDENTITY→시퀀스 등 | 다음 병목 후보로 로드맵에 조건과 함께 기록 | [ROADMAP-scale.md](docs/ROADMAP-scale.md) Tier 2·3 |
 | 메시지 전이 이력 로그 | **만들었다 회수** — 행 2배·핫패스 비용이 현 규모에선 가치 초과. 재도입 조건 명시 | [RETRO-scaling.md](docs/RETRO-scaling.md) 5절 |
 | 봇 오픈 필터, 클릭 리다이렉트 서명 | 업계 공통 이슈로 인지·문서화 | [REVIEW-product.md](docs/REVIEW-product.md) 6절 |
