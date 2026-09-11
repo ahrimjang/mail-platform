@@ -95,6 +95,11 @@ public class JpaMailMessageRepository implements MailMessageRepository {
     }
 
     @Override
+    public boolean hasUnfinishedTestBatch(Long campaignId) {
+        return jpa.existsUnfinishedTestBatch(campaignId);
+    }
+
+    @Override
     public List<Long> findStaleIds(Instant cutoff, int limit) {
         return jpa.findStaleIds(cutoff, org.springframework.data.domain.PageRequest.of(0, Math.max(1, limit)));
     }

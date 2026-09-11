@@ -51,6 +51,13 @@ public interface MailMessageJpaRepository extends JpaRepository<MailMessageEntit
             + "and m.variant is not null")
     java.util.List<Long> findPendingTestIdsByCampaignId(@Param("campaignId") Long campaignId);
 
+    /** 테스트 배치(variant 있음)에 아직 안 끝난 행이 있는가 — 승자 판정을 미루는 근거. */
+    @Query("select count(m) > 0 from MailMessageEntity m where m.campaignId = :campaignId "
+            + "and m.variant is not null "
+            + "and m.status in (io.github.ahrimjang.mail.common.MessageStatus.PENDING, "
+            + "                 io.github.ahrimjang.mail.common.MessageStatus.SENDING)")
+    boolean existsUnfinishedTestBatch(@Param("campaignId") Long campaignId);
+
     /** PENDING held rows of a winner-flow campaign (no variant — waiting for the winner). */
     @Query("select m.id from MailMessageEntity m where m.campaignId = :campaignId "
             + "and m.status = io.github.ahrimjang.mail.common.MessageStatus.PENDING "

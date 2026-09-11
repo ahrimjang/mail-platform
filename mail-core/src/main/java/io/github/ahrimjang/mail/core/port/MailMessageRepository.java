@@ -82,6 +82,12 @@ public interface MailMessageRepository {
     /** PENDING held ids (no variant) — released with the winner's content once decided. */
     List<Long> findPendingHeldIdsByCampaign(Long campaignId);
 
+    /**
+     * 승자 플로우의 테스트 배치(variant 있음)에 아직 PENDING/SENDING 이 남았는가 — 다 나가기
+     * 전에 판정하면 늦게 나간 쪽이 불리하다(ARCH-6). 속도 제한에 걸린 캠페인이 특히 그렇다.
+     */
+    boolean hasUnfinishedTestBatch(Long campaignId);
+
     // ── 복구 스위퍼(ARCH-1/2/5) ────────────────────────────────────────────
 
     /**
