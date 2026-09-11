@@ -193,3 +193,30 @@
 | `verify(..., never())` / `verifyNoInteractions` | 전 클래스 | "안 일어나야 하는 일"(이중 발송, 검증 전 저장, 불필요한 조회)이 정말 안 일어났는지 |
 | 실제 협력자 + mock 포트 혼합 | Dispatch/Transactional | 조립·렌더 결과물은 진짜여야 의미가 있고, I/O 경계만 끊으면 충분 |
 | 원자적 claim의 승/패 분기 | Dispatch/CampaignSchedule | `claim`/`claimForEnqueue`를 true/false로 stub — 이긴 쪽만 진행하고 진 쪽은 **조용한 no-op**임을 양쪽 다 검증 (동시 소비자/스케줄러 안전) |
+
+---
+
+## 2026-09 에 추가된 테스트 (요약)
+
+이 문서의 메소드별 해설은 그 이전 시점까지입니다. 9월 하드닝([13 문서](13-recovery-and-abort.md))으로
+아래 클래스가 늘었고, 기존 테스트 일부는 **옛 결함을 의도로 박제하고 있어 뒤집혔습니다** — "동률이면 A"
+가 대표적입니다(지금은 "동률이면 유예").
+
+| 클래스 (모듈) | 무엇을 잠그나 |
+|---|---|
+| `DeadLetterServiceTest` (core) | DLQ 발송 잡 → `finishIfActive`(PENDING/SENDING 만) → 완료 판정 → 알림 1회/캠페인; 이미 종료된 행은 손대지 않음 |
+| `DeadLetterListenerTest` (worker, **모듈 첫 테스트**) | `__TypeId__`·`x-death`·본문으로 send/fanout 봉투 판별, 미상은 오분류 대신 unknown |
+| `RecoveryServiceTest` (core) | EXPANDING 되돌리기에 이긴 호출만 재발행, 고아 QUEUED(리스트→팬아웃, 애드혹 무메시지→CANCELED), stale 재발행 전 `touchPending` |
+| `SmtpMailSenderTest` (infra, **모듈 첫 테스트**) | 실제 MIME 헤더에 `List-Unsubscribe`/`List-Unsubscribe-Post`·`X-Mail-Message-Id`·Reply-To 가 실리는지, 트랜잭셔널엔 안 실리는지 |
+| `MailDispatchServiceTest` (갱신) | `claim` 이 토큰(Optional<Instant>)을 돌려주고 종료가 `finish(id, 토큰, status, error, now)` 로 기록됨; 억제 시 토큰 미소비; `{{name}}` 채움 |
+| `BounceServiceTest` (갱신) | `markBounced` 조건부 UPDATE — 0행이면 이벤트 없음(멱등) |
+| `AbWinnerServiceTest` (갱신) | 배치 미완료·표본 부족·반응 0·동률 → 유예, 기한 초과 → 약한 근거로 확정 |
+| `AbVariantAssignerTest` (갱신) | SHA-256 버킷의 안정성, 같은 도메인·연번 소표본에서도 양쪽 분산 |
+| `CampaignServiceTest` (갱신) | 검증이 저장보다 앞(고아 없음), `abort` 전이 승/패, 월 예산 `sent+target`, 승자 플로우 최소 표본 거절 |
+| `CampaignFanoutServiceTest` (갱신) | 재개 커서, 중단 시 다음 페이지로 안 넘어감, 억제 주소 SUPPRESSED 직기록·큐 미발행 |
+| `PlanLimitsTest` (갱신) | 남은 예산과 이번 대상의 합산 판정 |
+| `ContactServiceTest` (갱신) | CSV 제목 줄은 첫 줄만 건너뜀, 둘째 줄부터의 `email` 은 진짜 거부 |
+| `SendingWarmupServiceTest` (갱신) | 화면 안내용 `statusOf` 가 집행값과 같은 상한을 냄 |
+
+패턴은 하나가 더 늘었습니다 — **조건부 UPDATE 의 승/패를 boolean stub 으로 갈라 양쪽을 검증**하는 것이
+claim 뿐 아니라 `finish`·`markBounced`·`abort`·`resetExpandingToQueued` 에도 적용됩니다.

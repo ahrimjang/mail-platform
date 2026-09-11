@@ -30,6 +30,8 @@
     │
     ├─ 메시지 조회, 이미 끝난 상태(SENT/FAILED/…)면 skip   ← 재배달이 토큰을 낭비하지 않게
     │
+    ├─ 억제 주소면 claim → SUPPRESSED 기록 후 종료           ← 2026-09: 토큰 소비보다 앞 (ARCH-10)
+    │
     ├─ rateLimiter.tryAcquire(campaign.workspaceId)
     │        │
     │        ├─ 무제한(rate null) ──────────────▶ 통과 (캐시 덕에 추가 쿼리 0)
@@ -43,7 +45,7 @@
     │                    mail.send.queue 꼬리로 재진입 ──▶ 다시 dispatchOne
     │
     ├─ messages.claim(...)  ← 토큰 확인은 반드시 claim "앞"에서 (설계 포인트 참고)
-    └─ (이하 03 문서의 발송 경로 그대로: 억제 확인 → 렌더 → SMTP → SENT)
+    └─ (이하 03 문서의 발송 경로 그대로: 렌더 → SMTP → finish(조건부) → SENT)
 ```
 
 핵심 성질: 파킹 큐로 빠지는 건 **한도를 넘긴 테넌트의 메시지뿐**입니다. 그 사이 다른

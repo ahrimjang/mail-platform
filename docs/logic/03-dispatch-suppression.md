@@ -6,11 +6,12 @@
 
 `MailDispatchService.dispatchOne`은 메시지 id 하나를 받아:
 
-1. **원자적 클레임** — DB에 조건부 UPDATE 한 방으로 "이 메시지는 내가 처리한다"를 선언. 이미 처리됐거나 다른 소비자가 지금 처리 중이면 조용히 리턴. 큐가 같은 잡을 두 번(또는 동시에 두 소비자에게) 배달해도 실제 발송은 한 번만 일어납니다.
-2. **억제(suppression) 체크** — 수신거부했거나 반송된 주소면 보내지 않고 `SUPPRESSED`로 마킹.
-3. **HTML 조립** — 개인화 변수 치환 → 링크를 클릭 추적 URL로 재작성 → 수신거부 푸터 → 오픈 픽셀 순으로 본문을 쌓습니다.
-4. **발송 + 결과 기록** — 캠페인에 발신자(From) 오버라이드가 있으면 함께 넘겨 발송하고, 성공이면 `SENT`, 실패면 `BOUNCED` + 해당 주소를 억제 목록에 자동 등록.
-5. **completeIfDrained** — 캠페인에 PENDING/SENDING이 하나라도 남았는지 값싼 EXISTS로 확인하고, 안 남았으면 `SENDING → COMPLETED`로만 전환(`completeIfSending`). 팬아웃이 도는 중(`EXPANDING`)인 리스트 캠페인은 조기 완료되지 않습니다.
+1. **억제(suppression) 체크** — 수신거부했거나 반송된 주소면 보내지 않고 `SUPPRESSED`로 마킹. 2026-09 부터 이 확인이 **토큰 소비보다 앞**입니다(어차피 안 나가는 주소에 발송 예산을 쓰지 않으려고 — 11 문서). 리스트 캠페인은 팬아웃 단계에서 이미 걸러져 여기 오지 않습니다.
+2. **속도 제한 토큰** — 워크스페이스 버킷에서 1개 차감, 없으면 파킹 큐로(11 문서).
+3. **원자적 클레임** — DB에 조건부 UPDATE 한 방으로 "이 메시지는 내가 처리한다"를 선언하고 **claim 토큰**(그때 찍은 `updatedAt`)을 돌려받습니다. 이미 처리됐거나 다른 소비자가 처리 중이면 조용히 리턴.
+4. **HTML 조립** — 개인화 변수 치환 → 링크를 클릭 추적 URL로 재작성 → 수신거부 푸터 → 오픈 픽셀 순으로 본문을 쌓고, `List-Unsubscribe` 헤더용 URL 을 함께 넘깁니다.
+5. **발송 + 결과 기록** — 성공이면 `SENT`, 실패면 `BOUNCED` + 해당 주소를 억제 목록에 자동 등록. 기록은 blind save 가 아니라 **claim 토큰이 아직 유효할 때만 쓰는 조건부 UPDATE**(`finish`)입니다 — 13 문서 3-1.
+6. **completeIfDrained** — 캠페인에 PENDING/SENDING이 하나라도 남았는지 값싼 EXISTS로 확인하고, 안 남았으면 `SENDING → COMPLETED`로만 전환(`completeIfSending`). 팬아웃이 도는 중(`EXPANDING`)인 리스트 캠페인은 조기 완료되지 않습니다.
 
 **억제 목록(suppression list)** 은 "다시는 보내면 안 되는 주소"의 전역 명단입니다. 수신거부 링크 클릭과 발송 실패(반송) 두 경로로 채워지고, 모든 캠페인의 발송 시점에 존중됩니다. 스팸 신고를 피하고 발신자 평판을 지키는, 메일 플랫폼의 필수 장치입니다.
 
@@ -51,23 +52,22 @@ SendJob{id} 도착 (MailSendListener → dispatchOne)
 
 `mail-core/src/main/java/io/github/ahrimjang/mail/core/service/MailDispatchService.java`
 ```java
-    public void dispatchOne(Long messageId) {
-        if (!messages.claim(messageId, STALE_CLAIM_AFTER)) {
+        // claim 토큰(claim 이 찍은 updatedAt) — 종료 기록은 이 토큰이 아직 유효할 때만 쓴다
+        java.util.Optional<java.time.Instant> claimed = messages.claim(messageId, STALE_CLAIM_AFTER);
+        if (claimed.isEmpty()) {
             log.debug("skip: message {} already claimed/processed by another consumer", messageId);
             return;
         }
-        MailMessage message = messages.findById(messageId).orElse(null);
-        if (message == null) {
-            return;
-        }
-        Campaign campaign = campaigns.findById(message.getCampaignId()).orElse(null);
+        java.time.Instant claimedAt = claimed.get();
         if (campaign == null) {
             message.markFailed("campaign no longer exists");
-            messages.save(message);
+            finish(message, claimedAt);
             return;
         }
         markSending(campaign);
 ```
+
+(2026-09 이전엔 `boolean claim(...)` + `messages.save(message)` 였습니다. 지금은 claim 이 **토큰**을 돌려주고 모든 종료 기록이 그 토큰을 조건으로 겁니다 — 이유는 3-4 와 [13 문서](13-recovery-and-abort.md) 3-1.)
 
 `claim`은 `mail-core/src/main/java/io/github/ahrimjang/mail/core/port/MailMessageRepository.java`에 선언된 포트 메서드고, 실제 구현은 JPA 어댑터의 조건부 UPDATE 한 문장입니다.
 
@@ -91,13 +91,22 @@ RabbitMQ는 at-least-once라 같은 `SendJob`이 재배달될 수 있고, 재배
 
 `mail-core/src/main/java/io/github/ahrimjang/mail/core/service/MailDispatchService.java`
 ```java
-        if (suppressions.existsByEmail(message.getRecipient())) {
+        // 억제 확인은 토큰 소비보다 앞에(ARCH-10). 억제된 주소는 어차피 안 나가는데 발송
+        // 토큰을 먼저 쓰면 억제 30% 명단에서 발송 예산 30% 가 허비된다.
+        if (campaign != null && suppressions.existsByWorkspaceAndEmail(campaign.getWorkspaceId(), message.getRecipient())) {
+            java.util.Optional<java.time.Instant> claimed = messages.claim(messageId, STALE_CLAIM_AFTER);
+            if (claimed.isEmpty()) {
+                return;
+            }
+            markSending(campaign);
             message.markSuppressed();
-            messages.save(message);
+            finish(message, claimed.get());
             completeIfDrained(campaign.getId());
             return;
         }
 ```
+
+리스트 캠페인은 여기까지 오지 않습니다 — 팬아웃이 페이지 단위로 억제 주소를 일괄 조회해 `SUPPRESSED` 로 바로 기록하고 큐에 넣지 않습니다(02 문서 3-6 변경 노트). 이 경로는 애드혹 캠페인과 과거 큐 잔여분용입니다.
 
 억제된 주소는 발송 시도조차 하지 않고 `SUPPRESSED`로 기록됩니다. 실패도 성공도 아닌 별도 상태로 남겨서 캠페인 통계(`suppressed` 카운트)에 그대로 드러납니다.
 
@@ -134,23 +143,25 @@ RabbitMQ는 at-least-once라 같은 `SendJob`이 재배달될 수 있고, 재배
 
 `mail-core/src/main/java/io/github/ahrimjang/mail/core/service/MailDispatchService.java`
 ```java
+        var options = new MailSender.Options(
+                campaign.getReplyTo(), unsubscribeUrl(message.getUnsubToken()));
         try {
             sender.send(message.getRecipient(), subject, html, String.valueOf(message.getId()),
-                    campaign.getSenderName(), campaign.getSenderEmail());
+                    campaign.getSenderName(), campaign.getSenderEmail(), options);
             message.markSent();
         } catch (Exception e) {
-            // ERROR + throwable so the failure is observable: the stack trace ships to
-            // OpenSearch, letting the log dashboard surface it and map it back to source.
             log.error("send failed: campaign={} recipient={}",
                     campaign.getId(), message.getRecipient(), e);
             message.markBounced(e.getMessage());
-            suppressions.save(Suppression.of(message.getRecipient(), "bounce"));
+            suppressions.save(Suppression.of(campaign.getWorkspaceId(), message.getRecipient(), "bounce"));
         }
-        messages.save(message);
+        finish(message, claimedAt);
         completeIfDrained(campaign.getId());
 ```
 
-`send`의 마지막 두 인자는 캠페인 단위의 **발신자(From) 오버라이드**입니다 — 캠페인 생성 시 `senderName`/`senderEmail`을 지정했으면 그 값이, 안 했으면 `null`이 넘어가 어댑터의 기본 발신자(SMTP 세션 기본값)가 쓰입니다.
+`senderName`/`senderEmail` 은 캠페인 단위의 **발신자(From) 오버라이드**이고(없으면 `null` → 어댑터 기본 발신자), `Options` 에는 회신 주소와 **원클릭 수신거부 URL**(`List-Unsubscribe`/`List-Unsubscribe-Post` 헤더용, RFC 8058)이 실립니다.
+
+마지막 줄 `finish(message, claimedAt)` 가 2026-09 의 핵심 변경입니다. 예전 `messages.save(message)` 는 **늦게 끝난 쪽이 무조건 이기는** blind save 였습니다 — SMTP 가 2분 넘게 끌려 다른 워커가 stale 재클레임한 뒤에도 첫 워커의 옛 결과가 새 결과를 덮어썼고, 바운스 웹훅이 먼저 쓴 BOUNCED 도 SENT 로 되돌아갔습니다. 지금은 `status = SENDING and updatedAt = claimedAt` 일 때만 기록하고, 0행이면 "내 결과는 이미 무효"라 로그만 남깁니다. 중복 발송 자체는 워커의 SMTP 타임아웃(연결 10초·읽기/쓰기 30초)이 stale 창(2분)보다 짧아진 것으로 막습니다 — [13 문서](13-recovery-and-abort.md) 3-1.
 
 실패하면 `BOUNCED`로 마킹하는 데서 끝나지 않고 **그 주소를 즉시 억제 목록에 넣습니다**("bounce" 사유). 다음 캠페인부터는 시도조차 안 하게 됩니다 — 죽은 주소에 반복 발송하면 발신자 평판이 깎이기 때문입니다. 실패 로그는 `warn`이 아니라 **`error` + 예외 객체(스택트레이스)** 로 남깁니다 — JSON 로그를 통해 OpenSearch 대시보드까지 스택트레이스가 실려 가서, 어떤 발송이 왜 죽었는지 로그 화면에서 바로 역추적할 수 있게 하기 위해서입니다.
 
@@ -301,10 +312,10 @@ public class LoggingMailSender implements MailSender {
 
 - **멱등 소비자 + 원자적 클레임**: at-least-once 큐 앞에서는 "중복이 와도 안전한 소비자"가 정답입니다. 처음엔 상태 체크(`!= PENDING → 스킵`) 하나로 해결했지만, **조회와 저장 사이에 락이 없어** 워커 여러 대(또는 재배달)가 동시에 같은 id를 읽으면 둘 다 PENDING을 보고 둘 다 발송해버리는 이중 발송 창이 있었습니다. 지금은 `claim()`이 단일 조건부 UPDATE(`WHERE id=? AND status='PENDING'`)로 그 read-then-write 사이의 창을 없앱니다 — DB가 행 단위로 동시 UPDATE를 직렬화해주므로 정확히 하나만 이깁니다.
   - `SELECT ... FOR UPDATE SKIP LOCKED`가 아니라 **단일 조건부 UPDATE**를 택한 이유: `FOR UPDATE SKIP LOCKED`는 "대기 중인 여러 후보 중 아직 안 잠긴 N개를 골라온다"(배치 폴링/클레임)에 어울리는 기법인데, RabbitMQ가 이미 처리할 `messageId`를 콕 집어 넘겨주는 지금 구조엔 안 맞습니다. 조건부 UPDATE는 같은 원자성 보장을 SQL 한 문장으로 주면서, 느린 SMTP 호출 동안 DB 락/커넥션을 붙들고 있을 필요도 없습니다.
-  - **잔여 한계**: 클레임에 `SENDING` 상태를 도입하면서, 소비자가 발송 도중 크래시하면 메시지가 `SENDING`에 갇힐 위험이 생겼습니다. `STALE_CLAIM_AFTER`(2분)가 지난 `SENDING` 행도 재클레임 대상에 포함시켜서 완화했지만, 크래시가 그 2분 창 안에서 재배달과 겹치면 그 안에서는 재시도되지 않습니다(POC 수준 트레이드오프 — 창을 줄이면 복구는 빨라지지만 정상 처리 중인 느린 발송을 오탐으로 재클레임할 여지가 커집니다).
+  - **claim 은 반쪽이었습니다**: 클레임에 `SENDING` 을 도입하면서 "이긴 뒤 죽으면"의 문제가 생겼습니다. stale 재클레임(2분)은 재전달이 있을 때만 돌고, 재전달 없이 잡이 사라진 행(발행 직후 크래시, DLQ 행)은 영영 SENDING 이었습니다. 2026-09 에 셋으로 닫았습니다 — 종료 기록의 **claim 토큰 조건부 UPDATE**(덮어쓰기 방지), **SMTP 타임아웃**(stale 창 안에 끝나게 → 중복 발송 방지), **복구 스위퍼 + DLQ 리스너**(잡이 사라진 행의 재발행/확정). 자세한 것은 [13 문서](13-recovery-and-abort.md).
 - **완료 판정은 값싼 EXISTS로, 발송은 병렬로**: 예전엔 발송 1건이 끝날 때마다 상태별 7×COUNT(`countByCampaign`)로 드레인을 확인해, 캠페인이 커질수록 발송 총비용이 O(N²)로 불어났습니다. 지금은 첫 매치에서 멈추는 short-circuit EXISTS(`hasPendingOrSending`)로 발송당 비용을 일정하게 유지하고, `(campaign_id, status)` 복합 인덱스(V7)가 이 체크와 대시보드 카운트를 함께 받칩니다. 완료는 `completeIfSending`으로 `SENDING`에서만 승인하므로 `EXPANDING` 캠페인의 조기 완료도 막습니다. 발송 경로가 I/O 바운드(DB 왕복 + SMTP)라 워커 리스너 동시성도 1→8(`spring.rabbitmq.listener.simple.concurrency`, env로 조정)로 올려 워커 한 대가 여러 건을 병렬 발송하며, 여러 소비자가 완료 판정을 동시에 쳐도 SENDING-only 게이트가 조기 완료를 막습니다.
-- **메시지 상태는 "전달 결과"만**: `PENDING → SENT | FAILED | BOUNCED | SUPPRESSED`. 열람/클릭은 상태가 아니라 별도 `EmailEvent`로 쌓습니다. 한 메시지가 "보내졌고 + 열렸고 + 클릭됐다"는 다차원 사실을 단일 상태로 욱여넣지 않기 위해서입니다.
-- **억제는 전역, 두 경로로 유입**: 수신거부(명시적 거절)와 반송(죽은 주소) 모두 같은 명단으로 갑니다. `reason` 필드("unsubscribe"/"bounce")로 유입 경로는 구분됩니다.
+- **메시지 상태는 "전달 결과"만**: `PENDING → SENDING → SENT | FAILED | BOUNCED | SUPPRESSED | CANCELED`(취소·중단). 열람/클릭은 상태가 아니라 별도 `EmailEvent`로 쌓습니다. 한 메시지가 "보내졌고 + 열렸고 + 클릭됐다"는 다차원 사실을 단일 상태로 욱여넣지 않기 위해서입니다.
+- **억제는 워크스페이스 단위, 다섯 경로로 유입**: 수신거부 링크·원클릭 헤더(`unsubscribe`), 발송 시점 실패(`bounce`), SES 웹훅의 하드 바운스(`hard_bounce`)·스팸 신고(`complaint`), 운영자 수동(`manual`). 전부 같은 `suppressions` 테이블(`(workspace_id, email)` 유니크)로 가고 `reason` 으로 구분됩니다. 콘솔의 수신자 → 억제 목록 탭이 이 테이블을 그대로 보여줍니다.
 - **발신자(From)는 캠페인의 속성, 폴백은 어댑터의 몫**: `senderName`/`senderEmail`은 캠페인 행에 저장돼 발송 시 포트로 그대로 전달되고, `null` 처리(기본 발신자 폴백)는 각 어댑터가 책임집니다. core는 "오버라이드가 있으면 넘긴다"만 알면 되고, 기본 발신자가 무엇인지(SMTP 세션 설정)는 infra 관심사로 남습니다.
 - **발송기는 속성 하나로 교체**: `@ConditionalOnProperty` 덕분에 SES/SendGrid 어댑터를 `infra`에 추가하고 `mail.sender.type`만 바꾸면 프로덕션 발송으로 전환됩니다. core는 무변경.
 

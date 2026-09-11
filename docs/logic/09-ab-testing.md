@@ -42,22 +42,29 @@ POST /api/campaigns {abSubjectB, abTestPercent=30, abEvalMetric, abEvalWaitMinut
 ```java
     /** @return "B" for roughly splitPercent% of recipients, "A" otherwise. */
     public static String assign(String recipientEmail, int splitPercent) {
-        int bucket = Math.floorMod(recipientEmail.toLowerCase().hashCode(), 100);
-        return bucket < splitPercent ? "B" : "A";
+        return (bucket(recipientEmail) / 100) < splitPercent ? "B" : "A";
     }
-```
 
-```java
     public static String assignWithHoldout(String recipientEmail, int testPercent, int splitPercent) {
-        int bucket = Math.floorMod(recipientEmail.toLowerCase().hashCode(), 10_000);
+        int bucket = bucket(recipientEmail);
         if (bucket >= testPercent * 100) {
             return null; // holdout — waits for the winner
         }
         return (bucket % 100) < splitPercent ? "B" : "A";
     }
+
+    /** 0 ≤ bucket < 10,000 — 대소문자 무관, 같은 주소면 항상 같은 값. */
+    static int bucket(String recipientEmail) {
+        byte[] digest = sha256(recipientEmail.trim().toLowerCase(Locale.ROOT));
+        long head = 0;
+        for (int i = 0; i < 8; i++) {
+            head = (head << 8) | (digest[i] & 0xff);
+        }
+        return (int) Math.floorMod(head, (long) BUCKETS);
+    }
 ```
 
-난수가 아니라 해시라서 **멱등**입니다 — at-least-once 재전달로 확장이 다시 돌아도 같은 사람이 다른 변형을 받을 수 없습니다. 대신 소표본에선 분포가 치우칠 수 있습니다(수천 명 이상에서 설정 비율에 수렴).
+난수가 아니라 해시라서 **멱등**입니다 — at-least-once 재전달로 확장이 다시 돌아도 같은 사람이 다른 변형을 받을 수 없습니다. 2026-09 이전엔 `String.hashCode()` 버킷이었는데, 비슷한 문자열(같은 도메인·연번 아이디)이 뭉치는 성질 때문에 소표본에서 테스트군이 한쪽 0명이 될 수 있었습니다(ARCH-7). **SHA-256 버킷**은 그 구조를 지워 작은 표본에서도 고르게 퍼집니다. 그래도 표본이 너무 작으면 판정 자체가 무의미하므로, `CampaignService.create` 는 테스트군(대상 × 비율)이 **안별 10명 미만이면 승자 플로우 등록을 거절**하고 대안(비율↑·대상↑·제목 A/B)을 안내합니다.
 
 ### 3-2. 확장 — 테스트만 발행, 보류는 PENDING인 채 대기
 
@@ -101,7 +108,12 @@ POST /api/campaigns {abSubjectB, abTestPercent=30, abEvalMetric, abEvalWaitMinut
 `mail-core/src/main/java/io/github/ahrimjang/mail/core/service/AbWinnerService.java`
 ```java
         for (Campaign campaign : campaigns.findDueForAbEvaluation(now)) {
-            String winner = pickWinner(campaign);
+            Verdict verdict = judge(campaign);
+            if (!verdict.conclusive() && !pastDeadline(campaign, now)) {
+                campaigns.scheduleAbEvaluation(campaign.getId(), now.plus(DEFER));   // 10분 뒤 다시
+                continue;
+            }
+            String winner = verdict.winner();
             if (!campaigns.claimAbWinner(campaign.getId(), winner)) {
                 continue; // another scheduler decided it first
             }
@@ -110,36 +122,46 @@ POST /api/campaigns {abSubjectB, abTestPercent=30, abEvalMetric, abEvalWaitMinut
 ```
 
 ```java
-    /** Higher engagement rate wins; ties (and zero engagement) fall back to A. */
-    private String pickWinner(Campaign campaign) {
-        EventType type = "CLICK".equals(campaign.getAbEvalMetric()) ? EventType.CLICK : EventType.OPEN;
-        double rateA = 0, rateB = 0;
-        for (VariantDelivery d : messages.countByCampaignAndVariant(campaign.getId())) {
-            long engaged = events.countDistinctMessagesByVariant(campaign.getId(), type, d.variant());
-            double rate = d.sent() == 0 ? 0 : (double) engaged / d.sent();
-            if ("A".equals(d.variant())) rateA = rate;
-            if ("B".equals(d.variant())) rateB = rate;
+    /** 판정 재료를 모아 결론 또는 "아직 이르다"를 낸다. */
+    Verdict judge(Campaign campaign) {
+        if (messages.hasUnfinishedTestBatch(campaign.getId())) {
+            return Verdict.inconclusive("A", "테스트 배치 발송 미완료");
         }
-        return rateB > rateA ? "B" : "A";
+        ... // 변형별 sent / engaged 집계
+        String leader = rateB > rateA ? "B" : "A";
+        if (sentA < MIN_SENT_PER_VARIANT || sentB < MIN_SENT_PER_VARIANT) {
+            return Verdict.inconclusive(leader, "표본 부족 ...");
+        }
+        if (engagedA + engagedB == 0) {
+            return Verdict.inconclusive(leader, "반응 없음 ...");
+        }
+        if (rateA == rateB) {
+            return Verdict.inconclusive(leader, "동률 ...");
+        }
+        return Verdict.decided(leader);
     }
 ```
 
-`claimAbWinner`는 `UPDATE ... SET ab_winner=? WHERE id=? AND ab_winner IS NULL` — 발송 claim·팬아웃 claim과 같은 **원자적 조건부 UPDATE** 패턴입니다. 워커가 여러 대여도 승자는 캠페인당 정확히 한 번 정해집니다. 참여가 전무하거나 동점이면 A(기존 안)로 폴백합니다.
+`claimAbWinner`는 `UPDATE ... SET ab_winner=? WHERE id=? AND ab_winner IS NULL` — 발송 claim·팬아웃 claim과 같은 **원자적 조건부 UPDATE** 패턴입니다. 워커가 여러 대여도 승자는 캠페인당 정확히 한 번 정해집니다.
+
+판정에는 **근거 요건**이 있습니다(2026-09, ARCH-6). 테스트 배치에 아직 PENDING/SENDING 이 남았거나, 변형별 발송이 10통 미만이거나, 반응이 하나도 없거나, 동률이면 확정하지 않고 평가를 **10분 뒤로 미룹니다**. 예전엔 이 네 경우가 전부 조용히 "A 승"으로 확정됐고, 속도 제한에 걸린 캠페인은 테스트 배치가 다 나가기도 전에 판정이 돌았습니다. 다만 영원히 미루면 홀드아웃(최대 95%)이 영영 안 나가므로, 릴리스 후 대기 시간 + **24시간**이 지나면 있는 근거로 확정합니다(앞선 쪽, 없으면 A — WARN 로그로 "약한 근거"를 남깁니다).
 
 ## 4. 설계 포인트 (왜 이렇게)
 
 - **보류 = 미발행 PENDING, 별도 상태 없음.** 새 메시지 상태를 만들지 않고 "행은 있으나 큐에 안 올림"으로 표현 — 예약 발송과 같은 어휘라 파이프라인의 나머지가 전부 무수정.
 - **승자 반영 = 렌더 시점 치환.** 수만 행 UPDATE 대신 읽기 시 분기. 지표 순수성(테스트 그룹만 비교)은 공짜로 따라온다.
 - **모든 동시성은 조건부 UPDATE claim.** 배정(해시 멱등) · 판정(`ab_winner IS NULL`) · 발송(기존 PENDING→SENDING claim) — 저장소 불변식 그대로.
-- **한계(알고 둘 것):** 평가 시각은 테스트 발행 시점 + 대기시간이라, 드레인이 극단적으로 느리면 평가가 발송 완료보다 먼저 올 수 있다(개발 규모에선 무시 가능). `abTemplateId`는 스냅샷만 남기고 id는 저장하지 않아 B안 템플릿 매핑 조회는 불가.
+- **판정은 근거가 있을 때만, 그러나 무한정 기다리지 않는다.** 배치 미완료·표본 부족·반응 0·동률은 유예(10분), 릴리스 후 24시간이 지나면 확정. 등록 시점에도 테스트군이 안별 10명 미만이면 승자 플로우를 받지 않는다 — 두 하한(`AbWinnerService.MIN_SENT_PER_VARIANT`)은 같은 상수다.
+- **한계(알고 둘 것):** `abTemplateId`는 스냅샷만 남기고 id는 저장하지 않아 B안 템플릿 매핑 조회는 불가. 승자 확정 뒤 릴리스 도중 워커가 죽으면 홀드아웃이 PENDING 에 남는데, 이는 복구 스위퍼의 stale 패스가 재발행한다([13 문서](13-recovery-and-abort.md)).
 
 ## 5. 확인 방법
 
 ```bash
 # A/B 승자 플로우 캠페인 (테스트 30%, 오픈율, 대기 1분 — 데모용 최소값)
+# 수신자는 70명 이상이어야 한다: 70 × 30% = 21명(안별 10명) 이 등록 하한이다(ARCH-7)
 curl -X POST http://localhost:8080/api/campaigns -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" -d '{
-    "subject":"[A안] 제목","body":"<p>A</p>","recipients":["u1@x.com", "...30명"],
+    "subject":"[A안] 제목","body":"<p>A</p>","recipients":["u1@x.com", "...70명"],
     "abSubjectB":"[B안] 제목","abBodyB":"<p>B</p>",
     "abTestPercent":30,"abEvalMetric":"OPEN","abEvalWaitMinutes":1}'
 

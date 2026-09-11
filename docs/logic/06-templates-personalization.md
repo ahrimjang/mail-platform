@@ -182,8 +182,8 @@ public class TemplateController {
         String trackedBody = trackingRewriter.rewriteLinks(bodySrc, message.getTrackingToken(), baseUrl);
 ```
 
-worker가 메시지 1건을 처리할 때: 기본 변수는 `email` 하나뿐이지만, 메시지에 `contactId`가
-연결돼 있으면(리스트 타깃 캠페인 — 07 문서 참고) 그 연락처의 이름·커스텀 속성 전체가 변수 map이 됩니다.
+worker가 메시지 1건을 처리할 때: 기본 변수는 `email` 과 `name`(이메일 아이디로 대체) 둘이고, 메시지에 `contactId`가
+연결돼 있으면(리스트 타깃 캠페인 — 07 문서 참고) 그 연락처의 이름·커스텀 속성 전체가 변수 map이 됩니다(`name` 은 성+이름).
 렌더 **후에** 트래킹 재작성이 오는 순서도 중요합니다 — `{{변수}}`가 URL 안에 들어 있어도 먼저 완성된 링크가 되고 나서 클릭 추적으로 감싸집니다.
 
 ### 3-7. 트랜잭셔널 단건 발송: 즉시 렌더 + 파이프라인 재사용
@@ -492,7 +492,7 @@ curl -s -X POST http://localhost:8080/api/uploads \
 ```
 
 MailHog(`http://localhost:8025`)에서 실제 도착한 메일의 제목/본문에 변수가 치환됐는지,
-직접 수신자(recipients) 캠페인은 contact가 없어 `{{firstName}}`이 빈칸으로 나가는지 비교해 보세요.
+직접 수신자(recipients) 캠페인은 contact가 없어 `{{firstName}}`은 빈칸, `{{name}}`은 이메일 아이디로 나가는지 비교해 보세요.
 
 에디터/마커 확인: 프론트(`http://localhost:5173`)의 템플릿 페이지에서 블록 에디터로 템플릿을
 만들어 저장한 뒤 `GET /api/templates/{id}`를 열면 `htmlBody`가 `<!--opblocks:…-->` 주석으로
