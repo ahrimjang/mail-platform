@@ -109,19 +109,22 @@ public class MailDispatchService {
             queue.enqueueThrottled(messageId);
             return;
         }
-        if (!messages.claim(messageId, STALE_CLAIM_AFTER)) {
+        // claim 토큰(claim 이 찍은 updatedAt) — 종료 기록은 이 토큰이 아직 유효할 때만 쓴다
+        java.util.Optional<java.time.Instant> claimed = messages.claim(messageId, STALE_CLAIM_AFTER);
+        if (claimed.isEmpty()) {
             log.debug("skip: message {} already claimed/processed by another consumer", messageId);
             return;
         }
+        java.time.Instant claimedAt = claimed.get();
         if (campaign == null) {
             message.markFailed("campaign no longer exists");
-            messages.save(message);
+            finish(message, claimedAt);
             return;
         }
         markSending(campaign);
         if (suppressions.existsByWorkspaceAndEmail(campaign.getWorkspaceId(), message.getRecipient())) {
             message.markSuppressed();
-            messages.save(message);
+            finish(message, claimedAt);
             completeIfDrained(campaign.getId());
             return;
         }
@@ -169,8 +172,23 @@ public class MailDispatchService {
             message.markBounced(e.getMessage());
             suppressions.save(Suppression.of(campaign.getWorkspaceId(), message.getRecipient(), "bounce"));
         }
-        messages.save(message);
+        finish(message, claimedAt);
         completeIfDrained(campaign.getId());
+    }
+
+    /**
+     * 종료 상태를 조건부로 기록한다(ARCH-4). blind save 는 늦게 끝난 쪽이 무조건 이겨서,
+     * SMTP 가 오래 걸려 다른 워커가 stale 재클레임한 뒤에도 이쪽의 옛 결과가 새 결과를
+     * 덮어썼고, 바운스 웹훅이 먼저 BOUNCED 를 쓴 것도 SENT 로 되돌렸다. 토큰이 안 맞으면
+     * 0행 — 그건 "내 결과는 이미 무효"라는 뜻이라 로그만 남긴다.
+     */
+    private void finish(MailMessage message, java.time.Instant claimedAt) {
+        boolean recorded = messages.finish(message.getId(), claimedAt, message.getStatus(),
+                message.getErrorMessage(), message.getUpdatedAt());
+        if (!recorded) {
+            log.warn("종료 기록 건너뜀 — claim 토큰 불일치(재클레임 또는 바운스 선반영): message={} status={}",
+                    message.getId(), message.getStatus());
+        }
     }
 
     /** 수신거부 진입 주소 — 본문 링크와 List-Unsubscribe 헤더가 같은 곳을 가리킨다. */

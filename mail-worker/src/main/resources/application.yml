@@ -23,6 +23,12 @@ spring:
           auth: ${SMTP_AUTH:false}
           starttls:
             enable: ${SMTP_STARTTLS:false}
+          # 타임아웃(ms). 이 합이 stale 재클레임 창(MailDispatchService, 2분)보다 확실히
+          # 짧아야 한다 — 릴레이가 응답을 끌면 이쪽이 먼저 포기하므로, 다른 워커가 같은
+          # 메시지를 재클레임해 두 번 보내는 일이 생기지 않는다(ARCH-4 중복 발송).
+          connectiontimeout: ${SMTP_CONNECT_TIMEOUT_MS:10000}
+          timeout: ${SMTP_READ_TIMEOUT_MS:30000}
+          writetimeout: ${SMTP_WRITE_TIMEOUT_MS:30000}
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5672}

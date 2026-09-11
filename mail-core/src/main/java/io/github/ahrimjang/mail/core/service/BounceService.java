@@ -48,12 +48,12 @@ public class BounceService {
     }
 
     public void handle(BounceNotification n) {
-        // 1) correlation (optional) — mark the specific message BOUNCED + record event, idempotently
+        // 1) correlation (optional) — mark the specific message BOUNCED + record event, idempotently.
+        //    조건부 UPDATE(SENT/SENDING 에서만): 발송 워커의 종료 기록과 경합해도 서로 덮어쓰지
+        //    않고(ARCH-4), 이미 BOUNCED 면 0행이라 이벤트도 두 번 나가지 않는다.
         if (n.messageId() != null) {
             messages.findById(n.messageId()).ifPresent(m -> {
-                if (m.getStatus() != MessageStatus.BOUNCED) {
-                    m.markBounced(n.reason());
-                    messages.save(m);
+                if (messages.markBounced(m.getId(), n.reason(), java.time.Instant.now())) {
                     events.publish(EmailEvent.of(m.getId(), m.getCampaignId(), EventType.BOUNCE, null));
                 }
             });

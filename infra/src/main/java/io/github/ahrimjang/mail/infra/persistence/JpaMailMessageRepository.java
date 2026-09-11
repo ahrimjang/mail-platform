@@ -42,9 +42,31 @@ public class JpaMailMessageRepository implements MailMessageRepository {
     }
 
     @Override
-    public boolean claim(Long messageId, Duration staleAfter) {
-        Instant now = Instant.now();
-        return jpa.claimPending(messageId, now, now.minus(staleAfter)) == 1;
+    public Optional<Instant> claim(Long messageId, Duration staleAfter) {
+        // 마이크로초로 자른다 — timestamptz(6) 에 저장된 값과 finish 의 = 비교가 정확히 맞아야 한다
+        Instant now = micros(Instant.now());
+        return jpa.claimPending(messageId, now, now.minus(staleAfter)) == 1 ? Optional.of(now) : Optional.empty();
+    }
+
+    @Override
+    public boolean finish(Long messageId, Instant claimedAt, io.github.ahrimjang.mail.common.MessageStatus status,
+                          String errorMessage, Instant now) {
+        return jpa.finish(messageId, micros(claimedAt), status, errorMessage, micros(now)) == 1;
+    }
+
+    @Override
+    public boolean finishIfActive(Long messageId, io.github.ahrimjang.mail.common.MessageStatus status,
+                                  String errorMessage, Instant now) {
+        return jpa.finishIfActive(messageId, status, errorMessage, micros(now)) == 1;
+    }
+
+    @Override
+    public boolean markBounced(Long messageId, String reason, Instant now) {
+        return jpa.markBouncedIfDelivered(messageId, reason, micros(now)) == 1;
+    }
+
+    private static Instant micros(Instant t) {
+        return t.truncatedTo(java.time.temporal.ChronoUnit.MICROS);
     }
 
     @Override

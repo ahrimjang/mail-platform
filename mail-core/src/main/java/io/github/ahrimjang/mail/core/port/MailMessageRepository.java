@@ -31,7 +31,31 @@ public interface MailMessageRepository {
      *         is being actively processed by another consumer right now — the
      *         caller must treat false as a safe no-op, not an error.
      */
-    boolean claim(Long messageId, Duration staleAfter);
+    Optional<java.time.Instant> claim(Long messageId, Duration staleAfter);
+
+    /**
+     * 종료 상태 기록 — claim 토큰({@code claimedAt}, claim 이 찍은 updatedAt)이 아직 유효할 때만
+     * 쓴다: {@code status = SENDING and updatedAt = claimedAt} 조건부 UPDATE. 그 사이 다른
+     * 워커가 stale 재클레임했거나 바운스 웹훅이 먼저 썼으면 0행 — 남의 결과를 덮어쓰지 않는다
+     * (ARCH-4 lost update). 이전엔 blind save 라 늦게 끝난 쪽이 무조건 이겼다.
+     *
+     * @return true 면 이 호출이 종료 상태를 확정했다
+     */
+    boolean finish(Long messageId, java.time.Instant claimedAt, io.github.ahrimjang.mail.common.MessageStatus status,
+                   String errorMessage, java.time.Instant now);
+
+    /**
+     * 토큰 없는 종료 기록 — 아직 살아 있는(PENDING/SENDING) 행에만. DLQ 뒷정리처럼 claim 을
+     * 거치지 않는 경로용. 이미 종료된 행은 0행.
+     */
+    boolean finishIfActive(Long messageId, io.github.ahrimjang.mail.common.MessageStatus status,
+                           String errorMessage, java.time.Instant now);
+
+    /**
+     * 비동기 바운스 반영 — SENT(정상 배달 후 반송) 또는 SENDING(발송 중 반송 통보) 에서만
+     * BOUNCED 로. 이미 BOUNCED/FAILED 면 0행이라 이벤트가 두 번 나가지 않는다(멱등).
+     */
+    boolean markBounced(Long messageId, String reason, java.time.Instant now);
 
     /** Aggregate per-status counts for one campaign. */
     MessageCounts countByCampaign(Long campaignId);

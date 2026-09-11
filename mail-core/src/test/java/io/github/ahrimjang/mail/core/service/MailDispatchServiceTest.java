@@ -52,6 +52,8 @@ class MailDispatchServiceTest {
     private static final Long MESSAGE_ID = 42L;
     private static final Long CAMPAIGN_ID = 7L;
     private static final String RECIPIENT = "user@example.com";
+    /** claim 이 찍은 updatedAt — 종료 기록은 이 토큰이 유효할 때만 쓰인다. */
+    private static final java.time.Instant CLAIMED = java.time.Instant.parse("2026-09-11T00:00:00Z");
 
     @Mock
     private MailMessageRepository messages;
@@ -101,11 +103,11 @@ class MailDispatchServiceTest {
         MailMessage message = queuedMessage(null);
         when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(message));
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(campaign("subject", "body")));
-        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(false);
+        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(Optional.empty());
 
         service.dispatchOne(MESSAGE_ID);
 
-        verify(messages, never()).save(any());
+        verify(messages, never()).finish(any(), any(), any(), any(), any());
         verify(sender, never()).send(anyString(), anyString(), anyString(), anyString(), any(), any(), any());
     }
 
@@ -123,7 +125,7 @@ class MailDispatchServiceTest {
 
         verify(queue).enqueueThrottled(MESSAGE_ID);
         verify(messages, never()).claim(anyLong(), any());
-        verify(messages, never()).save(any());
+        verify(messages, never()).finish(any(), any(), any(), any(), any());
     }
 
     @Test
@@ -143,22 +145,21 @@ class MailDispatchServiceTest {
     @Test
     void dispatchOne_marksFailedWhenCampaignMissing() throws Exception {
         MailMessage message = queuedMessage(null);
-        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(true);
+        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(Optional.of(CLAIMED));
         when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(message));
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.empty());
 
         service.dispatchOne(MESSAGE_ID);
 
-        ArgumentCaptor<MailMessage> saved = ArgumentCaptor.forClass(MailMessage.class);
-        verify(messages).save(saved.capture());
-        assertThat(saved.getValue().getStatus()).isEqualTo(MessageStatus.FAILED);
+        // 종료 기록은 claim 토큰이 붙은 조건부 UPDATE 로 — blind save 가 아니다(ARCH-4)
+        verify(messages).finish(eq(MESSAGE_ID), eq(CLAIMED), eq(MessageStatus.FAILED), anyString(), any());
         verify(sender, never()).send(anyString(), anyString(), anyString(), anyString(), any(), any(), any());
     }
 
     @Test
     void dispatchOne_marksSuppressedWithoutSending() throws Exception {
         MailMessage message = queuedMessage(null);
-        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(true);
+        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(Optional.of(CLAIMED));
         when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(message));
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(campaign("subject", "body")));
         when(suppressions.existsByWorkspaceAndEmail(WS, RECIPIENT)).thenReturn(true);
@@ -166,16 +167,14 @@ class MailDispatchServiceTest {
 
         service.dispatchOne(MESSAGE_ID);
 
-        ArgumentCaptor<MailMessage> saved = ArgumentCaptor.forClass(MailMessage.class);
-        verify(messages).save(saved.capture());
-        assertThat(saved.getValue().getStatus()).isEqualTo(MessageStatus.SUPPRESSED);
+        verify(messages).finish(eq(MESSAGE_ID), eq(CLAIMED), eq(MessageStatus.SUPPRESSED), org.mockito.ArgumentMatchers.isNull(), any());
         verify(sender, never()).send(anyString(), anyString(), anyString(), anyString(), any(), any(), any());
     }
 
     @Test
     void dispatchOne_sendsAndMarksSentOnHappyPath() throws Exception {
         MailMessage message = queuedMessage(null);
-        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(true);
+        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(Optional.of(CLAIMED));
         when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(message));
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(campaign("Hello", "<p>Body</p>")));
         when(suppressions.existsByWorkspaceAndEmail(WS, RECIPIENT)).thenReturn(false);
@@ -193,15 +192,13 @@ class MailDispatchServiceTest {
         assertThat(body.getValue()).contains("<p>Body</p>");
         assertThat(messageId.getValue()).isEqualTo(String.valueOf(MESSAGE_ID));
 
-        ArgumentCaptor<MailMessage> saved = ArgumentCaptor.forClass(MailMessage.class);
-        verify(messages).save(saved.capture());
-        assertThat(saved.getValue().getStatus()).isEqualTo(MessageStatus.SENT);
+        verify(messages).finish(eq(MESSAGE_ID), eq(CLAIMED), eq(MessageStatus.SENT), org.mockito.ArgumentMatchers.isNull(), any());
     }
 
     @Test
     void dispatchOne_passesCampaignSenderIdentityToTheMailSender() throws Exception {
         MailMessage message = queuedMessage(null);
-        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(true);
+        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(Optional.of(CLAIMED));
         when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(message));
         Campaign withSender = campaign("Hello", "<p>Body</p>");
         withSender.setSenderName("Acme 팀");
@@ -221,7 +218,7 @@ class MailDispatchServiceTest {
         // List-Unsubscribe 헤더가 없으면 수신자는 "수신거부" 대신 "스팸 신고"를 누르고,
         // 그 비율은 SES 계정 전체의 평판에 꽂힌다. 헤더가 실제로 실려 나가는지 고정한다.
         MailMessage message = queuedMessage(null);
-        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(true);
+        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(Optional.of(CLAIMED));
         when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(message));
         Campaign withReplyTo = campaign("Hello", "<p>Body</p>");
         withReplyTo.setReplyTo("team@acme.io");
@@ -246,7 +243,7 @@ class MailDispatchServiceTest {
     void dispatchOne_personalizesFromContactVariables() throws Exception {
         Long contactId = 99L;
         MailMessage message = queuedMessage(contactId);
-        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(true);
+        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(Optional.of(CLAIMED));
         when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(message));
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(
                 Optional.of(campaign("Hi {{firstName}}", "<p>Dear {{firstName}}</p>")));
@@ -270,7 +267,7 @@ class MailDispatchServiceTest {
         // "안녕하세요 님"으로 나가고 있었다. 성+이름(한국식 순서)으로 채운다.
         long contactId = 77L;
         MailMessage message = queuedMessage(contactId);
-        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(true);
+        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(Optional.of(CLAIMED));
         when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(message));
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(
                 Optional.of(campaign("{{name}}님께", "<p>안녕하세요 {{name}}님</p>")));
@@ -292,7 +289,7 @@ class MailDispatchServiceTest {
     void dispatchOne_fillsNameVariable_fromEmailLocalPartForRawRecipient() throws Exception {
         // 직접 입력 수신자는 이름이 없다 — 빈칸 대신 이메일 아이디로 대체한다
         MailMessage message = queuedMessage(null);
-        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(true);
+        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(Optional.of(CLAIMED));
         when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(message));
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(
                 Optional.of(campaign("Hello", "<p>안녕하세요 {{name}}님</p>")));
@@ -311,7 +308,7 @@ class MailDispatchServiceTest {
     @Test
     void dispatchOne_rendersEmailVariableForRawRecipient() throws Exception {
         MailMessage message = queuedMessage(null);
-        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(true);
+        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(Optional.of(CLAIMED));
         when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(message));
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(
                 Optional.of(campaign("Welcome", "<p>Sent to {{email}}</p>")));
@@ -330,7 +327,7 @@ class MailDispatchServiceTest {
     @Test
     void dispatchOne_assemblesTrackedHtmlWithUnsubscribeAndOpenPixel() throws Exception {
         MailMessage message = queuedMessage(null);
-        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(true);
+        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(Optional.of(CLAIMED));
         when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(message));
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(
                 Optional.of(campaign("Deals", "<a href=\"https://example.com/deal\">deal</a>")));
@@ -353,7 +350,7 @@ class MailDispatchServiceTest {
     void dispatchOne_variantB_rendersTheBSubjectAndBody() throws Exception {
         MailMessage message = queuedMessage(null);
         message.setVariant("B");
-        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(true);
+        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(Optional.of(CLAIMED));
         when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(message));
         Campaign abCampaign = campaign("Hello A", "<p>Body A</p>");
         abCampaign.setAbSubjectB("Hello B");
@@ -377,7 +374,7 @@ class MailDispatchServiceTest {
     void dispatchOne_variantBWithSubjectOnlyTest_keepsTheSharedBody() throws Exception {
         MailMessage message = queuedMessage(null);
         message.setVariant("B");
-        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(true);
+        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(Optional.of(CLAIMED));
         when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(message));
         Campaign abCampaign = campaign("Hello A", "<p>Shared body</p>");
         abCampaign.setAbSubjectB("Hello B");
@@ -399,7 +396,7 @@ class MailDispatchServiceTest {
     void dispatchOne_variantA_rendersTheACampaignContent() throws Exception {
         MailMessage message = queuedMessage(null);
         message.setVariant("A");
-        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(true);
+        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(Optional.of(CLAIMED));
         when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(message));
         Campaign abCampaign = campaign("Hello A", "<p>Body A</p>");
         abCampaign.setAbSubjectB("Hello B");
@@ -424,7 +421,7 @@ class MailDispatchServiceTest {
         // Held rows keep variant null forever; once the campaign has a winner,
         // dispatch renders the winner's content without rewriting the row.
         MailMessage message = queuedMessage(null);
-        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(true);
+        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(Optional.of(CLAIMED));
         when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(message));
         Campaign abCampaign = campaign("Hello A", "<p>Body A</p>");
         abCampaign.setAbSubjectB("Hello B");
@@ -449,7 +446,7 @@ class MailDispatchServiceTest {
     @Test
     void dispatchOne_variantNullWithoutWinner_rendersTheACampaignContent() throws Exception {
         MailMessage message = queuedMessage(null);
-        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(true);
+        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(Optional.of(CLAIMED));
         when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(message));
         Campaign abCampaign = campaign("Hello A", "<p>Body A</p>");
         abCampaign.setAbSubjectB("Hello B");
@@ -472,7 +469,7 @@ class MailDispatchServiceTest {
     @Test
     void dispatchOne_marksBouncedAndSuppressesOnSendFailure() throws Exception {
         MailMessage message = queuedMessage(null);
-        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(true);
+        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(Optional.of(CLAIMED));
         when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(message));
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(campaign("subject", "body")));
         when(suppressions.existsByWorkspaceAndEmail(WS, RECIPIENT)).thenReturn(false);
@@ -482,10 +479,7 @@ class MailDispatchServiceTest {
 
         service.dispatchOne(MESSAGE_ID);
 
-        ArgumentCaptor<MailMessage> saved = ArgumentCaptor.forClass(MailMessage.class);
-        verify(messages).save(saved.capture());
-        assertThat(saved.getValue().getStatus()).isEqualTo(MessageStatus.BOUNCED);
-        assertThat(saved.getValue().getErrorMessage()).isEqualTo("mailbox unavailable");
+        verify(messages).finish(eq(MESSAGE_ID), eq(CLAIMED), eq(MessageStatus.BOUNCED), eq("mailbox unavailable"), any());
 
         ArgumentCaptor<Suppression> suppression = ArgumentCaptor.forClass(Suppression.class);
         verify(suppressions).save(suppression.capture());
@@ -496,7 +490,7 @@ class MailDispatchServiceTest {
     @Test
     void dispatchOne_completesCampaignWhenQueueDrained() throws Exception {
         MailMessage message = queuedMessage(null);
-        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(true);
+        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(Optional.of(CLAIMED));
         when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(message));
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(campaign("subject", "body")));
         when(suppressions.existsByWorkspaceAndEmail(WS, RECIPIENT)).thenReturn(false);
@@ -510,7 +504,7 @@ class MailDispatchServiceTest {
     @Test
     void dispatchOne_doesNotCompleteWhileMessagesStillInFlight() throws Exception {
         MailMessage message = queuedMessage(null);
-        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(true);
+        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(Optional.of(CLAIMED));
         when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(message));
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(campaign("subject", "body")));
         when(suppressions.existsByWorkspaceAndEmail(WS, RECIPIENT)).thenReturn(false);

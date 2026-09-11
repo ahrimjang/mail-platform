@@ -150,6 +150,39 @@ public interface MailMessageJpaRepository extends JpaRepository<MailMessageEntit
     int claimPending(@Param("id") Long id, @Param("now") Instant now, @Param("staleBefore") Instant staleBefore);
 
     /**
+     * 종료 상태 기록 — claim 토큰이 아직 유효할 때만. {@code updatedAt = :claimedAt} 이
+     * 곧 "내가 claim 한 그 행 그대로"라는 증거다: stale 재클레임이나 바운스 웹훅이 먼저
+     * 썼으면 updatedAt 이 바뀌어 0행이 되고, 남의 결과를 덮어쓰지 않는다.
+     */
+    @Modifying
+    @Transactional
+    @Query("update MailMessageEntity m set m.status = :status, m.errorMessage = :error, "
+            + "m.updatedAt = :now, m.attempts = m.attempts + 1 "
+            + "where m.id = :id and m.status = io.github.ahrimjang.mail.common.MessageStatus.SENDING "
+            + "and m.updatedAt = :claimedAt")
+    int finish(@Param("id") Long id, @Param("claimedAt") Instant claimedAt, @Param("status") MessageStatus status,
+               @Param("error") String error, @Param("now") Instant now);
+
+    /** 토큰 없는 종료 기록 — 아직 살아 있는 행에만(DLQ 뒷정리). */
+    @Modifying
+    @Transactional
+    @Query("update MailMessageEntity m set m.status = :status, m.errorMessage = :error, "
+            + "m.updatedAt = :now, m.attempts = m.attempts + 1 "
+            + "where m.id = :id and m.status in (io.github.ahrimjang.mail.common.MessageStatus.PENDING, "
+            + "                                  io.github.ahrimjang.mail.common.MessageStatus.SENDING)")
+    int finishIfActive(@Param("id") Long id, @Param("status") MessageStatus status,
+                       @Param("error") String error, @Param("now") Instant now);
+
+    /** 비동기 바운스 — SENT/SENDING 에서만 BOUNCED 로(이미 종료된 다른 상태는 보존, 멱등). */
+    @Modifying
+    @Transactional
+    @Query("update MailMessageEntity m set m.status = io.github.ahrimjang.mail.common.MessageStatus.BOUNCED, "
+            + "m.errorMessage = :reason, m.updatedAt = :now "
+            + "where m.id = :id and m.status in (io.github.ahrimjang.mail.common.MessageStatus.SENT, "
+            + "                                  io.github.ahrimjang.mail.common.MessageStatus.SENDING)")
+    int markBouncedIfDelivered(@Param("id") Long id, @Param("reason") String reason, @Param("now") Instant now);
+
+    /**
      * 복구 스위퍼용 — 릴리스된 캠페인에서 오래도록 PENDING/SENDING 인 메시지. 잡이 사라진
      * 고아(발행 직후 크래시, 팬아웃 중 사망), stale SENDING(발송 중 사망), 승자 확정 뒤
      * 릴리스에 실패한 홀드아웃이 전부 여기 걸린다. 승자가 아직 없는 홀드아웃(variant null)

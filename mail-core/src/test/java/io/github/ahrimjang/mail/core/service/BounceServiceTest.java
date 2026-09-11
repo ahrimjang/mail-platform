@@ -22,6 +22,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -76,13 +77,12 @@ class BounceServiceTest {
     void handle_hardBounceWithMessageId_marksBouncedRecordsEventAndSuppresses() {
         when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(sentMessage()));
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(workspaceCampaign()));
+        when(messages.markBounced(eq(MESSAGE_ID), eq("mailbox full"), any())).thenReturn(true);
 
         service.handle(new BounceNotification(EMAIL, BounceType.HARD_BOUNCE, "mailbox full", MESSAGE_ID));
 
-        ArgumentCaptor<MailMessage> saved = ArgumentCaptor.forClass(MailMessage.class);
-        verify(messages).save(saved.capture());
-        assertThat(saved.getValue().getStatus()).isEqualTo(MessageStatus.BOUNCED);
-        assertThat(saved.getValue().getErrorMessage()).isEqualTo("mailbox full");
+        // 조건부 UPDATE(SENT/SENDING 에서만) — 발송 워커의 종료 기록을 덮어쓰는 blind save 가 아니다
+        verify(messages).markBounced(eq(MESSAGE_ID), eq("mailbox full"), any());
 
         ArgumentCaptor<EmailEvent> event = ArgumentCaptor.forClass(EmailEvent.class);
         verify(events).publish(event.capture());
@@ -115,8 +115,8 @@ class BounceServiceTest {
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(workspaceCampaign()));
         service.handle(new BounceNotification(EMAIL, BounceType.HARD_BOUNCE, "mailbox full", MESSAGE_ID));
 
-        // Already BOUNCED: no second write, no duplicate event — but suppression still applies.
-        verify(messages, never()).save(any(MailMessage.class));
+        // Already BOUNCED: the conditional UPDATE matches 0 rows (mock default false), so no
+        // duplicate event — but suppression still applies.
         verifyNoInteractions(events);
         verify(suppressions, org.mockito.Mockito.atLeastOnce()).save(any(Suppression.class));
     }

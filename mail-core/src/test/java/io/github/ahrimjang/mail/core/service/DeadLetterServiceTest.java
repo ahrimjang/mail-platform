@@ -16,6 +16,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -59,13 +60,12 @@ class DeadLetterServiceTest {
         // 메시지면 캠페인은 영원히 "발송 중"이었다 — FAILED 확정 + 완료 판정까지 한 세트
         when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(sending()));
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(campaign()));
+        when(messages.finishIfActive(eq(MESSAGE_ID), eq(MessageStatus.FAILED), org.mockito.ArgumentMatchers.contains("3회 rejected"), any())).thenReturn(true);
 
         service.sendJobDead(MESSAGE_ID, "mail.send.queue 에서 3회 rejected");
 
-        ArgumentCaptor<MailMessage> saved = ArgumentCaptor.forClass(MailMessage.class);
-        verify(messages).save(saved.capture());
-        assertThat(saved.getValue().getStatus()).isEqualTo(MessageStatus.FAILED);
-        assertThat(saved.getValue().getErrorMessage()).contains("3회 rejected");
+        // 조건부 UPDATE(PENDING/SENDING 에서만) — 읽고 판단하는 사이 다른 워커가 끝냈으면 0행
+        verify(messages).finishIfActive(eq(MESSAGE_ID), eq(MessageStatus.FAILED), org.mockito.ArgumentMatchers.contains("3회 rejected"), any());
         verify(dispatch).completeIfDrained(CAMPAIGN_ID);
         verify(notifications).campaignSendFailed(any(Campaign.class));
     }
@@ -79,7 +79,6 @@ class DeadLetterServiceTest {
 
         service.sendJobDead(MESSAGE_ID, "x");
 
-        verify(messages, never()).save(any());
         verify(dispatch, never()).completeIfDrained(any());
         verify(notifications, never()).campaignSendFailed(any());
     }
@@ -90,7 +89,7 @@ class DeadLetterServiceTest {
 
         service.sendJobDead(MESSAGE_ID, "x");
 
-        verify(messages, never()).save(any());
+        verify(messages, never()).finishIfActive(any(), any(), any(), any());
         verify(dispatch, never()).completeIfDrained(any());
     }
 
@@ -103,12 +102,13 @@ class DeadLetterServiceTest {
             return Optional.of(m);
         });
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(campaign()));
+        when(messages.finishIfActive(any(), eq(MessageStatus.FAILED), any(), any())).thenReturn(true);
 
         service.sendJobDead(1L, "r");
         service.sendJobDead(2L, "r");
         service.sendJobDead(3L, "r");
 
-        verify(messages, times(3)).save(any());              // 상태 확정은 건마다
+        verify(messages, times(3)).finishIfActive(any(), any(), any(), any());   // 상태 확정은 건마다
         verify(dispatch, times(3)).completeIfDrained(CAMPAIGN_ID);
         verify(notifications, times(1)).campaignSendFailed(any(Campaign.class));   // 알림은 한 번
     }
@@ -121,7 +121,7 @@ class DeadLetterServiceTest {
         service.fanoutJobDead(CAMPAIGN_ID, "mail.fanout.queue 에서 3회 rejected");
 
         verify(notifications).campaignFanoutFailed(any(Campaign.class));
-        verify(messages, never()).save(any());
+        verify(messages, never()).finishIfActive(any(), any(), any(), any());
         verify(campaigns, never()).completeIfSending(any());
     }
 }

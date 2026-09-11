@@ -63,12 +63,13 @@ public class DeadLetterService {
             log.warn("DLQ 발송 잡의 메시지가 없다: messageId={}", messageId);
             return;
         }
-        if (message.getStatus() != MessageStatus.PENDING && message.getStatus() != MessageStatus.SENDING) {
+        // 조건부 UPDATE(PENDING/SENDING 에서만) — 읽고-판단하고-덮어쓰는 사이에 다른 워커가
+        // 재클레임해 끝냈을 수 있다. 0행이면 이미 종료된 것이니 손대지 않는다.
+        String error = "발송 처리가 반복 실패해 중단됐어요 (" + reason + ")";
+        if (!messages.finishIfActive(messageId, MessageStatus.FAILED, error, Instant.now())) {
             log.info("DLQ 발송 잡 무시 — 이미 종료됨: messageId={} status={}", messageId, message.getStatus());
             return;
         }
-        message.markFailed("발송 처리가 반복 실패해 중단됐어요 (" + reason + ")");
-        messages.save(message);
         log.error("DLQ: 발송 잡 FAILED 확정 — messageId={} campaign={} recipient={} reason={}",
                 messageId, message.getCampaignId(), message.getRecipient(), reason);
         // 이 메시지가 마지막이었다면 캠페인을 마무리한다 — 안 하면 영원히 "발송 중"
