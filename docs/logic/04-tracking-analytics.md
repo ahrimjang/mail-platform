@@ -298,63 +298,86 @@ append-only고 아래 3-9의 집계가 `distinct messageId`라서 **중복 행�
 `campaignId`를 이벤트에 **비정규화(중복 저장)** 해 둔 덕에, 캠페인 지표를 집계할 때 메시지
 테이블과 조인할 필요가 없습니다. `url`은 CLICK일 때만 채워집니다(OPEN은 null).
 
-### 3-9. distinct 집계 — 열람 "횟수"가 아니라 "사람 수"
+### 3-9. 첫 참여만 센다 — 열람 "횟수"가 아니라 "사람 수"
 
-같은 수신자가 메일을 다섯 번 열면 OPEN 이벤트가 5행 쌓입니다. 지표로 원하는 건
-"몇 통이 열렸나"이므로 **`distinct messageId`로 셉니다.**
+같은 수신자가 메일을 다섯 번 열면 OPEN 이벤트가 5행 쌓입니다. 지표로 원하는 건 "몇 통이
+열렸나"입니다. 처음에는 조회할 때마다 `count(distinct messageId)`로 셌는데, 이 방식은 반복 오픈까지
+전부 읽고 정렬한 뒤에야 사람 수가 나옵니다. 캠페인 목록이 5초마다 모든 캠페인에 대해 이걸 돌리면서
+규모가 커질수록 무거워졌고, **V36부터는 센 결과를 저장합니다.**
 
-`infra/src/main/java/io/github/ahrimjang/mail/infra/persistence/EmailEventJpaRepository.java`
-```java
-public interface EmailEventJpaRepository extends JpaRepository<EmailEventEntity, Long> {
+| 테이블 | 한 행의 뜻 | 역할 |
+|---|---|---|
+| `email_events` | 이벤트 한 건 (반복 포함) | 원본 기록 — 수신자 타임라인·링크 랭킹·히트맵이 읽는다 |
+| `message_engagements` | 메시지×종류의 **첫** 참여 | PK `(message_id, type)` 가 반복 오픈·재전달을 걸러낸다 |
+| `campaign_engagement_counts` | 캠페인×A/B 안의 오픈·클릭 수 | 화면과 A/B 승자 판정이 읽는 숫자 |
 
-    @Query("select count(distinct e.messageId) from EmailEventEntity e where e.campaignId = ?1 and e.type = ?2")
-    long countDistinctMessages(Long campaignId, EventType type);
-}
+프로젝션 리스너가 원본을 저장한 직후 아래 문장을 부릅니다. **넣기와 +1 이 한 문장**이라,
+유니크 충돌이면 `ins`가 비어 카운터도 오르지 않습니다. 같은 참여가 동시에 두 번 와도 PK 가 하나만
+통과시키므로 claim 과 같은 원리로 정확히 한 번 셉니다.
+
+`infra/src/main/java/io/github/ahrimjang/mail/infra/persistence/JpaEmailEventRepository.java`
+```sql
+with ins as (
+    insert into message_engagements (message_id, type, campaign_id, variant, first_at)
+    values (:messageId, :type, :campaignId,
+            (select m.variant from mail_messages m where m.id = :messageId), :at)
+    on conflict (message_id, type) do nothing
+    returning campaign_id, variant, type
+)
+insert into campaign_engagement_counts (campaign_id, variant_key, opened, clicked)
+select campaign_id, coalesce(variant, '-'),
+       case when type = 'OPEN' then 1 else 0 end,
+       case when type = 'CLICK' then 1 else 0 end
+from ins
+on conflict (campaign_id, variant_key) do update
+    set opened = campaign_engagement_counts.opened + excluded.opened,
+        clicked = campaign_engagement_counts.clicked + excluded.clicked
 ```
 
-### 3-10. 조회 응답에 합류 — CampaignService.toView
+- **기존 데이터**는 V36 마이그레이션이 `email_events`에서 한 번에 채웁니다.
+- **배포 중 틈**: 새 api 가 마이그레이션을 끝낸 뒤에도 옛 워커가 잠깐 이벤트만 쌓습니다.
+  새 워커의 `EngagementReconciler`가 기동할 때 최근 24시간 이벤트로 같은 "넣은 것만 센다" 문장을 돌려
+  빈 곳을 채웁니다. 몇 번을 돌려도 두 번 세지 않습니다.
 
-프론트가 폴링하는 `GET /api/campaigns/{id}` 응답을 만드는 곳입니다. 배달 카운트(status 기반)와
-참여 카운트(이벤트 기반)가 여기서 하나의 `CampaignView`로 합쳐집니다.
+### 3-10. 조회 응답에 합류 — CampaignService.toViews
+
+프론트가 폴링하는 `GET /api/campaigns`(목록)와 `GET /api/campaigns/{id}`(상세) 응답을 만드는
+곳입니다. 배달 카운트와 참여 카운트가 여기서 하나의 `CampaignView`로 합쳐집니다. 핵심은
+**캠페인이 몇 개든 집계 쿼리 수가 늘지 않는 것**입니다. 예전에는 캠페인 하나에 상태 COUNT 7개와
+count(distinct) 2개가 나갔고, 목록은 이걸 캠페인 수만큼 반복했습니다.
+
+| 숫자 | 가져오는 방법 |
+|---|---|
+| 상태별 개수 (진행 중이거나 끝난 지 30분 이내) | 모든 캠페인을 `GROUP BY campaign_id, status` 한 번 |
+| 상태별 개수 (완료·중단 후 30분 경과) | `campaign_delivery_snapshots`에 저장된 값, 없거나 무효면 한 번 세고 저장 |
+| 오픈·클릭 | `campaign_engagement_counts`를 캠페인 목록으로 한 번 |
+| 템플릿·이메일·리스트 이름 | 같은 이름은 한 번만 조회 |
 
 `mail-core/src/main/java/io/github/ahrimjang/mail/core/service/CampaignService.java`
 ```java
-    private CampaignView toView(Campaign campaign) {
-        MessageCounts counts = messages.countByCampaign(campaign.getId());
-        long opened = events.countDistinctMessages(campaign.getId(), EventType.OPEN);
-        long clicked = events.countDistinctMessages(campaign.getId(), EventType.CLICK);
-        // ... 템플릿/리스트 이름 소프트 참조 해석 생략 ...
-        return new CampaignView(
-                campaign.getId(),
-                campaign.getName(),
-                campaign.getDescription(),
-                campaign.getSubject(),
-                campaign.getStatus(),
-                counts.total(),
-                counts.pending(),
-                counts.sent(),
-                counts.failed(),
-                counts.bounced(),
-                counts.suppressed(),
-                opened,
-                clicked,
-                campaign.getCreatedAt(),
-                campaign.getSenderName(),
-                campaign.getSenderEmail(),
-                campaign.getScheduledAt(),
-                campaign.getEnqueuedAt(), campaign.getCompletedAt(),
-                campaign.getTemplateId(),
-                templateName,
-                campaign.getListId(),
-                listName,
-                campaign.getAbTestPercent(),
-                campaign.getAbEvalMetric(),
-                campaign.getAbWinner(),
-                campaign.getAbEvaluateAt(),
-                variantStats(campaign)
-        );
-    }
+        java.util.Map<Long, MailMessageRepository.CountSnapshot> snapshots =
+                settled.isEmpty() ? java.util.Map.of() : messages.findCountSnapshots(settled);
+        // ... 유효한 스냅샷은 그대로 쓰고, 나머지만 모아서 ...
+        java.util.Map<Long, MessageCounts> fresh = messages.countByCampaigns(live);
+        for (Long id : live) {
+            MessageCounts c = fresh.getOrDefault(id, MessageCounts.EMPTY);
+            counts.put(id, c);
+            if (settled.contains(id)) {
+                // 조건부 저장 — 세는 사이 늦은 바운스가 무효화했으면 져서 옛 숫자를 남기지 않는다
+                MailMessageRepository.CountSnapshot prior = snapshots.get(id);
+                messages.saveCountSnapshot(id, prior == null ? null : prior.version(), c, now);
+            }
+        }
+        java.util.Map<Long, List<EmailEventRepository.CampaignEngagement>> engagement =
+                events.engagementByCampaigns(ids).stream()
+                        .collect(java.util.stream.Collectors.groupingBy(EmailEventRepository.CampaignEngagement::campaignId));
 ```
+
+**스냅샷이 틀어지지 않는 이유**: 끝난 캠페인에서도 상태가 바뀌는 경우가 있습니다. 늦게 온 반송,
+DLQ 뒷정리, 스위퍼가 재발행한 메시지의 지연 종료입니다. 이 세 곳이 `evictCountSnapshot`으로
+스냅샷의 `version`을 1 올리고 무효로 표시합니다. 조회 쪽은 읽을 때의 `version`이 그대로일 때만
+저장하므로, 세는 도중에 무효화가 끼면 저장이 조건부 UPDATE 에서 집니다. 30분 대기는 스위퍼의
+10분 기준과 지연 종료를 넉넉히 덮는 여유입니다.
 
 `opened`/`clicked`는 프로젝션이 이미 소비한 이벤트까지만 반영됩니다 — 발행에서 집계 반영까지
 스트림을 한 번 도는 짧은 지연이 있지만(최종 일관성), 프론트가 어차피 폴링으로 갱신하므로
@@ -448,16 +471,19 @@ public interface EmailEventJpaRepository extends JpaRepository<EmailEventEntity,
   한 번 소비되고 ack/재시도/DLQ로 관리되는 **작업**(RabbitMQ), 참여 이벤트는 여러 소비자가
   각자의 오프셋으로 재생(replay)할 수 있는 **사실의 로그**(Kafka)입니다. 지금은 프로젝션
   소비자 하나지만, 같은 토픽에 실시간 대시보드·세그먼테이션 소비자를 붙여도 발행 쪽은 무변경.
-- **at-least-once + append-only + distinct 집계.** Kafka 소비는 중복 배달될 수 있고 프로젝션은
-  멱등 키 없이 그냥 append합니다 — 대신 지표가 `distinct messageId`라 중복 행이 숫자를 못
-  건드립니다. "중복 제거"를 인프라에서 힘겹게 보장하는 대신 집계 층에서 흡수한 선택입니다.
+- **at-least-once + append-only + 첫 참여 카운터.** Kafka 소비는 중복 배달될 수 있습니다.
+  원본 이벤트는 멱등 키 없이 그냥 append 하고, 숫자는 `(message_id, type)` PK 가 첫 참여만
+  통과시키는 카운터가 맡습니다(V36). 처음엔 조회 때마다 `distinct messageId`로 중복을 흡수했지만,
+  반복 오픈까지 매번 읽는 비용이 커져 "쓸 때 한 번 거르고 저장"으로 옮겼습니다.
 - **메시지당 토큰 = 식별자이자 인증.** URL에 이메일이나 id를 노출하지 않고, UUID라 열거
   공격(다른 사람 토큰 추측)이 사실상 불가능합니다. 그래서 permitAll로 열어도 안전합니다.
 - **TrackingRewriter는 순수 컴포넌트.** HTTP도 DB도 모르는 문자열 함수라서 mail-core에
   두고 단위 테스트하기 쉽습니다. 어디서 호출할지는 워커(MailDispatchService)의 책임.
-- **집계는 저장하지 않고 매번 계산.** POC 규모에서는 읽기 모델에 대한 count 쿼리로 충분하고,
-  캐시/스냅샷 없이 항상 정확합니다. 쓰기 쪽은 이미 스트림(발행→프로젝션)으로 분리되어 있으니,
-  규모가 커지면 이 count 지점만 집계 테이블(스트림에서 증분 갱신)로 바꾸면 되는 seam입니다.
+- **캠페인 숫자는 저장하고, 분석 화면은 매번 계산.** 5초마다 폴링되는 캠페인 목록·상세의 오픈·클릭
+  수는 스트림에서 증분 갱신한 카운터를 읽고, 발송 상태 개수는 GROUP BY 한 번이나 끝난 캠페인의
+  스냅샷을 읽습니다(3-9·3-10). 쓰기 쪽이 이미 스트림으로 분리돼 있어서 count 지점만 바꾸면 되는
+  seam 이었습니다. 기간을 고르는 분석 대시보드(3-13)는 여전히 조회 시 group by 하며, 기간 조건은
+  `occurred_at` 인덱스(V36)가 받칩니다.
 - **알려진 한계**: (1) 정규식 링크 재작성은 `href='...'`(홑따옴표) 등을 놓침,
   (2) 오픈 픽셀은 이미지 차단(Gmail 프록시, 기업 메일) 시 못 잡음 — 오픈율은 원래 과소집계 경향,
   (3) `u` 파라미터 리다이렉트는 open-redirect가 될 수 있어 운영 전 서명/화이트리스트 필요.

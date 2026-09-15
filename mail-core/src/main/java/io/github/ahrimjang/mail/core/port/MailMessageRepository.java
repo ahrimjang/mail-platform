@@ -163,7 +163,38 @@ public interface MailMessageRepository {
 
     /** Snapshot of delivery progress for a campaign. SENDING messages are in-flight, not yet terminal. */
     record MessageCounts(long total, long pending, long sending, long sent, long failed, long bounced, long suppressed) {
+        /** 메시지가 하나도 없는 캠페인. */
+        public static final MessageCounts EMPTY = new MessageCounts(0, 0, 0, 0, 0, 0, 0);
     }
+
+    /**
+     * 여러 캠페인의 상태별 개수를 GROUP BY 한 번으로. 목록 화면이 캠페인마다 COUNT 7개를 날리던
+     * 것(캠페인 100개면 5초마다 700쿼리)을 캠페인 수와 무관한 1쿼리로 줄인다. 메시지가 없는
+     * 캠페인은 결과에 없다.
+     */
+    java.util.Map<Long, MessageCounts> countByCampaigns(java.util.Collection<Long> campaignIds);
+
+    /**
+     * 끝난 캠페인의 저장된 상태 개수(V36). 행이 없으면 결과에 없고, 무효화된 행은 counts 가 null 이다 —
+     * version 은 다시 저장할 때 조건으로 쓴다.
+     */
+    java.util.Map<Long, CountSnapshot> findCountSnapshots(java.util.Collection<Long> campaignIds);
+
+    /** 저장된 스냅샷 한 줄 — {@code counts} null 이면 무효(늦은 바운스 등으로 다시 세야 함). */
+    record CountSnapshot(long version, MessageCounts counts) {
+    }
+
+    /**
+     * 스냅샷 저장 — 조건부. {@code expectedVersion} 이 null 이면 행이 없을 때만 넣고, 값이 있으면 그
+     * version 이 그대로일 때만 덮는다. 세는 동안 무효화가 끼었으면 져서 옛 숫자를 남기지 않는다
+     * (claim 과 같은 조건부 UPDATE).
+     *
+     * @return 저장했는지
+     */
+    boolean saveCountSnapshot(Long campaignId, Long expectedVersion, MessageCounts counts, java.time.Instant capturedAt);
+
+    /** 스냅샷 무효화 — 끝난 캠페인의 메시지 상태가 뒤늦게 바뀌었을 때(늦은 바운스·지연 종료). version +1. */
+    void evictCountSnapshot(Long campaignId);
 
     /** 평판 방어용 — 워크스페이스의 최근 발송 시도(SENT+BOUNCED) 대비 바운스 집계. */
     WorkspaceBounceStats workspaceBounceStats(Long workspaceId, java.time.Instant since);

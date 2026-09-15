@@ -7,13 +7,8 @@ import org.springframework.data.jpa.repository.Query;
 
 public interface EmailEventJpaRepository extends JpaRepository<EmailEventEntity, Long> {
 
-    @Query("select count(distinct e.messageId) from EmailEventEntity e where e.campaignId = ?1 and e.type = ?2")
-    long countDistinctMessages(Long campaignId, EventType type);
-
-    /** Distinct engaged messages of one A/B variant — joins events to their message rows. */
-    @Query("select count(distinct e.messageId) from EmailEventEntity e, MailMessageEntity m "
-            + "where e.messageId = m.id and e.campaignId = ?1 and e.type = ?2 and m.variant = ?3")
-    long countDistinctMessagesByVariant(Long campaignId, EventType type, String variant);
+    // 캠페인 오픈·클릭 수의 count(distinct) 쿼리는 V36 에서 카운터 테이블로 옮겼다
+    // (JpaEmailEventRepository.countDistinctMessages). 여기 남은 건 원본 이벤트가 필요한 조회뿐이다.
 
     /**
      * Dashboard series: distinct engaged messages per (calendar day, event type).

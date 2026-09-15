@@ -12,8 +12,6 @@ import java.util.Optional;
 
 public interface MailMessageJpaRepository extends JpaRepository<MailMessageEntity, Long> {
 
-    long countByCampaignId(Long campaignId);
-
     /** 평판 방어용 — 워크스페이스의 최근 발송 시도(SENT+BOUNCED)와 바운스 수. */
     @org.springframework.data.jpa.repository.Query(
             "select count(m), coalesce(sum(case when m.status = io.github.ahrimjang.mail.common.MessageStatus.BOUNCED then 1 else 0 end), 0) "
@@ -25,7 +23,10 @@ public interface MailMessageJpaRepository extends JpaRepository<MailMessageEntit
             @org.springframework.data.repository.query.Param("workspaceId") Long workspaceId,
             @org.springframework.data.repository.query.Param("since") java.time.Instant since);
 
-    long countByCampaignIdAndStatus(Long campaignId, MessageStatus status);
+    /** 여러 캠페인의 (캠페인, 상태)별 개수 — 목록 화면의 COUNT 다발을 한 번으로. */
+    @Query("select m.campaignId, m.status, count(m) from MailMessageEntity m "
+            + "where m.campaignId in :ids group by m.campaignId, m.status")
+    java.util.List<Object[]> countByCampaignIdsGroupByStatus(@Param("ids") java.util.Collection<Long> ids);
 
     /**
      * 플랫폼 운영자 화면 — {@code since} 이후 (워크스페이스, 상태)별 건수와 최근 갱신 시각을

@@ -113,6 +113,7 @@ public class MailDispatchService {
             markSending(campaign);
             message.markSuppressed();
             finish(message, claimed.get());
+            evictIfTerminal(campaign);
             completeIfDrained(campaign.getId());
             return;
         }
@@ -181,7 +182,19 @@ public class MailDispatchService {
             suppressions.save(Suppression.of(campaign.getWorkspaceId(), message.getRecipient(), "bounce"));
         }
         finish(message, claimedAt);
+        evictIfTerminal(campaign);
         completeIfDrained(campaign.getId());
+    }
+
+    /**
+     * 이미 끝난 캠페인의 메시지가 뒤늦게 종료됐다면(스위퍼 재발행 등) 저장된 상태 개수를 무효화한다(V36).
+     * 진행 중 캠페인은 스냅샷이 없으니 발송 핫패스에 쓰기를 더하지 않는다.
+     */
+    private void evictIfTerminal(Campaign campaign) {
+        if (campaign.getStatus() == io.github.ahrimjang.mail.common.CampaignStatus.COMPLETED
+                || campaign.getStatus() == io.github.ahrimjang.mail.common.CampaignStatus.CANCELED) {
+            messages.evictCountSnapshot(campaign.getId());
+        }
     }
 
     /**

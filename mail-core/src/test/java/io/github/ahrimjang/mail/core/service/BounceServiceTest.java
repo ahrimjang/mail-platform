@@ -83,6 +83,8 @@ class BounceServiceTest {
 
         // 조건부 UPDATE(SENT/SENDING 에서만) — 발송 워커의 종료 기록을 덮어쓰는 blind save 가 아니다
         verify(messages).markBounced(eq(MESSAGE_ID), eq("mailbox full"), any());
+        // 끝난 캠페인에 늦게 온 반송이면 저장된 상태 개수가 틀려진다 — 무효화(V36)
+        verify(messages).evictCountSnapshot(CAMPAIGN_ID);
 
         ArgumentCaptor<EmailEvent> event = ArgumentCaptor.forClass(EmailEvent.class);
         verify(events).publish(event.capture());
@@ -118,6 +120,8 @@ class BounceServiceTest {
         // Already BOUNCED: the conditional UPDATE matches 0 rows (mock default false), so no
         // duplicate event — but suppression still applies.
         verifyNoInteractions(events);
+        // 상태가 안 바뀌었으니 저장된 개수도 그대로 둔다
+        verify(messages, never()).evictCountSnapshot(any());
         verify(suppressions, org.mockito.Mockito.atLeastOnce()).save(any(Suppression.class));
     }
 

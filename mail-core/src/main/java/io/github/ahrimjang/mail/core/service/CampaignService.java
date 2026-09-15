@@ -414,9 +414,8 @@ public class CampaignService {
     }
 
     public List<CampaignView> list() {
-        return campaigns.findByWorkspace(ctx.currentWorkspaceId()).stream()
-                .map(this::toView)
-                .toList();
+        // 캠페인 수와 무관한 쿼리 수로 한꺼번에 조립 — 목록 화면이 5초마다 이걸 부른다
+        return toViews(campaigns.findByWorkspace(ctx.currentWorkspaceId()));
     }
 
     /**
@@ -508,18 +507,100 @@ public class CampaignService {
                 .toList();
     }
 
+    /** 끝난 캠페인의 상태 개수가 더는 안 바뀐다고 보는 대기 시간 — 복구 스위퍼(10분)와 지연 종료의 여유. */
+    static final java.time.Duration COUNT_SETTLE = java.time.Duration.ofMinutes(30);
+
     private CampaignView toView(Campaign campaign) {
-        MessageCounts counts = messages.countByCampaign(campaign.getId());
-        long opened = events.countDistinctMessages(campaign.getId(), EventType.OPEN);
-        long clicked = events.countDistinctMessages(campaign.getId(), EventType.CLICK);
+        return toViews(List.of(campaign)).get(0);
+    }
+
+    /**
+     * 캠페인 뷰 조립 — 집계를 캠페인 수와 무관한 쿼리 수로 모은다. 이전엔 캠페인마다 상태 COUNT 7개와
+     * 오픈·클릭 count(distinct) 2개였고, 목록 화면이 5초마다 전 캠페인에 대해 돌렸다.
+     * <ul>
+     *   <li>상태 개수: 끝나고 {@link #COUNT_SETTLE} 지난 캠페인은 저장된 스냅샷, 나머지는 GROUP BY 1회</li>
+     *   <li>오픈·클릭: 프로젝션이 첫 참여 때만 올리는 카운터를 1회에 읽는다</li>
+     *   <li>이름: 같은 템플릿·이메일·리스트는 한 번만 조회</li>
+     * </ul>
+     */
+    private List<CampaignView> toViews(List<Campaign> list) {
+        if (list.isEmpty()) {
+            return List.of();
+        }
+        java.time.Instant now = java.time.Instant.now();
+        List<Long> ids = list.stream().map(Campaign::getId).toList();
+        java.util.Set<Long> settled = list.stream()
+                .filter(c -> countsSettled(c, now))
+                .map(Campaign::getId)
+                .collect(java.util.stream.Collectors.toSet());
+
+        java.util.Map<Long, MessageCounts> counts = new java.util.HashMap<>();
+        java.util.Map<Long, MailMessageRepository.CountSnapshot> snapshots =
+                settled.isEmpty() ? java.util.Map.of() : messages.findCountSnapshots(settled);
+        snapshots.forEach((id, s) -> {
+            if (s.counts() != null) {
+                counts.put(id, s.counts());
+            }
+        });
+        List<Long> live = ids.stream().filter(id -> !counts.containsKey(id)).toList();
+        if (!live.isEmpty()) {
+            java.util.Map<Long, MessageCounts> fresh = messages.countByCampaigns(live);
+            for (Long id : live) {
+                MessageCounts c = fresh.getOrDefault(id, MessageCounts.EMPTY);
+                counts.put(id, c);
+                if (settled.contains(id)) {
+                    // 조건부 저장 — 세는 사이 늦은 바운스가 무효화했으면 져서 옛 숫자를 남기지 않는다
+                    MailMessageRepository.CountSnapshot prior = snapshots.get(id);
+                    messages.saveCountSnapshot(id, prior == null ? null : prior.version(), c, now);
+                }
+            }
+        }
+
+        java.util.Map<Long, List<EmailEventRepository.CampaignEngagement>> engagement =
+                events.engagementByCampaigns(ids).stream()
+                        .collect(java.util.stream.Collectors.groupingBy(EmailEventRepository.CampaignEngagement::campaignId));
+
+        java.util.Map<Long, String> templateNames = new java.util.HashMap<>();
+        java.util.Map<Long, String> emailNames = new java.util.HashMap<>();
+        java.util.Map<Long, String> listNames = new java.util.HashMap<>();
+        return list.stream()
+                .map(c -> assemble(c, counts.get(c.getId()), engagement.getOrDefault(c.getId(), List.of()),
+                        templateNames, emailNames, listNames))
+                .toList();
+    }
+
+    /** 완료·중단된 지 {@link #COUNT_SETTLE} 이 지나 상태 개수가 굳었다고 보는 캠페인. */
+    private static boolean countsSettled(Campaign c, java.time.Instant now) {
+        return (c.getStatus() == io.github.ahrimjang.mail.common.CampaignStatus.COMPLETED
+                || c.getStatus() == io.github.ahrimjang.mail.common.CampaignStatus.CANCELED)
+                && c.getCompletedAt() != null
+                && c.getCompletedAt().isBefore(now.minus(COUNT_SETTLE));
+    }
+
+    /** 한 번의 뷰 조립 안에서 같은 키는 한 번만 읽는다 — 없는 이름(null)도 기억한다. */
+    private static <V> V memo(java.util.Map<Long, V> cache, Long key, java.util.function.Function<Long, V> load) {
+        if (!cache.containsKey(key)) {
+            cache.put(key, load.apply(key));
+        }
+        return cache.get(key);
+    }
+
+    private CampaignView assemble(Campaign campaign, MessageCounts counts,
+                                  List<EmailEventRepository.CampaignEngagement> engagement,
+                                  java.util.Map<Long, String> templateNames,
+                                  java.util.Map<Long, String> emailNames,
+                                  java.util.Map<Long, String> listNames) {
+        long opened = engagement.stream().mapToLong(EmailEventRepository.CampaignEngagement::opened).sum();
+        long clicked = engagement.stream().mapToLong(EmailEventRepository.CampaignEngagement::clicked).sum();
         // Soft references: a deleted template/list leaves the id without a name.
         String templateName = campaign.getTemplateId() == null ? null
-                : templates.findById(campaign.getTemplateId()).map(Template::getName).orElse(null);
+                : memo(templateNames, campaign.getTemplateId(),
+                        id -> templates.findById(id).map(Template::getName).orElse(null));
         String emailName = campaign.getEmailId() == null ? null
-                : emailDrafts.displayNameOf(campaign.getEmailId());
+                : memo(emailNames, campaign.getEmailId(), emailDrafts::displayNameOf);
         String listName = campaign.getListId() == null ? null
-                : lists.findById(campaign.getListId())
-                        .map(io.github.ahrimjang.mail.core.domain.ContactList::getName).orElse(null);
+                : memo(listNames, campaign.getListId(), id -> lists.findById(id)
+                        .map(io.github.ahrimjang.mail.core.domain.ContactList::getName).orElse(null));
         return new CampaignView(
                 campaign.getId(),
                 campaign.getName(),
@@ -553,22 +634,31 @@ public class CampaignService {
                 campaign.getAbEvalMetric(),
                 campaign.getAbWinner(),
                 campaign.getAbEvaluateAt(),
-                variantStats(campaign)
+                variantStats(campaign, engagement)
         );
     }
 
-    /** Per-variant delivery + engagement rows of an A/B campaign; null for plain ones. */
-    private List<CampaignView.VariantStats> variantStats(Campaign campaign) {
+    /**
+     * Per-variant delivery + engagement rows of an A/B campaign; null for plain ones.
+     * 오픈·클릭은 이미 읽어 온 카운터 줄에서 안별로 꺼낸다 — 안마다 쿼리를 더 날리지 않는다.
+     */
+    private List<CampaignView.VariantStats> variantStats(Campaign campaign,
+                                                         List<EmailEventRepository.CampaignEngagement> engagement) {
         if (!campaign.isAbTest()) {
             return null;
         }
+        java.util.Map<String, EmailEventRepository.CampaignEngagement> byVariant = new java.util.HashMap<>();
+        for (EmailEventRepository.CampaignEngagement e : engagement) {
+            if (e.variant() != null) {
+                byVariant.put(e.variant(), e);
+            }
+        }
         return messages.countByCampaignAndVariant(campaign.getId()).stream()
-                .map(v -> new CampaignView.VariantStats(
-                        v.variant(),
-                        v.total(),
-                        v.sent(),
-                        events.countDistinctMessagesByVariant(campaign.getId(), EventType.OPEN, v.variant()),
-                        events.countDistinctMessagesByVariant(campaign.getId(), EventType.CLICK, v.variant())))
+                .map(v -> {
+                    EmailEventRepository.CampaignEngagement e = byVariant.get(v.variant());
+                    return new CampaignView.VariantStats(v.variant(), v.total(), v.sent(),
+                            e == null ? 0 : e.opened(), e == null ? 0 : e.clicked());
+                })
                 .toList();
     }
 }

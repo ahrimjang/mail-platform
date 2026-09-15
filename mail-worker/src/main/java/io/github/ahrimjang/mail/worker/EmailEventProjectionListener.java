@@ -10,11 +10,10 @@ import org.springframework.stereotype.Component;
 import java.time.Instant;
 
 /**
- * Projects the {@code mail.events} Kafka stream (opens/clicks/bounces published
- * by mail-api) into the {@code email_events} read model that campaign metrics
- * query. Consuming keeps the tracking endpoints write-free; the projection is
- * append-only, so replays at-least-once merely add duplicate rows, which the
- * distinct-message metric aggregation already tolerates.
+ * {@code mail.events} Kafka 스트림(api 가 발행한 오픈·클릭·바운스)을 읽기 모델로 옮긴다.
+ * 원본 이벤트는 {@code email_events} 에 전부 쌓고(수신자 타임라인·링크 랭킹·히트맵), 캠페인 오픈·클릭
+ * 수는 메시지×종류당 첫 참여 때만 카운터를 올린다(V36). 재전달로 같은 이벤트가 다시 오면 원본 행만
+ * 하나 더 생기고 카운터는 유니크 충돌로 그대로다 — 추적 엔드포인트는 여전히 DB 에 쓰지 않는다.
  */
 @Component
 public class EmailEventProjectionListener {
@@ -30,5 +29,8 @@ public class EmailEventProjectionListener {
         EmailEvent event = EmailEvent.of(message.messageId(), message.campaignId(), message.type(), message.url());
         event.setOccurredAt(Instant.ofEpochMilli(message.occurredAtEpochMilli()));
         events.save(event);
+        // 캠페인 오픈·클릭 수는 여기서 올린다 — 메시지×종류당 처음 한 번만(V36). 원본 이벤트는 위에서
+        // 전부 남기고(타임라인·링크 랭킹·히트맵), 숫자는 카운터가 맡는다. BOUNCE 는 아무것도 안 한다.
+        events.recordFirstEngagement(event.getMessageId(), event.getCampaignId(), event.getType(), event.getOccurredAt());
     }
 }

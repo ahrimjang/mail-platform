@@ -55,6 +55,8 @@ public class BounceService {
             messages.findById(n.messageId()).ifPresent(m -> {
                 if (messages.markBounced(m.getId(), n.reason(), java.time.Instant.now())) {
                     events.publish(EmailEvent.of(m.getId(), m.getCampaignId(), EventType.BOUNCE, null));
+                    // 끝난 캠페인에 늦게 온 반송이면 저장된 상태 개수가 틀려진다 — 다음 조회가 다시 센다(V36)
+                    messages.evictCountSnapshot(m.getCampaignId());
                 }
             });
         }

@@ -72,6 +72,8 @@ public class DeadLetterService {
         }
         log.error("DLQ: 발송 잡 FAILED 확정 — messageId={} campaign={} recipient={} reason={}",
                 messageId, message.getCampaignId(), message.getRecipient(), reason);
+        // 이미 끝난 캠페인의 메시지였다면 저장된 상태 개수가 틀려진다 — 다음 조회가 다시 센다(V36)
+        messages.evictCountSnapshot(message.getCampaignId());
         // 이 메시지가 마지막이었다면 캠페인을 마무리한다 — 안 하면 영원히 "발송 중"
         dispatch.completeIfDrained(message.getCampaignId());
         notifyOnce(message.getCampaignId(), notifications::campaignSendFailed);

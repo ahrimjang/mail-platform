@@ -11,11 +11,35 @@ public interface EmailEventRepository {
     /** Persist a newly observed engagement event. */
     void save(EmailEvent event);
 
-    /** Count distinct messages having at least one event of the given type in a campaign. */
+    /** 캠페인에서 오픈(또는 클릭)한 메시지 수 — 프로젝션이 올린 카운터를 읽는다(V36). */
     long countDistinctMessages(Long campaignId, EventType type);
 
-    /** Distinct engaged messages of one variant (A/B) of a campaign. */
+    /** A/B 한 안에서 오픈(또는 클릭)한 메시지 수 — 프로젝션이 올린 카운터를 읽는다(V36). */
     long countDistinctMessagesByVariant(Long campaignId, EventType type, String variant);
+
+    /**
+     * 참여 최초 기록 — 메시지×종류당 처음 한 번만 캠페인 카운터를 올린다. 반복 오픈과 Kafka 재전달은
+     * 유니크 충돌로 걸러지고, 넣기와 +1 이 한 문장이라 둘 사이에 죽어도 어긋나지 않는다.
+     * OPEN·CLICK 이 아니면 아무것도 하지 않는다.
+     *
+     * @return 이번 호출이 처음 기록했는지
+     */
+    boolean recordFirstEngagement(Long messageId, Long campaignId, EventType type, java.time.Instant occurredAt);
+
+    /** 여러 캠페인의 참여 카운터 — 캠페인×A/B 안마다 한 줄. 참여가 없는 캠페인은 결과에 없다. */
+    java.util.List<CampaignEngagement> engagementByCampaigns(java.util.Collection<Long> campaignIds);
+
+    /** 캠페인×A/B 안의 카운터 한 줄 — {@code variant} null 이면 A/B 가 아닌 메시지. */
+    record CampaignEngagement(Long campaignId, String variant, long opened, long clicked) {
+    }
+
+    /**
+     * {@code since} 이후 이벤트 중 최초 기록이 빠진 것을 채운다(멱등). 배포 중 옛 워커가 카운터 없이
+     * 이벤트만 쌓은 틈을 새 워커가 기동할 때 메운다.
+     *
+     * @return 카운터가 보정된 (캠페인, 안) 수
+     */
+    int reconcileEngagementSince(java.time.Instant since);
 
     /**
      * Platform-wide daily engagement since {@code since}, bucketed by calendar day

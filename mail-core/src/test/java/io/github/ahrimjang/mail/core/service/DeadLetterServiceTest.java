@@ -66,6 +66,8 @@ class DeadLetterServiceTest {
 
         // 조건부 UPDATE(PENDING/SENDING 에서만) — 읽고 판단하는 사이 다른 워커가 끝냈으면 0행
         verify(messages).finishIfActive(eq(MESSAGE_ID), eq(MessageStatus.FAILED), org.mockito.ArgumentMatchers.contains("3회 rejected"), any());
+        // 끝난 캠페인이었다면 저장된 상태 개수가 틀려진다 — 무효화
+        verify(messages).evictCountSnapshot(CAMPAIGN_ID);
         verify(dispatch).completeIfDrained(CAMPAIGN_ID);
         verify(notifications).campaignSendFailed(any(Campaign.class));
     }

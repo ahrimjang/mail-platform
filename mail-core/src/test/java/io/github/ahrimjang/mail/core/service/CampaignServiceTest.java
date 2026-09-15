@@ -98,8 +98,6 @@ class CampaignServiceTest {
         when(emailDrafts.ownedOrThrow(55L)).thenReturn(email);
         stubCampaignSaveAssigningId();
         stubMessageSaveAllAssigningIds();
-        when(messages.countByCampaign(CAMPAIGN_ID))
-                .thenReturn(new io.github.ahrimjang.mail.core.port.MailMessageRepository.MessageCounts(1, 1, 0, 0, 0, 0, 0));
 
         service.create(new CreateCampaignRequest(
                 null, null, java.util.List.of("a@x.com"), null, null, null, null,
@@ -146,11 +144,10 @@ class CampaignServiceTest {
         });
     }
 
+    /** 진행 중 캠페인 한 건의 뷰 집계 — GROUP BY 1회. 오픈·클릭 카운터는 mock 기본값(없음 = 0). */
     private void stubViewCounts(long total, long pending) {
-        when(messages.countByCampaign(CAMPAIGN_ID))
-                .thenReturn(new MessageCounts(total, pending, 0, 0, 0, 0, 0));
-        when(events.countDistinctMessages(CAMPAIGN_ID, EventType.OPEN)).thenReturn(0L);
-        when(events.countDistinctMessages(CAMPAIGN_ID, EventType.CLICK)).thenReturn(0L);
+        when(messages.countByCampaigns(List.of(CAMPAIGN_ID)))
+                .thenReturn(java.util.Map.of(CAMPAIGN_ID, new MessageCounts(total, pending, 0, 0, 0, 0, 0)));
     }
 
     @SuppressWarnings("unchecked")
@@ -644,16 +641,106 @@ class CampaignServiceTest {
         when(messages.countByCampaignAndVariant(CAMPAIGN_ID)).thenReturn(List.of(
                 new MailMessageRepository.VariantDelivery("A", 6, 5),
                 new MailMessageRepository.VariantDelivery("B", 4, 4)));
-        when(events.countDistinctMessagesByVariant(CAMPAIGN_ID, EventType.OPEN, "A")).thenReturn(3L);
-        when(events.countDistinctMessagesByVariant(CAMPAIGN_ID, EventType.CLICK, "A")).thenReturn(1L);
-        when(events.countDistinctMessagesByVariant(CAMPAIGN_ID, EventType.OPEN, "B")).thenReturn(2L);
-        when(events.countDistinctMessagesByVariant(CAMPAIGN_ID, EventType.CLICK, "B")).thenReturn(2L);
+        // 카운터는 캠페인×안마다 한 줄 — 캠페인 합계는 줄을 더한 값
+        when(events.engagementByCampaigns(List.of(CAMPAIGN_ID))).thenReturn(List.of(
+                new EmailEventRepository.CampaignEngagement(CAMPAIGN_ID, "A", 3, 1),
+                new EmailEventRepository.CampaignEngagement(CAMPAIGN_ID, "B", 2, 2)));
 
         CampaignView view = service.get(CAMPAIGN_ID);
 
         assertThat(view.variants()).containsExactly(
                 new CampaignView.VariantStats("A", 6, 5, 3, 1),
                 new CampaignView.VariantStats("B", 4, 4, 2, 2));
+        assertThat(view.opened()).isEqualTo(5);
+        assertThat(view.clicked()).isEqualTo(3);
+    }
+
+    private static Campaign campaignWithStatus(long id, CampaignStatus status, Instant completedAt) {
+        Campaign c = Campaign.draft("s" + id, "<p>b</p>");
+        c.setId(id);
+        c.setWorkspaceId(WS);
+        c.setStatus(status);
+        c.setCompletedAt(completedAt);
+        return c;
+    }
+
+    @Test
+    void list_aggregatesEveryCampaignWithAConstantNumberOfQueries() {
+        // 캠페인마다 상태 COUNT 7개 + count(distinct) 2개였다 — 이제 캠페인이 몇 개든 집계는 한 번씩
+        when(campaigns.findByWorkspace(WS)).thenReturn(List.of(
+                campaignWithStatus(1L, CampaignStatus.SENDING, null),
+                campaignWithStatus(2L, CampaignStatus.SENDING, null),
+                campaignWithStatus(3L, CampaignStatus.QUEUED, null)));
+        when(messages.countByCampaigns(List.of(1L, 2L, 3L))).thenReturn(java.util.Map.of(
+                1L, new MessageCounts(10, 0, 0, 10, 0, 0, 0),
+                2L, new MessageCounts(5, 5, 0, 0, 0, 0, 0)));
+        when(events.engagementByCampaigns(List.of(1L, 2L, 3L))).thenReturn(List.of(
+                new EmailEventRepository.CampaignEngagement(1L, null, 4, 1)));
+
+        List<CampaignView> views = service.list();
+
+        assertThat(views).extracting(CampaignView::total).containsExactly(10L, 5L, 0L);
+        assertThat(views).extracting(CampaignView::opened).containsExactly(4L, 0L, 0L);
+        verify(messages, never()).countByCampaign(anyLong());
+        verify(events, never()).countDistinctMessages(anyLong(), any());
+        // 진행 중 캠페인은 스냅샷 대상이 아니다
+        verify(messages, never()).findCountSnapshots(any());
+    }
+
+    @Test
+    void view_ofSettledCampaign_readsTheValidSnapshotInsteadOfCounting() {
+        Campaign done = campaignWithStatus(CAMPAIGN_ID, CampaignStatus.COMPLETED, Instant.now().minus(2, ChronoUnit.HOURS));
+        when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(done));
+        when(messages.findCountSnapshots(any())).thenReturn(java.util.Map.of(CAMPAIGN_ID,
+                new MailMessageRepository.CountSnapshot(3, new MessageCounts(100, 0, 0, 97, 1, 2, 0))));
+
+        CampaignView view = service.get(CAMPAIGN_ID);
+
+        assertThat(view.sent()).isEqualTo(97);
+        assertThat(view.bounced()).isEqualTo(2);
+        verify(messages, never()).countByCampaigns(any());
+        verify(messages, never()).saveCountSnapshot(any(), any(), any(), any());
+    }
+
+    @Test
+    void view_ofSettledCampaign_withInvalidatedSnapshot_recountsAndSavesOnlyIfVersionUnchanged() {
+        // 늦은 바운스가 무효화한 스냅샷(version 4) — 다시 세고, 그 사이 또 무효화됐으면 저장이 져야 한다
+        Campaign done = campaignWithStatus(CAMPAIGN_ID, CampaignStatus.COMPLETED, Instant.now().minus(2, ChronoUnit.HOURS));
+        when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(done));
+        when(messages.findCountSnapshots(any())).thenReturn(java.util.Map.of(CAMPAIGN_ID,
+                new MailMessageRepository.CountSnapshot(4, null)));
+        MessageCounts fresh = new MessageCounts(100, 0, 0, 96, 1, 3, 0);
+        when(messages.countByCampaigns(List.of(CAMPAIGN_ID))).thenReturn(java.util.Map.of(CAMPAIGN_ID, fresh));
+
+        CampaignView view = service.get(CAMPAIGN_ID);
+
+        assertThat(view.bounced()).isEqualTo(3);
+        verify(messages).saveCountSnapshot(eq(CAMPAIGN_ID), eq(4L), eq(fresh), any());
+    }
+
+    @Test
+    void view_ofSettledCampaign_withoutSnapshotRow_insertsOnlyIfStillAbsent() {
+        Campaign aborted = campaignWithStatus(CAMPAIGN_ID, CampaignStatus.CANCELED, Instant.now().minus(1, ChronoUnit.DAYS));
+        when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(aborted));
+        MessageCounts fresh = new MessageCounts(50, 0, 0, 20, 0, 0, 0);
+        when(messages.countByCampaigns(List.of(CAMPAIGN_ID))).thenReturn(java.util.Map.of(CAMPAIGN_ID, fresh));
+
+        service.get(CAMPAIGN_ID);
+
+        verify(messages).saveCountSnapshot(eq(CAMPAIGN_ID), org.mockito.ArgumentMatchers.isNull(), eq(fresh), any());
+    }
+
+    @Test
+    void view_ofJustCompletedCampaign_countsLiveAndStoresNothing() {
+        // 끝난 지 5분 — 스위퍼 재발행이나 지연 종료가 아직 숫자를 바꿀 수 있다
+        Campaign done = campaignWithStatus(CAMPAIGN_ID, CampaignStatus.COMPLETED, Instant.now().minus(5, ChronoUnit.MINUTES));
+        when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(done));
+        stubViewCounts(10, 0);
+
+        service.get(CAMPAIGN_ID);
+
+        verify(messages, never()).findCountSnapshots(any());
+        verify(messages, never()).saveCountSnapshot(any(), any(), any(), any());
     }
 
     @Test
