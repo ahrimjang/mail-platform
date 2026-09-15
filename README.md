@@ -176,6 +176,7 @@ curl -H "Authorization: Bearer $TOKEN" "localhost:8080/api/campaigns/1/log"
 
 ## 문서 안내
 
-- **아키텍처·구현 워크스루 12편**(한국어): [docs/logic/](docs/logic/README.md) — 인증부터 메트릭까지, 실제 코드 인용 기반
+- **프로젝트 타임라인**(처음부터 지금까지 날짜순 한 장): [docs/TIMELINE.md](docs/TIMELINE.md)
+- **아키텍처·구현 워크스루 13편**(한국어): [docs/logic/](docs/logic/README.md) — 인증부터 복구·중단까지, 실제 코드 인용 기반
 - **확장 회고**(병목→해법→결과, 틀린 예측 포함): [docs/RETRO-scaling.md](docs/RETRO-scaling.md)
 - **기획 검토 체크리스트**: [docs/REVIEW-product.md](docs/REVIEW-product.md) · **요금 정책**: [docs/BILLING-policy.md](docs/BILLING-policy.md) · **작업 로그**: [docs/worklog/](docs/worklog)
