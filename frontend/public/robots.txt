@@ -1,0 +1,22 @@
+# 공개 소개 페이지만 색인한다. 콘솔은 로그인해야 보이므로 크롤러에게는 의미가 없고,
+# /api/ 는 특히 막아야 한다 — 추적 픽셀(/api/track)을 크롤러가 긁으면 오픈 수가 부풀고,
+# 수신거부 링크(/api/unsubscribe)를 따라가면 실제 구독자가 해지된다.
+User-agent: *
+Disallow: /api/
+Disallow: /uploads/
+Disallow: /login
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /verify-email
+Disallow: /campaigns
+Disallow: /templates
+Disallow: /emails
+Disallow: /recipients
+Disallow: /lists
+Disallow: /analytics
+Disallow: /settings
+Disallow: /notifications
+Disallow: /editor
+Disallow: /ops
+
+Sitemap: https://outpacemail.com/sitemap.xml

@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./outpace/auth";
+import { useSeo } from "./seo";
 import AppShell from "./components/AppShell";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
@@ -50,6 +51,8 @@ function ShellGate() {
   return pathname === "/" ? <Landing /> : <Navigate to="/login" replace />;
 }
 function AppRoutes() {
+  // 경로별 title·description·canonical·OG 갱신 (공개 페이지만 색인, 나머지는 noindex)
+  useSeo();
   return (
     <Routes>
       <Route path="/login" element={<AuthOnly><Login /></AuthOnly>} />
