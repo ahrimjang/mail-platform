@@ -139,6 +139,8 @@ services:
       APP_CONSOLE_URL: ${APP_CONSOLE_URL:-http://localhost}
       # 평판·정원 가드 (운영 값은 .env — .env.example 참고)
       APP_SENDER_DOMAIN: ${APP_SENDER_DOMAIN:-}
+      # 시스템 메일(가입 인증·재설정)의 From — SES 검증 도메인이어야 한다
+      APP_MAIL_SYSTEM_FROM: ${APP_MAIL_SYSTEM_FROM:-no-reply@outpacemail.com}
       APP_BETA_SIGNUP_CAP: ${APP_BETA_SIGNUP_CAP:-0}
       APP_MAIL_WARMUP_ENABLED: ${APP_MAIL_WARMUP_ENABLED:-true}
       # 플랫폼 운영자(/ops) 부트스트랩 — 쉼표 구분 이메일, 기동 시 부여(멱등)
@@ -188,6 +190,8 @@ services:
       SMTP_AUTH: ${SMTP_AUTH:-true}
       SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost}
+      # 발신 주소 없이 등록된 캠페인의 From — api 와 같은 값(같은 주소로 나가야 한다)
+      APP_MAIL_SYSTEM_FROM: ${APP_MAIL_SYSTEM_FROM:-no-reply@outpacemail.com}
       # 클릭 링크 서명키 — api 와 **같은 값**이어야 한다(워커가 서명, api 가 검증).
       # 값이 어긋나면 발송된 메일의 모든 클릭이 400 으로 죽는다.
       APP_TRACKING_SIGNING_KEY: ${APP_TRACKING_SIGNING_KEY:-$APP_JWT_SECRET}

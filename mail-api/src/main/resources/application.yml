@@ -90,6 +90,11 @@ app:
     # 주소나 받는다. 운영은 SES 검증 도메인으로 반드시 설정(예: outpacemail.com),
     # 아니면 허용 밖 발신 주소가 발송 시점에 SES 554 로 대량 실패한다.
     sender-domain: ${APP_SENDER_DOMAIN:}
+    # 시스템 메일(가입 인증·비밀번호 재설정)과 발신 주소 없이 등록된 캠페인의 From.
+    # From 이 비면 JavaMail 이 헤더를 아예 안 넣고 SES 가 메일을 거부한다 — 그래서
+    # 폴백이 아니라 필수값에 가깝다. 운영은 SES 검증 도메인 주소로 둘 것
+    # (sender-domain 을 설정했다면 그 도메인과 같아야 한다).
+    system-from: ${APP_MAIL_SYSTEM_FROM:no-reply@outpacemail.com}
     # 신규 워크스페이스 워밍업 — 누적 발송 200통 미만이면 캠페인당 수신자 50명 상한.
     # 발송 평판 방어용이라 운영에서는 켠 채로 둘 것(끄면 첫 캠페인부터 대량 발송 가능).
     warmup-enabled: ${APP_MAIL_WARMUP_ENABLED:true}

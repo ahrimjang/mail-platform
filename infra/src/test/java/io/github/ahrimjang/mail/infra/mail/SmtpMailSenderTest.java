@@ -31,7 +31,7 @@ class SmtpMailSenderTest {
     void setUp() {
         // 실제 MimeMessage 를 돌려주고, 전송은 붙잡기만 한다(서버 없음)
         when(javaMail.createMimeMessage()).thenReturn(new MimeMessage(Session.getInstance(new Properties())));
-        sender = new SmtpMailSender(javaMail);
+        sender = new SmtpMailSender(javaMail, "no-reply@outpacemail.com");
     }
 
     @Test
@@ -48,6 +48,25 @@ class SmtpMailSenderTest {
         assertThat(msg.getHeader("List-Unsubscribe-Post")).containsExactly("List-Unsubscribe=One-Click");
         assertThat(msg.getHeader("X-Mail-Message-Id")).containsExactly("42");
         assertThat(msg.getReplyTo()[0].toString()).isEqualTo("team@acme.io");
+        assertThat(msg.getFrom()[0].toString()).isEqualTo("Acme <news@outpacemail.com>");
+    }
+
+    @Test
+    void systemMail_fallsBackToSystemFromAddress() throws Exception {
+        // 발신 주소 없이 나가는 시스템 메일(가입 인증·재설정). From 을 비우면 JavaMail 이
+        // 헤더를 넣지 않고 SES 가 거부한다 — MailHog 는 받아 줘서 로컬에서는 안 드러난다.
+        sender.send("to@corp.example", "인증", "<p>링크</p>", null, "Outpace", null);
+
+        verify(javaMail).send(sent.capture());
+        assertThat(sent.getValue().getFrom()[0].toString()).isEqualTo("Outpace <no-reply@outpacemail.com>");
+    }
+
+    @Test
+    void blankSenderNameLeavesAddressOnly() throws Exception {
+        sender.send("to@corp.example", "제목", "<p>본문</p>", null, "  ", " ");
+
+        verify(javaMail).send(sent.capture());
+        assertThat(sent.getValue().getFrom()[0].toString()).isEqualTo("no-reply@outpacemail.com");
     }
 
     @Test
@@ -59,7 +78,8 @@ class SmtpMailSenderTest {
         MimeMessage msg = sent.getValue();
         assertThat(msg.getHeader("List-Unsubscribe")).isNull();
         assertThat(msg.getHeader("List-Unsubscribe-Post")).isNull();
-        assertThat(msg.getReplyTo()).isNull();
+        // getReplyTo() 는 헤더가 없으면 From 을 돌려주므로(JavaMail 규약) 헤더를 직접 본다
+        assertThat(msg.getHeader("Reply-To")).isNull();
     }
 
     @Test

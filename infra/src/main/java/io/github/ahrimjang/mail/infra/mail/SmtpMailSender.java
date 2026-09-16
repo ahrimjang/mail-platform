@@ -4,6 +4,7 @@ import io.github.ahrimjang.mail.core.port.MailSender;
 import jakarta.mail.internet.MimeMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
@@ -21,9 +22,12 @@ public class SmtpMailSender implements MailSender {
     private static final Logger log = LoggerFactory.getLogger(SmtpMailSender.class);
 
     private final JavaMailSender mailSender;
+    private final String systemFrom;
 
-    public SmtpMailSender(JavaMailSender mailSender) {
+    public SmtpMailSender(JavaMailSender mailSender,
+                          @Value("${app.mail.system-from:no-reply@outpacemail.com}") String systemFrom) {
         this.mailSender = mailSender;
+        this.systemFrom = systemFrom;
     }
 
     @Override
@@ -42,13 +46,15 @@ public class SmtpMailSender implements MailSender {
             h.setTo(recipient);
             h.setSubject(subject);
             h.setText(body, true);
-            // Campaign-level From override; without it the SMTP session default applies.
-            if (senderEmail != null && !senderEmail.isBlank()) {
-                if (senderName != null && !senderName.isBlank()) {
-                    h.setFrom(senderEmail, senderName);
-                } else {
-                    h.setFrom(senderEmail);
-                }
+            // From 은 언제나 채운다 — 비워 두면 JavaMail 이 헤더를 아예 넣지 않고,
+            // SES 는 From 없는 메일을 거부한다(개발 MailHog 는 받아 줘서 안 드러난다).
+            // 캠페인은 자기 발신 주소로, 그게 없는 발송(가입 인증·재설정 등 시스템 메일)은
+            // app.mail.system-from 으로 — 이 주소도 SES 검증 도메인이어야 한다.
+            String from = senderEmail != null && !senderEmail.isBlank() ? senderEmail : systemFrom;
+            if (senderName != null && !senderName.isBlank()) {
+                h.setFrom(from, senderName);
+            } else {
+                h.setFrom(from);
             }
             // 발신은 서비스 도메인, 답장은 고객 주소로 — SES 검증 도메인 제약의 짝
             String replyTo = options == null ? null : options.replyTo();
