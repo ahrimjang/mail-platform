@@ -134,7 +134,7 @@
 - SES 프로덕션 액세스 2차 거절, 범위를 줄여 재신청.
 - 관련: [TODO-ses-sns.md](TODO-ses-sns.md)
 
-## 5단계 — 베타 전 다듬기 (09-09 ~ 09-15)
+## 5단계 — 베타 전 다듬기 (09-09 ~ 09-16)
 
 ### 09-09 · [워크일지](worklog/2026-09-09.md)
 - 가입부터 발송까지 사용자 동선을 점검해 여섯 갈래를 고쳤다. 화면이 약속한 동작을 코드가 안 지키던 곳들이다.
@@ -163,6 +163,11 @@
 - **캠페인 집계 읽기 모델**: 목록 화면이 캠페인마다 돌리던 집계를 저장된 카운터와 스냅샷으로 바꿨다.
 - 관련: [REVIEW-scale.md](REVIEW-scale.md) 3.9절 · [logic/04-tracking-analytics.md](logic/04-tracking-analytics.md) 3-9·3-10절
 
+### 09-16 · [워크일지](worklog/2026-09-16.md)
+- **로컬 발송 E2E**: 가입부터 추적까지 한 번에 도는 확인 경로. 인증 토큰도 MailHog 에서 꺼내 쓴다.
+- 거기서 찾은 결함 — **시스템 메일에 `From` 헤더가 없었다.** MailHog 는 받아주지만 SES 는 거부하는 메일이라, 운영에서 가입 인증이 막힐 자리였다.
+- **검색 노출**: 경로별 메타·OG·구조화 데이터, robots.txt(`/api/` 차단), 사이트맵.
+
 ---
 
 ## 스키마 변화 한눈에
@@ -188,4 +193,6 @@
 
 - **처리량**: 운영 노드 재측정, SES 할당량, 배치 INSERT 등 — [ROADMAP-scale.md](ROADMAP-scale.md) "2026-09-14 점검에서 추가"
 - **운영 콘솔 개시**: 서버 `.env` 에 운영자 이메일 지정 — [OPS-MANUAL.md](OPS-MANUAL.md) 6절
+- **SES 확인**: 시스템 메일 발신 주소(`APP_MAIL_SYSTEM_FROM`)가 발송 가능한지, 할당량이 샌드박스인지 — [worklog/2026-09-16.md](worklog/2026-09-16.md)
+- **검색 등록**: 서치콘솔·서치어드바이저 사이트 등록과 사이트맵 제출
 - **다음 기능 후보**: MCP 연동 0단계 — [mcp-integration-design.md](mcp-integration-design.md), AI 작성 1단계 — [ai-compose-design.md](ai-compose-design.md)
