@@ -191,8 +191,8 @@
 
 ## 지금 남은 일
 
-- **처리량**: 운영 노드 재측정, SES 할당량, 배치 INSERT 등 — [ROADMAP-scale.md](ROADMAP-scale.md) "2026-09-14 점검에서 추가"
+- **처리량**: 운영 노드 재측정, 배치 INSERT 등 — [ROADMAP-scale.md](ROADMAP-scale.md) "2026-09-14 점검에서 추가"
 - **운영 콘솔 개시**: 서버 `.env` 에 운영자 이메일 지정 — [OPS-MANUAL.md](OPS-MANUAL.md) 6절
-- **SES 확인**: 시스템 메일 발신 주소(`APP_MAIL_SYSTEM_FROM`)가 발송 가능한지, 할당량이 샌드박스인지 — [worklog/2026-09-16.md](worklog/2026-09-16.md)
+- **운영 스모크**: 가입 인증 메일이 새 시스템 발신 주소로 도착하는지 — [worklog/2026-09-16.md](worklog/2026-09-16.md)
 - **검색 등록**: 서치콘솔·서치어드바이저 사이트 등록과 사이트맵 제출
 - **다음 기능 후보**: MCP 연동 0단계 — [mcp-integration-design.md](mcp-integration-design.md), AI 작성 1단계 — [ai-compose-design.md](ai-compose-design.md)
