@@ -2,14 +2,12 @@
 
 ## 한눈에 보기
 
-| | |
-|---|---|
-| **왜 필요했나** | 동시성·발송 게이트 규칙이 많아 수정할 때마다 조용히 깨지기 쉽다. |
-| **무엇을 썼나** | **JUnit 5 + Mockito + AssertJ**. Spring 을 띄우지 않고 `mail-core` 서비스만 검증하며, DB·큐 같은 포트만 가짜로 바꾼다. |
-| **결과** | 현재 코어 약 350건, api 25건, 워커 6건, infra 5건이 수 초 안에 돈다. 아래 해설은 초기 13개 클래스 기준이다. |
-| **리뷰에서 한 줄로** | 핵심 규칙은 Spring 없이 빠른 단위 테스트로 잠가 둔다. |
-
-`mail-core/src/test/java/io/github/ahrimjang/mail/core/service/` 의 13개 테스트 클래스, 92개 테스트를 메소드 단위로 설명합니다.
+<table>
+<tr><th align="left">왜 필요했나</th><td>동시성·발송 게이트 규칙이 많아 수정할 때마다 조용히 깨지기 쉽다.</td></tr>
+<tr><th align="left">무엇을 썼나</th><td><b>JUnit 5 + Mockito + AssertJ</b>. Spring 을 띄우지 않고 <code>mail-core</code> 서비스만 검증하며, DB·큐 같은 포트만 가짜로 바꾼다.</td></tr>
+<tr><th align="left">결과</th><td>현재 코어 약 350건, api 25건, 워커 6건, infra 5건이 수 초 안에 돈다. 아래 해설은 초기 13개 클래스 기준이다.</td></tr>
+<tr><td colspan="2">핵심 규칙은 Spring 없이 빠른 단위 테스트로 잠가 둔다.</td></tr>
+</table>
 
 ## 공통 스타일
 
