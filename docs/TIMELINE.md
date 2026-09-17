@@ -195,4 +195,5 @@
 - **운영 콘솔 개시**: 서버 `.env` 에 운영자 이메일 지정 — [OPS-MANUAL.md](OPS-MANUAL.md) 6절
 - **운영 스모크**: 가입 인증 메일이 새 시스템 발신 주소로 도착하는지 — [worklog/2026-09-16.md](worklog/2026-09-16.md)
 - **검색 등록**: 서치콘솔·서치어드바이저 사이트 등록과 사이트맵 제출
+- **추가 개발 목록**: 평판·발신자, AI 포탈 연동, 마케팅 기능 격차, 운영·배포 — [REVIEW-product.md](REVIEW-product.md) 8절
 - **다음 기능 후보**: MCP 연동 0단계 — [mcp-integration-design.md](mcp-integration-design.md), AI 작성 1단계 — [ai-compose-design.md](ai-compose-design.md)
