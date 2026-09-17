@@ -348,7 +348,7 @@ SES (바운스 감지) ──▶ SNS 토픽 ──▶ POST /api/webhooks/ses   (
   규칙과 결합해 correlation이 없으면 테넌트를 몰라 억제를 버립니다(10 문서).
 - **`text/plain` 함정.** SNS는 JSON을 `text/plain` Content-Type으로 보내므로
   `@RequestBody DTO` 바인딩이 안 됩니다 — raw String으로 받아 직접 파싱합니다.
-- **로컬 데모 토글.** `APP_WEBHOOK_SNS_VERIFY_SIGNATURE`(기본 **true**)를 false로 내리면
+- **로컬 확인용 토글.** `APP_WEBHOOK_SNS_VERIFY_SIGNATURE`(기본 **true**)를 false로 내리면
   서명 없이 샘플 봉투를 curl로 흘려 E2E를 볼 수 있습니다. 운영에서 내리면 안 됩니다.
 
 검증: 단위 테스트 13건(`mail-api/src/test/.../webhook/` — 로컬 RSA 키페어로 서명/변조 거부,

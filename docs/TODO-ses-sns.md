@@ -23,7 +23,7 @@
 - [x] `POST /api/webhooks/ses` 엔드포인트 — *2026-07-16 완료.* SNS가 text/plain으로 보내므로 raw body 파싱.
 - [x] **SNS 구독 확인 처리** — *완료.* `SnsSubscriptionConfirmer` — SubscribeURL이 https+amazonaws.com일 때만 GET(SSRF 차단).
 - [x] **SNS 메시지 서명검증** — *완료.* `SnsSignatureVerifier` — v1(SHA1)/v2(SHA256) RSA, 서명 문자열 규격 구현,
-      SigningCertURL은 https+amazonaws.com만 허용, 인증서 캐시. 로컬 데모용 토글 `APP_WEBHOOK_SNS_VERIFY_SIGNATURE`(기본 true).
+      SigningCertURL은 https+amazonaws.com만 허용, 인증서 캐시. 로컬 확인용 토글 `APP_WEBHOOK_SNS_VERIFY_SIGNATURE`(기본 true).
 - [x] **SES 파서** — *완료.* `SesNotificationParser`: Permanent→HARD_BOUNCE, Transient/Undetermined→SOFT_BOUNCE,
       Complaint→COMPLAINT(수신자별 1건), Delivery/unknown→무시. 진단 코드를 사유로 보존.
 - [x] correlation — *완료.* SES 통보의 `mail.headers`에서 `X-Mail-Message-Id`(대소문자 무관) 역해석.

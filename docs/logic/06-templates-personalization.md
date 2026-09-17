@@ -347,7 +347,7 @@ public interface FileStorage {
 
 `mail-core/src/main/java/io/github/ahrimjang/mail/core/service/UploadService.java`
 ```java
-    /** POC guardrail: big enough for hero images, small enough to not care about disk. */
+    /** 상한 5MB — 대표 이미지는 충분히 담고, 디스크 걱정은 없는 크기(초기 운영용 가드레일). */
     static final int MAX_BYTES = 5 * 1024 * 1024;
 
     private static final Map<String, String> EXTENSION_BY_TYPE = Map.of(
@@ -458,7 +458,7 @@ function UploadButton({ onUploaded, label }: { onUploaded: (url: string) => void
 - **업로드 URL은 절대 경로, 파일명은 UUID.** 이미지는 수신자 쪽에서 fetch되므로
   `app.base-url` 기반 절대 URL이어야 하고, 저장 파일명에 사용자 입력을 쓰지 않아
   경로 탐색(traversal)·충돌 걱정이 없습니다. 타입 화이트리스트(png/jpg/gif/webp) + 5MB 제한은
-  POC 수준의 가드레일이고, S3/GCS 전환은 `FileStorage` 포트 구현 교체로 끝납니다.
+  초기 운영용 가드레일이고, S3/GCS 전환은 `FileStorage` 포트 구현 교체로 끝납니다.
 
 ## 5. 확인 방법
 

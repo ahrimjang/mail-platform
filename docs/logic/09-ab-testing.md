@@ -166,7 +166,7 @@ POST /api/campaigns {abSubjectB, abTestPercent=30, abEvalMetric, abEvalWaitMinut
 ## 5. 확인 방법
 
 ```bash
-# A/B 승자 플로우 캠페인 (테스트 30%, 오픈율, 대기 1분 — 데모용 최소값)
+# A/B 승자 플로우 캠페인 (테스트 30%, 오픈율, 대기 1분 — 로컬 확인용 최소값)
 # 수신자는 70명 이상이어야 한다: 70 × 30% = 21명(안별 10명) 이 등록 하한이다(ARCH-7)
 curl -X POST http://localhost:8080/api/campaigns -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" -d '{
