@@ -95,3 +95,6 @@ app:
     # 클릭 링크 서명키 — 워커가 서명하고 api 가 검증하므로 **두 프로세스가 같은 값**이어야
     # 한다(다르면 모든 클릭이 400). 운영 compose 가 양쪽에 동일 값을 주입한다.
     signing-key: ${APP_TRACKING_SIGNING_KEY:dev-only-not-a-real-secret-key-0123456789-abcdefghijklmnopqrstuvwxyz}
+    # 물러난 서명키(쉼표 구분) — 워커는 서명만 하므로 실제로 쓰지 않지만, api 와 같은 설정을
+    # 두어 양쪽 env 가 어긋나지 않게 한다(교체 때 한쪽만 바꾸는 사고 방지).
+    previous-signing-keys: ${APP_TRACKING_PREVIOUS_SIGNING_KEYS:}

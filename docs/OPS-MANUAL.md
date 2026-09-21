@@ -145,6 +145,20 @@ Lightsail 콘솔 → 인스턴스 ⋮ → **Reboot**. 컨테이너는 자동 복
 - **SMTP 자격증명 교체**(SES 키 로테이션 등): `.env`의 `SMTP_USERNAME/PASSWORD` 수정 → `up -d api worker` →
   본인 주소로 테스트 발송 → 받은편지함 도착·헤더의 DKIM/SPF pass 확인.
   `SMTP_HOST` 가 비면 compose 가 기동을 거부한다(mailhog 폴백 없음 — 2026-09 제거)
+- **클릭 추적 서명키 교체**(`APP_TRACKING_SIGNING_KEY` 유출·정기 교체): 한 번에 갈아치우면
+  **이미 보낸 메일의 클릭이 전부 400** 이 된다 — 링크의 서명에는 만료가 없어 과거 발송분은
+  당시 키로만 검증되기 때문이다. 아래 순서로 두 키를 겹쳐서 넘긴다.
+  ```bash
+  # ① 지금 키를 이전 키 목록으로 옮기고, ② 새 키를 발급해 현재 키로 (서버 ~/mail-platform/.env)
+  #    APP_TRACKING_PREVIOUS_SIGNING_KEYS=<지금 APP_TRACKING_SIGNING_KEY 값>
+  #    APP_TRACKING_SIGNING_KEY=$(openssl rand -base64 48 | tr -d '\n')
+  docker compose -f ~/mail-platform/docker-compose.prod.yml up -d api worker   # ③ 양쪽 동시 재기동
+  ```
+  검증: 새로 테스트 발송해 링크 클릭(정상 리다이렉트) + **교체 전에 받은 메일**의 링크 클릭도
+  여전히 열리는지 확인. ④ 옛 캠페인 클릭이 실질적으로 끊긴 뒤(권장 90일)
+  `APP_TRACKING_PREVIOUS_SIGNING_KEYS` 를 비우고 다시 `up -d` 하면 교체 완료.
+  주의: **두 변수 모두 api·worker 에 같은 값**이어야 한다(워커가 서명, api 가 검증).
+  값을 비워 두면 `APP_JWT_SECRET` 으로 폴백하므로, 그 상태에서 JWT 키를 바꾸면 같은 사고가 난다.
 - **Grafana 비밀번호 분실**: `grep GRAFANA ~/mail-platform/.env`
 - **GitHub 배포 토큰 만료**(90일): 재발급 후 서버에서
   `git remote set-url origin https://<새토큰>@github.com/ahrimjang/mail-platform.git`

@@ -59,6 +59,9 @@ app:
     # 클릭 링크 서명키 — 워커가 서명하고 api 가 검증하므로 **두 프로세스가 같은 값**이어야
     # 한다(다르면 모든 클릭이 400). 운영 compose 가 양쪽에 동일 값을 주입한다.
     signing-key: ${APP_TRACKING_SIGNING_KEY:dev-only-not-a-real-secret-key-0123456789-abcdefghijklmnopqrstuvwxyz}
+    # 물러난 서명키(쉼표 구분) — 검증에만 쓴다. 이미 발송된 메일의 링크는 당시 키로
+    # 서명돼 있어, 키를 한 번에 갈면 과거 클릭이 전부 400 이 된다. 교체 때 옛 키를 여기로.
+    previous-signing-keys: ${APP_TRACKING_PREVIOUS_SIGNING_KEYS:}
   jwt:
     # Dev-only fallback — production MUST set APP_JWT_SECRET (HS512 needs >= 64 bytes).
     secret: ${APP_JWT_SECRET:dev-only-not-a-real-secret-key-0123456789-abcdefghijklmnopqrstuvwxyz}

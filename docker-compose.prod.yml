@@ -135,6 +135,8 @@ services:
       APP_WEBHOOK_SNS_TOPIC_ARN: ${APP_WEBHOOK_SNS_TOPIC_ARN:-}
       # 클릭 링크 서명키 — worker 와 반드시 같은 값(아래 worker env 참고)
       APP_TRACKING_SIGNING_KEY: ${APP_TRACKING_SIGNING_KEY:-$APP_JWT_SECRET}
+      # 물러난 서명키(쉼표 구분). 키 교체 때만 채운다 — 비우면 과거 발송분의 클릭이 죽는다
+      APP_TRACKING_PREVIOUS_SIGNING_KEYS: ${APP_TRACKING_PREVIOUS_SIGNING_KEYS:-}
       # 시스템 메일 링크가 가리키는 콘솔 주소 — 운영은 APP_BASE_URL 과 같은 오리진
       APP_CONSOLE_URL: ${APP_CONSOLE_URL:-http://localhost}
       # 평판·정원 가드 (운영 값은 .env — .env.example 참고)
@@ -195,6 +197,7 @@ services:
       # 클릭 링크 서명키 — api 와 **같은 값**이어야 한다(워커가 서명, api 가 검증).
       # 값이 어긋나면 발송된 메일의 모든 클릭이 400 으로 죽는다.
       APP_TRACKING_SIGNING_KEY: ${APP_TRACKING_SIGNING_KEY:-$APP_JWT_SECRET}
+      APP_TRACKING_PREVIOUS_SIGNING_KEYS: ${APP_TRACKING_PREVIOUS_SIGNING_KEYS:-}
     depends_on:
       postgres:
         condition: service_healthy
