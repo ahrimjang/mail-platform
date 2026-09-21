@@ -3,8 +3,8 @@ package io.github.ahrimjang.mail.core.port;
 /**
  * Outbound port for persisting uploaded binary assets (template images).
  *
- * <p>The POC ships a local-disk adapter; swapping in S3/GCS is a drop-in
- * replacement of this interface.
+ * <p>현재 어댑터는 로컬 디스크 저장이다. S3/GCS 로 옮길 때는 이 인터페이스의
+ * 구현만 바꾸면 된다.
  */
 public interface FileStorage {
 

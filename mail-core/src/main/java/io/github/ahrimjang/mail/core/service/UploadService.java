@@ -17,7 +17,7 @@ import java.util.Map;
 @Service
 public class UploadService {
 
-    /** POC guardrail: big enough for hero images, small enough to not care about disk. */
+    /** 상한 5MB — 대표 이미지는 충분히 담고, 디스크 걱정은 없는 크기(초기 운영용 가드레일). */
     static final int MAX_BYTES = 5 * 1024 * 1024;
 
     private static final Map<String, String> EXTENSION_BY_TYPE = Map.of(

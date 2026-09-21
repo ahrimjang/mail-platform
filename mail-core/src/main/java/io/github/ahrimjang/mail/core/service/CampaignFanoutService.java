@@ -20,25 +20,24 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
- * Expands a list campaign's recipients into the send queue, asynchronously and in
- * batches. Invoked by the worker's fan-out listener, one call per campaign.
+ * 리스트 캠페인의 수신자를 발송 큐로 펼친다 — 비동기로, 페이지 단위로. 워커의 팬아웃
+ * 리스너가 캠페인당 한 번 호출한다.
  *
- * <p>This is the deferred half of campaign creation: {@code CampaignService.create()}
- * only persists the campaign and publishes a fan-out job, so the API returns in O(1);
- * the heavy N-row expansion happens here off the request path.
+ * <p>캠페인 등록에서 미뤄 둔 절반이다: {@code CampaignService.create()} 는 캠페인만 저장하고
+ * 팬아웃 잡 1건을 발행해 API 가 O(1) 로 반환하고, 무거운 N 행 확장은 요청 경로 밖인 여기서 한다.
  *
- * <p>Idempotent via an atomic QUEUED-&gt;EXPANDING claim: RabbitMQ is at-least-once, so a
- * redelivered fan-out job loses the claim and is skipped instead of creating duplicate
- * messages. The campaign stays EXPANDING for the whole expansion so dispatch never
- * completes it early (its later messages aren't created yet); fan-out flips it to
- * SENDING when done and completes it if everything already drained.
+ * <p>원자적 QUEUED-&gt;EXPANDING claim 으로 멱등하다: RabbitMQ 는 at-least-once 라 같은 팬아웃
+ * 잡이 다시 와도 claim 에서 밀려 건너뛴다 — 중복 메시지가 생기지 않는다. 펼치는 내내 캠페인은
+ * EXPANDING 에 머무는데, 그래야 먼저 나간 메시지 때문에 발송 쪽이 캠페인을 미리 완료 처리하지
+ * 않는다(뒤쪽 수신자 행은 아직 만들어지지도 않았다). 다 펼치면 SENDING 으로 넘기고, 그 사이
+ * 이미 전부 빠져나갔으면 여기서 완료시킨다.
  */
 @Service
 public class CampaignFanoutService {
 
     private static final Logger log = LoggerFactory.getLogger(CampaignFanoutService.class);
 
-    /** Recipients expanded per DB round-trip. Keeps memory bounded on million-row lists. */
+    /** DB 왕복 한 번에 펼치는 수신자 수. 100만 행 리스트에서도 메모리 사용량을 일정하게 묶어 둔다. */
     private static final int PAGE = 1000;
 
     private final CampaignRepository campaigns;
@@ -63,8 +62,8 @@ public class CampaignFanoutService {
     }
 
     /**
-     * Expand one list campaign. Safe to call more than once (redelivery): only the
-     * caller that wins the QUEUED-&gt;EXPANDING claim does the work.
+     * 리스트 캠페인 하나를 펼친다. 여러 번 호출돼도(재전달) 안전하다 — QUEUED-&gt;EXPANDING
+     * claim 을 이긴 호출만 실제로 일한다.
      */
     public void expand(Long campaignId) {
         if (!campaigns.claimForFanout(campaignId)) {
@@ -76,8 +75,8 @@ public class CampaignFanoutService {
             return;
         }
         Long listId = campaign.getListId();
-        // Engagement segment: evaluated here (not at authoring) so a scheduled
-        // campaign filters on rates as of the release. Loaded once per fan-out.
+        // 참여도 세그먼트: 작성 시점이 아니라 여기서 평가한다 — 예약 캠페인은 릴리스 시점의
+        // 참여율로 걸러야 맞다. 팬아웃 한 번당 한 번만 로드한다.
         EngagementFilter segment = EngagementFilter.of(campaign, messages, events);
 
         // 재개 커서: 팬아웃 도중 죽었다가 스위퍼가 되돌린 캠페인은 이미 만든 메시지 뒤부터
@@ -125,8 +124,8 @@ public class CampaignFanoutService {
                     })
                     .toList();
             List<MailMessage> saved = batch.isEmpty() ? List.of() : messages.saveAll(batch);
-            // Winner flow only enqueues the test batch: held rows (variant null)
-            // stay PENDING until the winner is decided. 억제로 이미 종료된 행은 큐에 안 넣는다.
+            // 승자 플로우는 테스트 묶음만 큐에 넣는다 — 유보된 행(variant 없음)은 승자가
+            // 정해질 때까지 PENDING 으로 남는다. 억제로 이미 종료된 행은 큐에 안 넣는다.
             saved.stream()
                     .filter(m -> m.getStatus() == io.github.ahrimjang.mail.common.MessageStatus.PENDING)
                     .filter(m -> !campaign.hasWinnerFlow() || m.getVariant() != null)
@@ -139,14 +138,14 @@ public class CampaignFanoutService {
         }
 
         campaigns.markExpanded(campaignId); // EXPANDING -> SENDING
-        // Winner flow: the test batch just went out — stamp when the winner scheduler
-        // should evaluate it and release the held-out remainder.
+        // 승자 플로우: 테스트 묶음이 방금 나갔다 — 승자 스케줄러가 언제 판정하고 유보분을
+        // 풀어야 하는지 그 시각을 찍어 둔다.
         if (campaign.hasWinnerFlow()) {
             campaigns.scheduleAbEvaluation(campaignId,
                     Instant.now().plus(Duration.ofMinutes(campaign.getAbEvalWaitMinutes())));
         }
-        // If every message already drained before we flipped to SENDING (fast sends /
-        // empty list), finish it here — cheap EXISTS, not a full count.
+        // SENDING 으로 넘기기 전에 이미 전부 빠져나간 경우(빠른 발송·빈 리스트)는 여기서
+        // 끝낸다 — 전체 count 가 아니라 값싼 EXISTS 로 본다.
         if (!messages.hasPendingOrSending(campaignId)) {
             if (campaigns.completeIfSending(campaignId)) {
                 notifications.campaignCompleted(campaign);   // claim 승자만 도달 — 1회 발행
@@ -156,10 +155,9 @@ public class CampaignFanoutService {
     }
 
     /**
-     * Per-contact engagement predicate of one fan-out run. Rates are distinct
-     * opened/clicked messages over SENT deliveries; contacts with no delivery
-     * history have no rate and are excluded when a floor is set (an engagement
-     * segment means "proven readers", which a fresh member cannot be yet).
+     * 팬아웃 한 번에서 쓰는 연락처별 참여도 판정식. 비율은 SENT 배달 대비 오픈·클릭한 메시지
+     * 수(중복 제외)다. 배달 이력이 없는 연락처는 비율 자체가 없어 하한이 걸려 있으면 제외한다
+     * — 참여도 세그먼트는 "읽는 것이 확인된 사람"을 뜻하고, 갓 들어온 연락처는 아직 그럴 수 없다.
      */
     private record EngagementFilter(Integer minOpenPercent, Integer minClickPercent,
                                     Map<Long, Long> sentByContact,

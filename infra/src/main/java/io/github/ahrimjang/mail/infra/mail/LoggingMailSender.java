@@ -7,8 +7,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /**
- * POC mail adapter: logs each "delivery" instead of contacting a real MTA, so
- * the whole pipeline runs with zero external dependencies.
+ * 로그 발송 어댑터 — 실제 메일 서버에 연결하지 않고 "발송"을 로그로만 남겨,
+ * 외부 의존성 없이 파이프라인 전체를 돌릴 수 있게 한다(MAIL_SENDER_TYPE=logging).
  *
  * <p>Addresses without an '@' are rejected to exercise the FAILED path. Swap
  * this bean for a JavaMail/provider-API implementation of {@link MailSender}

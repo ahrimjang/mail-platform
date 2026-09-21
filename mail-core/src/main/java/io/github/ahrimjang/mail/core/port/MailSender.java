@@ -3,8 +3,8 @@ package io.github.ahrimjang.mail.core.port;
 /**
  * Outbound port for actually transmitting a single mail.
  *
- * <p>The POC ships a logging adapter; a real SMTP/JavaMail or provider-API
- * adapter is a drop-in replacement that implements this same interface.
+ * <p>운영은 SMTP 어댑터(SES), 외부 연결 없이 돌릴 때는 로그 어댑터를 쓴다.
+ * 다른 발송 업체 API 로 바꿀 때도 이 인터페이스의 구현만 추가하면 된다.
  */
 public interface MailSender {
 
