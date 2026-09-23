@@ -25,12 +25,14 @@ public class EmailDraftService {
     private final EmailDraftRepository drafts;
     private final TemplateRepository templates;
     private final WorkspaceContext ctx;
+    private final EmailContentValidator validator;
 
     public EmailDraftService(EmailDraftRepository drafts, TemplateRepository templates,
-                             WorkspaceContext ctx) {
+                             WorkspaceContext ctx, EmailContentValidator validator) {
         this.drafts = drafts;
         this.templates = templates;
         this.ctx = ctx;
+        this.validator = validator;
     }
 
     public List<EmailDraftView> list() {
@@ -66,9 +68,11 @@ public class EmailDraftService {
                 || htmlBody == null || htmlBody.isBlank()) {
             throw new IllegalArgumentException("이름, 제목, 본문이 필요합니다.");
         }
+        // 저장 전 검사 — 거부 대상이면 여기서 예외(400), 아니면 경고만 실어 돌려준다
+        List<String> warnings = validator.validate(subject, htmlBody);
         EmailDraft saved = drafts.save(EmailDraft.of(
                 ctx.currentWorkspaceId(), uniqueName(name.trim()), subject.trim(), htmlBody, sourceTemplateId));
-        return toView(saved);
+        return toView(saved, warnings);
     }
 
     public EmailDraftView update(Long id, SaveEmailDraftRequest request) {
@@ -77,12 +81,13 @@ public class EmailDraftService {
                 || request.htmlBody() == null || request.htmlBody().isBlank()) {
             throw new IllegalArgumentException("이름, 제목, 본문이 필요합니다.");
         }
+        List<String> warnings = validator.validate(request.subject(), request.htmlBody());
         EmailDraft draft = ownedOrThrow(id);
         draft.setName(request.name().trim());
         draft.setSubject(request.subject().trim());
         draft.setHtmlBody(request.htmlBody());
         draft.touch();
-        return toView(drafts.save(draft));
+        return toView(drafts.save(draft), warnings);
     }
 
     public void delete(Long id) {
@@ -127,8 +132,13 @@ public class EmailDraftService {
         return t.getWorkspaceId() == null || t.getWorkspaceId().equals(ctx.currentWorkspaceId());
     }
 
+    /** 조회 응답 — 경고는 저장 시점의 것이라 여기서는 비운다. */
     private static EmailDraftView toView(EmailDraft d) {
+        return toView(d, List.of());
+    }
+
+    private static EmailDraftView toView(EmailDraft d, List<String> warnings) {
         return new EmailDraftView(d.getId(), d.getName(), d.getSubject(), d.getHtmlBody(),
-                d.getSourceTemplateId(), d.getCreatedAt(), d.getUpdatedAt());
+                d.getSourceTemplateId(), d.getCreatedAt(), d.getUpdatedAt(), warnings);
     }
 }

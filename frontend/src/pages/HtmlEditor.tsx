@@ -28,6 +28,7 @@ export default function HtmlEditor() {
   const [loading, setLoading] = useState(!!id);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [warnings, setWarnings] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [device, setDevice] = useState<"desktop" | "mobile">("desktop");
 
@@ -89,6 +90,7 @@ export default function HtmlEditor() {
     }
     setSaving(true);
     setError(null);
+    setWarnings([]);
     try {
       const payload = JSON.stringify({ name: name.trim(), subject: subject.trim(), htmlBody: body });
       const res = id
@@ -101,7 +103,9 @@ export default function HtmlEditor() {
           : data.error ?? "저장에 실패했습니다.");
         return null;
       }
-      const view: TemplateView = await res.json();
+      const view: TemplateView & { warnings?: string[] } = await res.json();
+      // 저장은 됐지만 발송 결과가 의도와 다를 수 있는 것들 — 막지 않고 알린다
+      setWarnings(view.warnings ?? []);
       setSavedAt(new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }));
       markSaved(JSON.stringify({ name: name.trim(), subject: subject.trim(), body }));
       if (!id) nav(`/editor/html/${view.id}${isEmail ? "?target=email" : ""}`, { replace: true }); // keep editing the saved row
@@ -174,6 +178,15 @@ export default function HtmlEditor() {
       </div>
 
       {/* subject line */}
+      {warnings.length > 0 && (
+        <div className="op-editor-warn" role="status">
+          {warnings.map((w, i) => (
+            <p key={i}>{w}</p>
+          ))}
+          <button className="op-warn-close" onClick={() => setWarnings([])} aria-label="경고 닫기">×</button>
+        </div>
+      )}
+
       <div className="op-editor-sub">
         <span className="lbl">제목</span>
         <input

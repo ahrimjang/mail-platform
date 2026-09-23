@@ -13,6 +13,12 @@ public record EmailDraftView(
         String htmlBody,
         Long sourceTemplateId,
         Instant createdAt,
-        Instant updatedAt
+        Instant updatedAt,
+        /**
+         * 저장은 됐지만 발송 결과가 의도와 다를 수 있는 것들(미지원 변수·크기 초과).
+         * 조회 응답에서는 항상 비어 있고, 저장 응답에서만 채워진다 — 경고는 "방금 저장한
+         * 내용"에 대한 것이라 나중에 다시 꺼내 볼 값이 아니다.
+         */
+        java.util.List<String> warnings
 ) {
 }

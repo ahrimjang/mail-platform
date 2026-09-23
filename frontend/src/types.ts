@@ -140,6 +140,8 @@ export interface EmailDraftView {
   sourceTemplateId: number | null;
   createdAt: string;
   updatedAt: string;
+  // 저장 응답에서만 채워진다 — 미지원 변수·크기 초과처럼 "보내지긴 하는데 의도와 다를" 것들
+  warnings: string[];
 }
 
 // 콘솔 인앱 알림 — campaignId 는 클릭 시 이동할 캠페인(소프트 참조)

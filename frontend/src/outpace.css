@@ -724,6 +724,11 @@ a.op-btn { text-decoration: none; } /* Link/a 를 버튼으로 쓸 때 밑줄 �
 .op-autosave { font-size: 11px; font-weight: 700; color: var(--op-ink-3); background: var(--op-panel); border-radius: 6px; padding: 4px 9px; }
 .op-editor-actions { display: flex; align-items: center; gap: 8px; }
 .op-editor-error { font-size: 12.5px; font-weight: 600; color: var(--op-red); margin-right: 4px; }
+/* 저장은 됐지만 발송 결과가 의도와 다를 수 있을 때 — 막는 게 아니라 알리는 자리라 빨강이 아닌 호박색 */
+.op-editor-warn { position: relative; padding: 10px 40px 10px 16px; background: var(--op-amber-soft); border-bottom: 1px solid #fde68a; }
+.op-editor-warn p { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--op-amber); font-weight: 600; }
+.op-editor-warn p + p { margin-top: 5px; }
+.op-warn-close { position: absolute; top: 6px; right: 10px; width: 24px; height: 24px; border: none; background: none; color: var(--op-amber); font-size: 17px; line-height: 1; cursor: pointer; font-family: inherit; }
 .op-tbtn { height: 36px; padding: 0 15px; border: 1px solid var(--op-border-input); border-radius: 9px; background: #fff; color: var(--op-ink-2); font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
 .op-tbtn:hover { background: #fafafa; }
 .op-tbtn.primary { border: none; background: var(--op-primary); color: #fff; font-weight: 700; padding: 0 16px; }

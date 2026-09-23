@@ -36,7 +36,8 @@ class EmailDraftServiceTest {
     void setUp() {
         org.mockito.MockitoAnnotations.openMocks(this);
         lenient().when(ctx.currentWorkspaceId()).thenReturn(WS);
-        service = new EmailDraftService(drafts, templates, ctx);
+        // 검사기는 순수 로직이라 목이 아니라 실물을 쓴다 — 저장 경로가 실제로 걸러내는지까지 본다
+        service = new EmailDraftService(drafts, templates, ctx, new EmailContentValidator());
     }
 
     private static Template template(Long workspaceId) {
