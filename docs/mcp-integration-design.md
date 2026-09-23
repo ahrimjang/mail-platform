@@ -7,7 +7,7 @@
 > 먼저 적어 둔다.
 >
 > **2026-09-15 갱신**: 설계 이후 들어온 플랫폼 운영자 콘솔(V35)과 캠페인 집계 읽기 모델(V36)에
-> 맞췄다. 마이그레이션 번호를 V37 로 옮기고, 운영 콘솔 키 폐기·감사 로그와의 관계, 대용량 점검
+> 맞췄다. 마이그레이션 번호를 V38 로 잡고, 운영 콘솔 키 폐기·감사 로그와의 관계, 대용량 점검
 > 결과와의 연결, 리뷰에서 정할 항목을 추가했다.
 
 ## 왜 MCP 인가 (그리고 언제 아닌가)
@@ -38,7 +38,7 @@ MCP 가 맞다. 다만 아래 0단계(공개 REST 확장)는 어느 쪽이든 �
 | 콘솔 테넌트 해석 | `WorkspaceContext` 포트 (JWT 기반) | `currentUserEmail()`·`isAdmin()`·`isPlatformOperator()` |
 | 멱등 키 | 없음 | 에이전트 재시도 대비 필요 |
 | 감사 로그 | 운영자 조치만 `platform_audit_log`(V35) | "어떤 키가 어떤 도구를" 기록 없음 |
-| 마지막 마이그레이션 | V36 | **이 설계는 V37 부터** |
+| 마지막 마이그레이션 | V37 (2026-09-23 계정 이메일 정규화) | **이 설계는 V38 부터** |
 
 ## 배치와 전송
 
@@ -58,7 +58,7 @@ MCP 가 맞다. 다만 아래 0단계(공개 REST 확장)는 어느 쪽이든 �
 
 ## 인증과 권한
 
-### API 키 테이블 분리 (V37)
+### API 키 테이블 분리 (V38)
 
 `workspaces.api_key` 단일 평문 컬럼으로는 스코프·회전·폐기·감사가 안 되고, DB 유출이 곧 키 유출이다.
 
@@ -70,7 +70,7 @@ draft_confirmations(token, campaign_id, api_key_id, expires_at, used_at)
 campaigns.idempotency_key  -- (workspace_id, idempotency_key) 부분 유니크
 ```
 
-- **기존 키 이관**: V37 이 `workspaces.api_key` 를 `api_keys` 한 행으로 옮기고 스코프 `subscribe` 를 준다.
+- **기존 키 이관**: V38 이 `workspaces.api_key` 를 `api_keys` 한 행으로 옮기고 스코프 `subscribe` 를 준다.
   해시는 마이그레이션 SQL 에서 `encode(sha256(convert_to(api_key, 'UTF8')), 'hex')` 로 만든다
   (운영 Postgres 16 내장 함수). 앱은 받은 키를 같은 방식으로 해시해 조회하므로 기존 구독 폼은 끊기지 않는다.
   평문 컬럼은 한 릴리스 뒤 제거한다.
@@ -101,7 +101,7 @@ campaigns.idempotency_key  -- (workspace_id, idempotency_key) 부분 유니크
 
 ### 감사 로그 — 운영자 로그와 나누되 틀은 맞춘다
 
-| | `platform_audit_log` (V35, 기존) | `api_key_audit` (V37, 신규) |
+| | `platform_audit_log` (V35, 기존) | `api_key_audit` (V38, 신규) |
 | --- | --- | --- |
 | 기록하는 것 | 플랫폼 운영자의 조치 | 키로 들어온 모든 도구 호출 |
 | 양 | 드물다 | 호출마다 1행 |
@@ -156,7 +156,7 @@ MCP 요청은 `ApiKeyWorkspaceContext` 를 바인딩한다: `currentWorkspaceId(
    에이전트가 "초안을 만들었고 N명에게 갑니다, 진행할까요?" 를 사용자에게 보여주고
    승인받는 흐름이 강제된다. 호스트(Claude Desktop 등)의 도구 승인 UI 에 기대지 않는다.
 2. **멱등 키** — 에이전트는 타임아웃 시 같은 호출을 다시 보낸다. `campaigns.idempotency_key`
-   + `(workspace_id, idempotency_key)` 부분 유니크(V37). `send_campaign` 의 **필수 인자**라
+   + `(workspace_id, idempotency_key)` 부분 유니크(V38). `send_campaign` 의 **필수 인자**라
    빼먹을 수 없다. 두 번째 호출은 새로 만들지 않고 첫 결과를 돌려준다 — "두 번 와도 한 번만".
 3. **확정 토큰은 claim 으로 소모** — `UPDATE draft_confirmations SET used_at = now
    WHERE token = ? AND used_at IS NULL AND expires_at > now` 1행이면 진행, 0행이면 거절.
@@ -286,7 +286,7 @@ LLM 시스템 프롬프트에 두 가지를 넣는다: **"발송 전 반드시 �
 ## 단계
 
 ### 0단계 — 공개 REST 확장과 키 테이블 (약 2일)
-`/api/public/v1/{emails,lists,campaigns,preflight}` + V37(`api_keys`, `api_key_audit`,
+`/api/public/v1/{emails,lists,campaigns,preflight}` + V38(`api_keys`, `api_key_audit`,
 `campaigns.idempotency_key`, `draft_confirmations`) + 기존 평문 키 해시 이관.
 MCP 없이도 사내 시스템 연동이 가능해지는 지점. `X-Api-Key` 와 `Authorization: Bearer`
 둘 다 받는다(기존 구독 API 호환).

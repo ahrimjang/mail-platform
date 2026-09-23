@@ -191,10 +191,10 @@ POST /api/ai/compose      { brief, tone?, blocks? }        -> { blocks: [...] , 
 
 ### 마이그레이션
 
-MCP 설계가 V37 을 예약했으므로 그다음 번호로 잡는다(착수 시점에 확정).
+MCP 설계가 V38 을 예약했으므로 그다음 번호로 잡는다(착수 시점에 확정).
 
 ```
-V38__ai_connection.sql
+V39__ai_connection.sql
   ai_connections(workspace_id PK, provider, base_url, model, api_key_enc, key_last4,
                  updated_by, updated_at)
   ai_usages(id, workspace_id, kind, tokens_in, tokens_out, created_at)
@@ -279,7 +279,7 @@ AI 작성은 **콘텐츠 대량 생산**을 쉽게 만들어 스팸 발송자에
 ## 단계별 체크리스트
 
 ### 0단계 — 모델 연결
-- [ ] V38 마이그레이션(`ai_connections`, `ai_usages`) + 키 암호화(`APP_AI_KEY_ENCRYPTION_KEY`, SecretsGuard)
+- [ ] V39 마이그레이션(`ai_connections`, `ai_usages`) + 키 암호화(`APP_AI_KEY_ENCRYPTION_KEY`, SecretsGuard)
 - [ ] OpenAI 호환 어댑터 + SSRF 방어(대역 거부·https·리다이렉트 금지·크기 상한·허용 호스트 예외)
 - [ ] 연결 설정 화면(관리 페이지) + 연결 테스트
 - [ ] Anthropic·Gemini 어댑터는 요청이 있을 때
