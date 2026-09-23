@@ -31,6 +31,11 @@ public class JpaUserRepository implements UserRepository {
     }
 
     @Override
+    public Optional<User> findByEmailIgnoreCase(String email) {
+        return jpa.findByEmailIgnoreCase(email).map(this::toDomain);
+    }
+
+    @Override
     public boolean existsByEmail(String email) {
         return jpa.existsByEmail(email);
     }

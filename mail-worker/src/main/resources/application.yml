@@ -1,6 +1,11 @@
 spring:
   application:
     name: mail-worker
+  lifecycle:
+    # 종료 시 각 단계가 마무리를 기다리는 한도(기본 30초). SMTP 최악 시간(연결 10 + 읽기 30 +
+    # 쓰기 30 = 70초)보다 길어야 한다 — 짧으면 발송 도중 JVM 이 내려가고, 그 메시지는 SENDING
+    # 에 남았다가 2분 뒤 다른 워커가 재클레임해 **이미 나간 메일을 한 번 더** 보낸다.
+    timeout-per-shutdown-phase: ${SHUTDOWN_PHASE_TIMEOUT:80s}
   datasource:
     # Same shared Postgres instance as mail-api (see mail-api/application.yml).
     url: ${DB_URL:jdbc:postgresql://localhost:5432/maildb}
@@ -41,6 +46,9 @@ spring:
         concurrency: ${RABBITMQ_CONCURRENCY:8}
         max-concurrency: ${RABBITMQ_MAX_CONCURRENCY:16}
         prefetch: ${RABBITMQ_PREFETCH:10}
+        # 종료 시 처리 중인 메시지를 기다리는 한도(기본 5초). 위 lifecycle 예산 안에서
+        # SMTP 최악 시간을 덮어야 한다 — 여기서 끊기면 중복 발송으로 이어진다.
+        shutdown-timeout: ${RABBITMQ_SHUTDOWN_TIMEOUT_MS:75000}
         default-requeue-rejected: false
         retry:
           enabled: true

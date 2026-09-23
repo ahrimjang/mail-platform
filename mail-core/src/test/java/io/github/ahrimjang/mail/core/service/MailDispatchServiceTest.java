@@ -349,6 +349,27 @@ class MailDispatchServiceTest {
     }
 
     @Test
+    void dispatchOne_putsFooterAndPixelInsideBodyOfAFullHtmlDocument() throws Exception {
+        // 완성형 HTML 이면 </body> 앞에 들어가야 한다 — 뒤에 붙으면 문서 밖이라 버려질 수 있다
+        MailMessage message = queuedMessage(null);
+        when(messages.claim(eq(MESSAGE_ID), any(Duration.class))).thenReturn(Optional.of(CLAIMED));
+        when(messages.findById(MESSAGE_ID)).thenReturn(Optional.of(message));
+        when(campaigns.findById(CAMPAIGN_ID)).thenReturn(
+                Optional.of(campaign("Deals", "<html><body><p>본문</p></body></html>")));
+        when(suppressions.existsByWorkspaceAndEmail(WS, RECIPIENT)).thenReturn(false);
+        when(messages.hasPendingOrSending(CAMPAIGN_ID)).thenReturn(true);
+
+        service.dispatchOne(MESSAGE_ID);
+
+        ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
+        verify(sender).send(eq(RECIPIENT), anyString(), body.capture(), anyString(), any(), any(), any());
+        String html = body.getValue();
+        assertThat(html).endsWith("</body></html>");
+        assertThat(html.indexOf("/api/unsubscribe/")).isLessThan(html.indexOf("</body>"));
+        assertThat(html.indexOf("/api/track/open/")).isLessThan(html.indexOf("</body>"));
+    }
+
+    @Test
     void dispatchOne_variantB_rendersTheBSubjectAndBody() throws Exception {
         MailMessage message = queuedMessage(null);
         message.setVariant("B");

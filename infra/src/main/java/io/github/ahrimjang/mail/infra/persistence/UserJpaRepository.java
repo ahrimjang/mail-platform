@@ -8,6 +8,9 @@ public interface UserJpaRepository extends JpaRepository<UserEntity, Long> {
 
     Optional<UserEntity> findByEmail(String email);
 
+    /** 대소문자 무시 조회 — Spring Data 가 upper(email) = upper(?) 로 풀어 준다. */
+    Optional<UserEntity> findByEmailIgnoreCase(String email);
+
     boolean existsByEmail(String email);
 
     java.util.List<UserEntity> findByWorkspaceIdOrderByCreatedAtAsc(Long workspaceId);

@@ -258,7 +258,10 @@ public class PlatformOpsService {
             if (email.isEmpty()) {
                 continue;
             }
-            User u = users.findByEmail(email).orElse(null);
+            // 대소문자 무시 조회 — 가입은 입력한 철자 그대로 저장하는데 여기서는 소문자로
+            // 맞춰 비교했다. 환경변수에 대문자가 섞인 주소는 계정이 있어도 못 찾아 권한이
+            // 조용히 안 붙었다.
+            User u = users.findByEmailIgnoreCase(email).orElse(null);
             if (u == null) {
                 log.warn("플랫폼 운영자 시드: 계정 없음 — {} (가입 후 재기동하면 부여됨)", email);
                 continue;

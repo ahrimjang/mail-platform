@@ -15,6 +15,8 @@ import java.util.regex.Pattern;
 public class TrackingRewriter {
 
     private static final Pattern HREF = Pattern.compile("href=\"(https?://[^\"]+)\"");
+    /** 닫는 body 태그 — 대소문자·공백 변형(`</BODY >`)까지 받는다. */
+    private static final Pattern BODY_END = Pattern.compile("</\\s*body\\s*>", Pattern.CASE_INSENSITIVE);
 
     private final TrackingLinkSigner signer;
 
@@ -40,6 +42,29 @@ public class TrackingRewriter {
         }
         matcher.appendTail(out);
         return out.toString();
+    }
+
+    /**
+     * 수신거부 푸터·오픈 픽셀을 본문에 덧붙인다. 완성형 HTML 문서면 <b>{@code </body>} 앞</b>에
+     * 넣는다.
+     *
+     * <p>그냥 뒤에 이어 붙이면 {@code </html>} 바깥에 놓인다. 메일 클라이언트마다 문서 밖
+     * 내용을 어떻게 다루는지가 달라서, 수신거부 링크가 통째로 버려질 수 있다 — 그러면 법적
+     * 요건(수신거부 수단 제공)이 깨지고 스팸 신고로 이어진다. 조각 HTML(닫는 태그가 없는
+     * 본문)은 붙일 자리가 없으니 지금처럼 뒤에 잇는다.
+     */
+    public String appendInsideBody(String html, String extra) {
+        if (html == null || html.isBlank()) {
+            return extra;
+        }
+        Matcher matcher = BODY_END.matcher(html);
+        int insertAt = -1;
+        // 중첩·따옴표 안의 가짜 태그를 피하려는 게 아니라, 진짜 문서 끝을 잡으려는 것 —
+        // 마지막 </body> 앞이 항상 문서 본문의 끝이다.
+        while (matcher.find()) {
+            insertAt = matcher.start();
+        }
+        return insertAt < 0 ? html + extra : html.substring(0, insertAt) + extra + html.substring(insertAt);
     }
 
     /** Build the hidden 1x1 open-tracking pixel for the given token. */

@@ -164,8 +164,10 @@ public class MailDispatchService {
         subject = templateRenderer.render(subject, vars);
         bodySrc = templateRenderer.render(bodySrc, vars);
         String trackedBody = trackingRewriter.rewriteLinks(bodySrc, message.getTrackingToken(), baseUrl);
-        String html = trackedBody + unsubscribeFooter(message.getUnsubToken())
-                + trackingRewriter.openPixel(message.getTrackingToken(), baseUrl);
+        // 완성형 HTML 이면 </body> 앞에 넣는다 — 뒤에 이어 붙이면 문서 밖이라 수신거부 링크가 버려질 수 있다
+        String html = trackingRewriter.appendInsideBody(trackedBody,
+                unsubscribeFooter(message.getUnsubToken())
+                        + trackingRewriter.openPixel(message.getTrackingToken(), baseUrl));
         // 본문 링크와 같은 주소를 헤더로도 내보낸다 — 메일 앱의 수신거부 버튼이 이걸 쓴다
         var options = new MailSender.Options(
                 campaign.getReplyTo(), unsubscribeUrl(message.getUnsubToken()));

@@ -311,9 +311,9 @@ class PlatformOpsServiceTest {
         User fresh = User.register("a@x.com", "h", null);
         User already = User.register("b@x.com", "h", null);
         already.setPlatformRole(User.PLATFORM_OPERATOR);
-        when(users.findByEmail("a@x.com")).thenReturn(Optional.of(fresh));
-        when(users.findByEmail("b@x.com")).thenReturn(Optional.of(already));
-        when(users.findByEmail("nobody@x.com")).thenReturn(Optional.empty());
+        when(users.findByEmailIgnoreCase("a@x.com")).thenReturn(Optional.of(fresh));
+        when(users.findByEmailIgnoreCase("b@x.com")).thenReturn(Optional.of(already));
+        when(users.findByEmailIgnoreCase("nobody@x.com")).thenReturn(Optional.empty());
 
         int granted = service.seedOperators(List.of(" A@x.com ", "b@x.com", "nobody@x.com", ""));
 
@@ -321,6 +321,18 @@ class PlatformOpsServiceTest {
         assertThat(fresh.isPlatformOperator()).isTrue();
         verify(users).save(fresh);
         verify(users, never()).save(already);
+    }
+
+    @Test
+    void 시드는_저장된_철자의_대소문자가_달라도_계정을_찾는다() {
+        // 가입은 입력한 철자 그대로 저장한다 — 환경변수에 대문자가 섞이면 예전엔 못 찾았다
+        User stored = User.register("Ops@Corp.com", "h", null);
+        when(users.findByEmailIgnoreCase("ops@corp.com")).thenReturn(Optional.of(stored));
+
+        int granted = service.seedOperators(List.of("Ops@Corp.com"));
+
+        assertThat(granted).isEqualTo(1);
+        assertThat(stored.isPlatformOperator()).isTrue();
     }
 
     private static Campaign campaign(long id, CampaignStatus status) {

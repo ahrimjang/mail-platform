@@ -176,6 +176,9 @@ services:
       target: worker
     restart: unless-stopped
     mem_limit: 640m
+    # 앱의 종료 예산(lifecycle 80초)보다 길어야 한다. 기본 10초면 SMTP 도중 SIGKILL 이 떨어져
+    # 메시지가 SENDING 에 남고, 2분 뒤 stale 재클레임이 같은 메일을 다시 보낸다.
+    stop_grace_period: 95s
     environment:
       DB_URL: jdbc:postgresql://postgres:5432/maildb
       DB_USERNAME: maildb

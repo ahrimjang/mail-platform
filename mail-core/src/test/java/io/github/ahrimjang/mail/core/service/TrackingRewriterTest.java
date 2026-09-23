@@ -59,6 +59,42 @@ class TrackingRewriterTest {
     }
 
     @Test
+    void appendInsideBody_insertsBeforeClosingBodyTag() {
+        String html = "<html><body><p>본문</p></body></html>";
+
+        String out = rewriter.appendInsideBody(html, "<FOOTER>");
+
+        assertThat(out).isEqualTo("<html><body><p>본문</p><FOOTER></body></html>");
+    }
+
+    @Test
+    void appendInsideBody_matchesCaseAndSpacingVariants() {
+        assertThat(rewriter.appendInsideBody("<BODY>x</BODY>", "<F>")).isEqualTo("<BODY>x<F></BODY>");
+        assertThat(rewriter.appendInsideBody("<body>x</ body >", "<F>")).isEqualTo("<body>x<F></ body >");
+    }
+
+    @Test
+    void appendInsideBody_usesTheLastClosingBodyTag() {
+        // 본문 안에 예시 코드로 </body> 가 적혀 있어도 문서의 진짜 끝에 넣는다
+        String html = "<body><code>&lt;/body&gt;</code></body>";
+
+        assertThat(rewriter.appendInsideBody(html, "<F>"))
+                .isEqualTo("<body><code>&lt;/body&gt;</code><F></body>");
+    }
+
+    @Test
+    void appendInsideBody_appendsAtEndWhenNoBodyTag() {
+        // 조각 HTML — 붙일 자리가 없으니 뒤에 잇는다(기존 동작)
+        assertThat(rewriter.appendInsideBody("<p>조각</p>", "<F>")).isEqualTo("<p>조각</p><F>");
+    }
+
+    @Test
+    void appendInsideBody_handlesEmptyBody() {
+        assertThat(rewriter.appendInsideBody(null, "<F>")).isEqualTo("<F>");
+        assertThat(rewriter.appendInsideBody("", "<F>")).isEqualTo("<F>");
+    }
+
+    @Test
     void openPixel_pointsImgAtOpenTrackingEndpoint() {
         String pixel = rewriter.openPixel(TOKEN, BASE_URL);
 

@@ -13,6 +13,12 @@ public interface UserRepository {
 
     Optional<User> findByEmail(String email);
 
+    /**
+     * 대소문자를 무시한 조회. 가입은 입력한 철자 그대로 저장하므로, 환경변수·운영 입력처럼
+     * 사람이 따로 적어 넣은 주소로 계정을 찾을 때는 이쪽을 쓴다(운영자 시더).
+     */
+    Optional<User> findByEmailIgnoreCase(String email);
+
     boolean existsByEmail(String email);
 
     /** Every member of one workspace (the admin console's user list). */
