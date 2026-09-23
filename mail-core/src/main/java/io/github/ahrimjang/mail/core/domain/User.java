@@ -25,10 +25,24 @@ public class User {
     public User() {
     }
 
+    /**
+     * 계정 식별자로 쓰는 이메일의 정규형 — 앞뒤 공백 제거 + 소문자.
+     *
+     * <p>이메일의 도메인부는 대소문자를 구분하지 않고, 로컬부도 실무상 구분하는 메일 서버가
+     * 사실상 없다. 반면 우리 유니크 제약·조회는 문자 그대로 비교하므로, 정규화하지 않으면
+     * {@code User@x.com} 으로 가입한 사람이 {@code user@x.com} 으로 로그인하지 못하고
+     * 두 주소가 서로 다른 계정으로 가입된다(모바일 자동 대문자화로 흔히 밟는 경로).
+     *
+     * <p><b>쓰기·조회 양쪽 모두 이걸 거쳐야 한다.</b> 한쪽만 하면 기존 행을 못 찾는다.
+     */
+    public static String normalizeEmail(String email) {
+        return email == null ? null : email.trim().toLowerCase(java.util.Locale.ROOT);
+    }
+
     /** Factory for a freshly registered user, before persistence. */
     public static User register(String email, String passwordHash, String displayName) {
         User u = new User();
-        u.email = email;
+        u.email = normalizeEmail(email);
         u.passwordHash = passwordHash;
         u.displayName = displayName;
         u.createdAt = Instant.now();
@@ -109,7 +123,7 @@ public class User {
     public static User registerSocial(String email, String displayName,
                                       String provider, String providerSubject) {
         User u = new User();
-        u.email = email;
+        u.email = normalizeEmail(email);
         u.displayName = displayName;
         u.authProvider = provider;
         u.providerSubject = providerSubject;

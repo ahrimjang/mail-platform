@@ -79,11 +79,12 @@ public class WorkspaceService {
             throw new IllegalArgumentException("email and password are required");
         }
         String role = requireRole(request.role());
-        if (users.existsByEmail(request.email())) {
-            throw new IllegalStateException("email already registered: " + request.email());
+        String email = User.normalizeEmail(request.email());
+        if (users.existsByEmail(email)) {
+            throw new IllegalStateException("email already registered: " + email);
         }
         planLimits.assertMemberAddable(ctx.currentWorkspaceId());
-        User user = User.register(request.email(), hasher.hash(request.password()), request.displayName());
+        User user = User.register(email, hasher.hash(request.password()), request.displayName());
         user.setWorkspaceId(ctx.currentWorkspaceId());
         user.setRole(role);
         return toUserView(users.save(user));

@@ -95,6 +95,56 @@ class AuthServiceTest {
         assertThat(response).isEqualTo(new AuthResponse("jwt-token", "new@x.com", "New User", "new 워크스페이스", "ADMIN", false));
     }
 
+    // ── 이메일 대소문자 정규화 ────────────────────────────────────────────
+
+    @Test
+    void signup_storesEmailInLowerCase() {
+        when(users.existsByEmail("new@x.com")).thenReturn(false);
+        when(hasher.hash("raw-pw")).thenReturn("hashed-pw");
+        when(users.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(tokens.issue(any(User.class))).thenReturn("jwt-token");
+
+        AuthResponse response = service.signup(new SignupRequest("  New@X.com ", "raw-pw", "New User", null));
+
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(users).save(captor.capture());
+        assertThat(captor.getValue().getEmail()).isEqualTo("new@x.com");
+        // 중복 검사도 같은 철자로 물어야 한다 — 다르면 대문자 주소가 중복을 비껴간다
+        verify(users).existsByEmail("new@x.com");
+        assertThat(response.email()).isEqualTo("new@x.com");
+    }
+
+    @Test
+    void login_findsTheAccountRegardlessOfTypedCase() {
+        User user = User.register("me@x.com", "stored-hash", "Me");
+        when(users.findByEmail("me@x.com")).thenReturn(Optional.of(user));
+        when(hasher.matches("raw-pw", "stored-hash")).thenReturn(true);
+        when(tokens.issue(user)).thenReturn("jwt-token");
+
+        AuthResponse response = service.login(new LoginRequest(" Me@X.com ", "raw-pw"), IP);
+
+        assertThat(response.token()).isEqualTo("jwt-token");
+    }
+
+    @Test
+    void login_lockoutSurvivesCaseVariationOfTheSameAccount() {
+        // 잠금 키가 원본 철자면 user@x / User@x / uSer@x … 로 5회씩 무한히 시도할 수 있다.
+        // 정규화 후에는 철자를 바꿔도 같은 계정의 카운터를 공유한다.
+        User user = User.register("me@x.com", "stored-hash", "Me");
+        when(users.findByEmail("me@x.com")).thenReturn(Optional.of(user));
+        when(hasher.matches(any(), any())).thenReturn(false);
+
+        String[] variants = {"me@x.com", "ME@X.com", "Me@x.COM", "mE@X.com", " me@x.com "};
+        for (String typed : variants) {
+            assertThatThrownBy(() -> service.login(new LoginRequest(typed, "wrong"), IP))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+
+        // 다섯 번을 서로 다른 철자로 썼어도 여섯 번째는 잠긴다
+        assertThatThrownBy(() -> service.login(new LoginRequest("mE@x.Com", "wrong"), IP))
+                .isInstanceOf(TooManyLoginAttemptsException.class);
+    }
+
     @Test
     void signup_rejectsDuplicateEmail() {
         when(users.existsByEmail("dup@x.com")).thenReturn(true);

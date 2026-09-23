@@ -64,24 +64,27 @@ public class AuthService {
                 || r.password() == null || r.password().isBlank()) {
             throw new IllegalArgumentException("email and password are required");
         }
+        // 대소문자·공백을 여기서 한 번 털어낸다 — 중복 검사와 저장이 다른 철자를 보면
+        // User@x.com 과 user@x.com 이 각각 가입되고, 둘 중 하나로는 로그인이 안 된다.
+        String email = User.normalizeEmail(r.email());
         // 일회용 주소로 무료 발송량을 양산하는 계정 farming 차단 — 평판 방어의 입구
-        if (DisposableEmailDomains.isDisposable(r.email())) {
+        if (DisposableEmailDomains.isDisposable(email)) {
             throw new IllegalArgumentException("일회용 이메일 주소로는 가입할 수 없어요. 실제 사용하는 주소를 입력해주세요.");
         }
-        if (users.existsByEmail(r.email())) {
-            throw new IllegalStateException("email already registered: " + r.email());
+        if (users.existsByEmail(email)) {
+            throw new IllegalStateException("email already registered: " + email);
         }
         assertBetaCapacity();
 
         // A signup registers the company: the workspace is the tenant boundary,
         // and its first account runs it as ADMIN.
         String companyName = r.companyName() == null || r.companyName().isBlank()
-                ? r.email().split("@")[0] + " 워크스페이스"
+                ? email.split("@")[0] + " 워크스페이스"
                 : r.companyName().trim();
         Workspace workspace = workspaces.save(Workspace.of(companyName));
 
         String passwordHash = hasher.hash(r.password());
-        User user = User.register(r.email(), passwordHash, r.displayName());
+        User user = User.register(email, passwordHash, r.displayName());
         user.setWorkspaceId(workspace.getId());
         user.setRole("ADMIN");
         User saved = users.save(user);
@@ -90,7 +93,7 @@ public class AuthService {
         // 소유 검증 메일 — 발송 실패해도 가입은 성공(콘솔 배너의 재발송이 복구 경로)
         verification.send(saved);
 
-        return new AuthResponse(token, r.email(), r.displayName(), workspace.getName(),
+        return new AuthResponse(token, saved.getEmail(), r.displayName(), workspace.getName(),
                 saved.getRole(), false);
     }
 
@@ -98,21 +101,24 @@ public class AuthService {
      * @param clientIp 브루트포스 잠금의 IP 축 키 (프록시 뒤에서는 X-Forwarded-For 해석값)
      */
     public AuthResponse login(LoginRequest r, String clientIp) {
+        // 정규화를 맨 앞에서 한 번 — 조회뿐 아니라 잠금 키도 여기서 갈린다. 원본을 키로 쓰면
+        // 대소문자만 바꿔가며(user@x / User@x / uSer@x …) 계정 축 잠금을 무한히 우회할 수 있다.
+        String email = User.normalizeEmail(r.email());
         // 잠긴 계정/IP 는 비밀번호 검증(BCrypt 비용)까지 가지 않고 여기서 끊는다
-        attempts.checkAllowed(r.email(), clientIp);
-        User user = users.findByEmail(r.email()).orElse(null);
+        attempts.checkAllowed(email, clientIp);
+        User user = users.findByEmail(email).orElse(null);
         // 소셜 가입 계정은 비밀번호가 없다 — BCrypt 비교 전에 끊되, 실패 카운트는 함께
         // 올리고 문구도 일반 실패와 같게 한다. 다른 문구를 주면 "이 주소가 가입돼 있고
         // 소셜 계정이다"를 무제한으로 물어보는 계정 열거 오라클이 된다.
         if (user != null && user.getPasswordHash() == null) {
-            attempts.onFailure(r.email(), clientIp);
+            attempts.onFailure(email, clientIp);
             throw new IllegalArgumentException("이메일 또는 비밀번호가 올바르지 않아요.");
         }
         if (user == null || !hasher.matches(r.password(), user.getPasswordHash())) {
-            attempts.onFailure(r.email(), clientIp);
+            attempts.onFailure(email, clientIp);
             throw new IllegalArgumentException("invalid email or password");
         }
-        attempts.onSuccess(r.email());
+        attempts.onSuccess(email);
         String workspaceName = workspaces.findById(user.getWorkspaceId())
                 .map(Workspace::getName)
                 .orElse(null);
@@ -140,17 +146,20 @@ public class AuthService {
             throw new IllegalArgumentException("Google 계정의 이메일이 인증되지 않았어요. 인증 후 다시 시도해주세요.");
         }
 
-        User user = users.findByEmail(identity.email()).orElse(null);
+        // 구글이 주는 철자도 우리 정규형으로 맞춰야 기존 계정을 찾는다 — 안 그러면
+        // 같은 사람에게 워크스페이스가 하나 더 생긴다.
+        String googleEmail = User.normalizeEmail(identity.email());
+        User user = users.findByEmail(googleEmail).orElse(null);
         if (user == null) {
             // 일반 가입과 같은 입구 방어 — 일회용 도메인은 구글 경로로도 못 들어온다
-            if (DisposableEmailDomains.isDisposable(identity.email())) {
+            if (DisposableEmailDomains.isDisposable(googleEmail)) {
                 throw new IllegalArgumentException("일회용 이메일 주소로는 가입할 수 없어요.");
             }
             assertBetaCapacity();   // 구글 즉석 가입도 같은 정원을 탄다
             // 즉석 가입 — 일반 가입과 같은 구도 (워크스페이스 = 테넌트, 첫 계정 = ADMIN)
             Workspace workspace = workspaces.save(
-                    Workspace.of(identity.email().split("@")[0] + " 워크스페이스"));
-            User created = User.registerSocial(identity.email(), identity.displayName(),
+                    Workspace.of(googleEmail.split("@")[0] + " 워크스페이스"));
+            User created = User.registerSocial(googleEmail, identity.displayName(),
                     "GOOGLE", identity.subject());
             created.setWorkspaceId(workspace.getId());
             created.setRole("ADMIN");

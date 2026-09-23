@@ -58,7 +58,9 @@ public class PasswordResetService {
         if (email == null || !email.contains("@")) {
             return;
         }
-        User user = users.findByEmail(email).orElse(null);
+        // 저장된 철자와 맞춰야 찾는다 — 정규화 없이 조회하면 대문자로 입력한 사람은
+        // "미가입 주소"로 조용히 무시되고, 본인은 이유도 모른 채 메일을 못 받는다.
+        User user = users.findByEmail(User.normalizeEmail(email)).orElse(null);
         if (user == null) {
             log.info("재설정 요청: 미가입 주소 (무시)");
             return;
