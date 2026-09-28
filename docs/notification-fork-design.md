@@ -11,6 +11,12 @@
 > **다른 시나리오와 혼동 주의**: 이 문서는 **독립 제품**을 만드는 전제다. 이미 설계된 그룹
 > 통합 플랫폼의 «알림» 컴포넌트 안으로 발송 엔진만 들어가는 경우는 전제가 달라서 따로 적었다 —
 > [notification-engine-extraction.md](notification-engine-extraction.md).
+>
+> **2026-09-28 갱신 — 이 문서의 전제가 바뀌었다.** 그 컴포넌트 분리가 실제로 진행돼 발송 커널이
+> `../messaging-engine` 으로 떼어져 나갔다. 그래서 이 문서의 ①(그대로 재사용)은 **더 이상 "이
+> 저장소를 포크한다"가 아니다** — messaging-engine 을 기반으로 삼는 편이 맞고, 포크를 따로 뜨면
+> 같은 엔진이 세 벌이 된다. 착수 전에 그 결정을 먼저 할 것
+> ([extraction 문서의 남은 판단거리](notification-engine-extraction.md)).
 
 ## 배경
 

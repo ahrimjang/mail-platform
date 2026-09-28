@@ -182,17 +182,51 @@ SMS·알림톡도 똑같이 필요하다. 그래서 커널로 올리고 채널�
 **그래서 "새로 짜는 게 빠르지 않나"의 답은 아니오다.** 새로 짜면 같은 함정을 다시 밟는다.
 다만 **통째로 옮기는 것도 아니다** — 위 (가)만 들고 나가 새 경계 안에서 재조립하는 형태다.
 
+## 실제로 떼어낸 결과 (2026-09-28)
+
+위 (가)를 별도 저장소로 분리해 **`messaging-engine`** 을 만들었다(이 저장소와 형제 디렉터리 —
+저장소 루트에서 `../messaging-engine`). 이 문서의 ③ 발송 커널 + ④ 이메일 어댑터에 해당하고,
+5개 모듈로 돌아간다. **판단의 근거는 이 문서**, 구현 규약은 그쪽
+[AGENTS.md](../../messaging-engine/AGENTS.md) 와
+[docs/integration-contract.md](../../messaging-engine/docs/integration-contract.md) 에 있다 —
+둘이 갈라지면 이 문서가 기준이다.
+
+**이름이 `email-engine` 이 아닌 이유**: 그 이름은 `sms-engine` 을 형제 저장소로 만들도록 유도하고,
+그러면 이 문서가 정정한 바로 그 실수(claim·재시도·DLQ·복구·속도 제한을 채널 수만큼 복제)로 간다.
+새 채널은 형제가 아니라 `MessageSender` 구현 하나다. 다만 붙어 있는 어댑터는 아직 이메일 하나다.
+
+떼면서 의도적으로 바꾼 것(자세한 표는 그쪽 README):
+
+| | Outpace | messaging-engine |
+| --- | --- | --- |
+| 핵심 개념 | `Campaign` | `SendRequest`(발송 요청) — 결합을 푸는 대신 **개명**, 위 "가장 큰 걸림돌" 절의 결론대로 |
+| 입구 | 사람이 콘솔에서 작성 | 멱등 키 필수 API — `(tenant_id, idempotency_key)` 유니크 |
+| 출력 | 오픈·클릭 추적 | 발송 결과 회신(Kafka) — `SENT·FAILED·BOUNCED·SUPPRESSED·UNSUBSCRIBED` |
+| 인증 | 자체 JWT·BCrypt·구글 | 테넌트 API 키(해시만 저장). 로그인 코드 전부 제거 |
+| 전송 실패 | 전부 BOUNCED + 억제 | **영구/일시 구분** — 일시 실패로 주소를 억제하면 그 주소로 의무 고지도 못 간다 |
+| 의무 고지 | 개념 없음 | `mandatory` 플래그 — 억제 우회 + 수신거부 링크 없음(법무 판단 필요) |
+
+**①② 는 여전히 없다.** 떼어낸 것은 ③④ 뿐이고, 그쪽 README·연동 규격 문서도 그 사실을 앞에 적어 뒀다.
+
 ## 남은 판단거리
 
-- **어느 저장소에 두는가** — 그 플랫폼 저장소 안의 모듈로 넣는가, 별도 저장소로 두고
-  서비스로 호출하는가. 4GB 노드 제약이 없는 환경이면 후자가 경계를 지키기 쉽다.
-- **[notification-fork-design.md](notification-fork-design.md) 와의 관계** — 독립 SaaS 포크와
-  이 컴포넌트 분리를 **둘 다 하면 같은 엔진이 세 벌**(Outpace, 포크, 컴포넌트)이 된다.
-  둘 중 하나를 고르거나, 엔진을 공용 라이브러리로 빼는 결정이 선행돼야 한다.
-- **착수 시점** — Outpace 자체가 아직 매출 전이다. 어느 쪽이든 그 궤도에 오른 뒤가 맞다.
+- ~~**어느 저장소에 두는가**~~ — **별도 저장소로 정해졌다**(`../messaging-engine`). 그 플랫폼 저장소
+  안의 모듈로 넣는 안보다 경계를 지키기 쉽고, 4GB 노드 제약이 없는 환경이 전제다.
+- **[notification-fork-design.md](notification-fork-design.md) 와의 관계 — 이제 급해졌다.**
+  같은 엔진이 이미 **두 벌**(Outpace, messaging-engine)이다. 독립 SaaS 포크까지 하면 세 벌이 되고,
+  그때부터는 여기서 버그를 고칠 때마다 세 곳을 고쳐야 한다. 포크를 하지 않고 messaging-engine 을
+  사내 SaaS 의 기반으로 쓰는 안, 또는 엔진을 공용 라이브러리로 빼는 안을 먼저 정해야 한다.
+- **두 벌의 동기화 정책** — Outpace 에서 커널 버그를 고쳤을 때 messaging-engine 에 반영할 책임을
+  누가·언제 지는가. 지금은 아무 장치가 없다. 최소한 커널에 해당하는 수정은
+  [REVIEW-product.md](REVIEW-product.md) 에서 표시를 남겨 양쪽에 반영되게 해야 한다.
+- **착수 시점(위층 ①②)** — Outpace 자체가 아직 매출 전이다. 커널은 돌지만 이벤트 매핑·수신자
+  해석·채널 결정을 만드는 것은 그 궤도에 오른 뒤가 맞다.
 
 ## 관련 문서
 
+- **`../messaging-engine`** — 이 문서대로 떼어낸 실물. [README](../../messaging-engine/README.md)(구조·API·
+  원본과 달라진 점) · [AGENTS.md](../../messaging-engine/AGENTS.md)(불변식·함정) ·
+  [integration-contract.md](../../messaging-engine/docs/integration-contract.md)(위층과 합의할 항목)
 - [notification-fork-design.md](notification-fork-design.md) — 독립 사내 알림 SaaS 포크(다른 시나리오)
 - [AUDIT-2026-08-21.md](AUDIT-2026-08-21.md) — ARCH-1~12, 엔진 판단의 근거
 - [OPS-LOG.md](OPS-LOG.md) · [REVIEW-scale.md](REVIEW-scale.md) · [mcp-integration-design.md](mcp-integration-design.md)
