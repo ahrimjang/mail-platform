@@ -286,3 +286,4 @@ DLQ, 상태/이벤트 분리 — 가장 깊게 판 축.
 - [TODO-ses-sns.md](TODO-ses-sns.md) — 실발송 전환
 - [mcp-integration-design.md](mcp-integration-design.md) — 사내 AI 포탈 연동 설계
 - [notification-fork-design.md](notification-fork-design.md) — 사내 알림 SaaS 포크(다채널) 계획
+- [notification-engine-extraction.md](notification-engine-extraction.md) — 그룹 통합 플랫폼의 «알림» 컴포넌트로 발송 엔진만 분리하는 경우
