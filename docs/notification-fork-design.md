@@ -12,11 +12,25 @@
 > 통합 플랫폼의 «알림» 컴포넌트 안으로 발송 엔진만 들어가는 경우는 전제가 달라서 따로 적었다 —
 > [notification-engine-extraction.md](notification-engine-extraction.md).
 >
-> **2026-09-28 갱신 — 이 문서의 전제가 바뀌었다.** 그 컴포넌트 분리가 실제로 진행돼 발송 커널이
-> `../messaging-engine` 으로 떼어져 나갔다. 그래서 이 문서의 ①(그대로 재사용)은 **더 이상 "이
-> 저장소를 포크한다"가 아니다** — messaging-engine 을 기반으로 삼는 편이 맞고, 포크를 따로 뜨면
-> 같은 엔진이 세 벌이 된다. 착수 전에 그 결정을 먼저 할 것
-> ([extraction 문서의 남은 판단거리](notification-engine-extraction.md)).
+> ## ⚠ 2026-09-28 — 이 문서의 전제가 깨졌다
+>
+> 컴포넌트 분리가 실제로 진행돼 발송 커널이 **`../messaging-engine`** 으로 떼어져 나갔고,
+> 그쪽은 Outpace 와 **별개 프로젝트**로 가기로 정해졌다(동기화 없음). 동시에 Outpace 자체는
+> 작업 중단 상태다 — [notification-engine-extraction.md 의 "정리된 결정"](notification-engine-extraction.md).
+>
+> 그래서 이 문서의 핵심 전제인 **"이 저장소를 포크한다"가 더 이상 맞지 않는다.** 포크를 따로
+> 뜨면 같은 커널이 세 벌(Outpace · messaging-engine · 포크)이 되고, 정작 필요한 기반은 이미
+> messaging-engine 에 있다.
+>
+> **아직 유효한 부분**은 포크 전제와 무관한 세 층이다 — ③ 채널별 수신자 모델, ④ 외부 업체 심사,
+> ⑤ 사내용 스코프 축소·워크스페이스 재정의. 사내 알림 SaaS 를 실제로 추진할 때는 이 세 층만
+> 건져 messaging-engine 위에 올리면 된다.
+>
+> **낡은 부분**: ① "그대로 재사용"(→ 포크가 아니라 messaging-engine 이 그 자리다),
+> ② 도메인 모델 채널 중립화(→ messaging-engine 에서 이미 `SendRequest`/`Message` 로 절반 진행됐고,
+> 남은 것은 문안 모델뿐이다), "포크 전에 정리할 것"·"포크 체크리스트" 절 전체.
+>
+> 이 문서를 접을지, 유효한 세 층만 messaging-engine 쪽으로 옮길지는 아직 정하지 않았다.
 
 ## 배경
 

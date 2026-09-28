@@ -199,6 +199,13 @@
 | V36 | 캠페인 오픈·클릭 카운터, 끝난 캠페인 상태 스냅샷, 조회용 인덱스 |
 | V37 | 계정 이메일 정규화(소문자) + `lower(email)` 유니크 인덱스 |
 
+## 작업 중단 (2026-09-28 ~)
+
+**이 저장소의 새 작업을 멈췄다.** 아래 "남은 일" 은 재개 시점의 출발점으로 남겨 둔 것이고, 지금
+진행 중인 항목은 없다. 같은 날 발송 커널을 **`../messaging-engine`** 으로 떼어내 **별개 프로젝트**로
+분리했다(양쪽 코드 동기화 없음) — [notification-engine-extraction.md](notification-engine-extraction.md)
+"정리된 결정". 운영 중인 서비스(https://outpacemail.com)는 그대로 돈다.
+
 ## 지금 남은 일
 
 - **처리량**: 운영 노드 재측정, 배치 INSERT 등 — [ROADMAP-scale.md](ROADMAP-scale.md) "2026-09-14 점검에서 추가"
@@ -208,4 +215,4 @@
 - **추가 개발 목록**: 평판·발신자, AI 포탈 연동, 마케팅 기능 격차, 운영·배포 — [REVIEW-product.md](REVIEW-product.md) 8절
 - **다음 기능 후보**: MCP 연동 0단계 — [mcp-integration-design.md](mcp-integration-design.md), AI 작성 1단계 — [ai-compose-design.md](ai-compose-design.md)
 - **DMARC 정책 강화**: `p=none` → `quarantine`(리포트 관찰 후) — [REVIEW-product.md](REVIEW-product.md) 8절
-- **사내 알림 SaaS 포크**: 착수는 Outpace 매출 궤도 이후 — [notification-fork-design.md](notification-fork-design.md)
+- **사내 알림 SaaS**: 포크 전제가 깨졌다 — `../messaging-engine` 을 기반으로 삼는 편이 맞고, 유효한 층은 ③④⑤뿐 — [notification-fork-design.md](notification-fork-design.md)
